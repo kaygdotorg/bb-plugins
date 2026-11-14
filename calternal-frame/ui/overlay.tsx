@@ -12,25 +12,63 @@ import { applyFontFaces, applyPrefs } from "../frame/prefs";
 import { applyAccent } from "../frame/accent";
 import { UsageBars } from "./usage-bars";
 
-/** Where the usage bars live: the top of bb's sidebar footer, above its icon row. */
+/**
+ * Where the usage bars live: in the sidebar footer, on the same line as bb's icon row
+ * (`ul[data-sidebar=menu]`), filling the space right of the last icon. The host is NOT a
+ * child of that row: bb counts the row's children to decide which icons move into its
+ * "…" overflow, so an extra item would cost an icon. Instead it is positioned over the
+ * row's free space and re-measured with one ResizeObserver on the row.
+ */
 function useSidebarFooterSlot(): HTMLElement | null {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     const host = document.createElement("div");
     host.dataset.calternalFrameUsage = "";
-    // bb re-renders its footer freely; re-attach when the node is dropped. A
-    // one-second check is cheaper than observing the whole app's DOM.
+    host.style.cssText = "position: absolute; display: flex; align-items: center; min-width: 0;";
+    let row: HTMLElement | null = null;
+
+    const place = () => {
+      if (!row) return;
+      const footer = row.parentElement as HTMLElement;
+      const box = footer.getBoundingClientRect();
+      const rowBox = row.getBoundingClientRect();
+      // The rightmost visible icon button (bb nests them differently on desktop and mobile).
+      const iconsRight = Math.max(rowBox.left, ...[...row.querySelectorAll("button")]
+        .map((b) => b.getBoundingClientRect())
+        .filter((r) => r.width > 0)
+        .map((r) => r.right));
+      const left = iconsRight - box.left + 10;
+      const right = box.right - rowBox.right + 2;
+      Object.assign(host.style, {
+        left: `${left}px`,
+        right: `${right}px`,
+        top: `${rowBox.top - box.top}px`,
+        height: `${rowBox.height}px`,
+        visibility: box.width - left - right >= 72 ? "visible" : "hidden",
+      });
+    };
+    const observer = new ResizeObserver(place);
+
+    // bb re-renders its footer freely; re-attach when the node is dropped. A one-second
+    // check is far cheaper than observing the whole app's DOM.
     const attach = () => {
-      if (host.isConnected) return;
-      const footer = document.querySelector('[data-sidebar="sidebar"] [data-sidebar="footer"]');
-      if (!footer) return;
-      footer.prepend(host);
+      if (host.isConnected && row?.isConnected) return;
+      const next = document.querySelector<HTMLElement>('[data-sidebar="sidebar"] [data-sidebar="footer"] > [data-sidebar="menu"]');
+      if (!next) return;
+      observer.disconnect();
+      row = next;
+      const footer = row.parentElement as HTMLElement;
+      if (getComputedStyle(footer).position === "static") footer.style.position = "relative";
+      footer.append(host);
+      observer.observe(row);
+      place();
       setSlot(host);
     };
     attach();
-    const timer = window.setInterval(attach, 1000);
+    const timer = window.setInterval(() => { attach(); place(); }, 1000);
     return () => {
       window.clearInterval(timer);
+      observer.disconnect();
       host.remove();
     };
   }, []);

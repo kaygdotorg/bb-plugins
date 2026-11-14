@@ -1,5 +1,6 @@
 /**
- * Pooled Claude/Codex usage, shown as small bars at the top of bb's sidebar footer.
+ * Pooled Claude/Codex usage as one item in bb's sidebar footer row, next to its icons:
+ * two stacked mini bars filling the row's height.
  * Data: the usage_summary RPC (server/usage.ts), polled once a minute.
  */
 import { useEffect, useState } from "react";
@@ -30,7 +31,7 @@ const LOGO_URLS = {
 
 function ProviderIcon({ provider }: { provider: ProviderUsage["provider"] }) {
   const mask = `url(${LOGO_URLS[provider]}) center / contain no-repeat`;
-  return <span aria-hidden="true" className="inline-block size-3.5 shrink-0" style={{ mask, WebkitMask: mask, backgroundColor: "currentColor" }} />;
+  return <span aria-hidden="true" className="inline-block size-3 shrink-0 text-muted-foreground" style={{ mask, WebkitMask: mask, backgroundColor: "currentColor" }} />;
 }
 
 const percentOf = (w: UsageWindow) => Math.round(w.used * 100);
@@ -50,11 +51,11 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
   ].filter(Boolean).join(" \u00b7 ");
 
   return (
-    <div className={`flex h-[18px] items-center gap-2 text-[11px] leading-none text-sidebar-foreground ${shown ? "" : "opacity-50"}`} title={title}>
+    <div className={`flex h-3.5 items-center gap-1.5 text-[10px] leading-none text-sidebar-foreground ${shown ? "" : "opacity-50"}`} title={title}>
       {prefs.showIcons ? (
-        <span className="flex w-12 items-center" title={name}><ProviderIcon provider={provider.provider} /></span>
+        <ProviderIcon provider={provider.provider} />
       ) : (
-        <span className="w-12 truncate font-medium">{name}</span>
+        <span className="w-9 shrink-0 truncate text-muted-foreground">{name}</span>
       )}
       <div
         className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-sidebar-foreground/10"
@@ -68,7 +69,7 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
         {shown ? <div className={`h-full rounded-full ${fill(shown.used)}`} style={{ width: `${Math.min(100, shown.used * 100)}%` }} /> : null}
       </div>
       {prefs.showPercent || pct === null ? (
-        <span className="w-8 text-right tabular-nums">{pct === null ? "\u2014" : `${pct}%`}</span>
+        <span className="w-7 shrink-0 text-right tabular-nums text-muted-foreground">{pct === null ? "\u2014" : `${pct}%`}</span>
       ) : null}
     </div>
   );
@@ -91,13 +92,11 @@ export function UsageBars({ prefs }: { prefs: UsagePrefs }) {
   if (!prefs.enabled) return null;
   if (!summary || summary.providers.length === 0) {
     return summary?.status === "unavailable" ? (
-      <p className="px-0.5 text-[10px] leading-tight text-muted-foreground" title={summary.message ?? undefined}>
-        Usage unavailable
-      </p>
+      <span className="text-[10px] text-muted-foreground" title={summary.message ?? undefined}>Usage unavailable</span>
     ) : null;
   }
   return (
-    <div className="flex flex-col gap-1.5 px-0.5 pb-1">
+    <div className="flex w-full flex-col justify-center gap-1">
       {summary.providers.map((provider) => <UsageBar key={provider.provider} provider={provider} prefs={prefs} />)}
     </div>
   );
