@@ -1,0 +1,203 @@
+// Fonts section: per-surface Google Font overrides, each a checkbox + searchable picker + live sample.
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { FrameState, GoogleFont } from "../../shared/contract";
+import { loadGoogleFontPreview as loadGoogleFont } from "../../frame/font-preview";
+import { ErrorLine, inputCls, LABEL_COL, messageOf, Section, Spinner, useSave, type Commit, type Rpc } from "./primitives";
+
+type FontKey = keyof FrameState["fonts"];
+
+const FONT_ROWS: { key: FontKey; label: string; note?: string; mono?: boolean }[] = [
+  { key: "ui", label: "Interface" },
+  { key: "chat", label: "Chat", note: "Also applies to the composer." },
+  { key: "code", label: "Code", mono: true },
+  { key: "terminal", label: "Terminal", note: "Applies to newly opened terminals.", mono: true },
+];
+const SAMPLE = "The quick brown fox \u2014 0123 {}";
+const MAX_MATCHES = 40;
+
+function FontPicker({
+  id, fonts, value, mono, disabled, onPick,
+}: {
+  id: string; fonts: GoogleFont[]; value: string; mono: boolean; disabled: boolean; onPick: (family: string) => void;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [typed, setTyped] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => setQuery(value), [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery(value);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open, value]);
+
+  const matches = useMemo(() => {
+    const q = typed ? query.trim().toLowerCase() : "";
+    let list = q ? fonts.filter((f) => f.family.toLowerCase().includes(q)) : fonts;
+    if (mono) {
+      const isMono = (f: GoogleFont) => f.category.toLowerCase() === "monospace";
+      list = [...list.filter(isMono), ...list.filter((f) => !isMono(f))];
+    }
+    return list.slice(0, MAX_MATCHES);
+  }, [fonts, query, typed, mono]);
+
+  useEffect(() => {
+    listRef.current?.children[index]?.scrollIntoView({ block: "nearest" });
+  }, [index, open]);
+
+  const close = () => { setOpen(false); setTyped(false); setQuery(value); };
+  const pick = (family: string) => { setOpen(false); setTyped(false); setQuery(family); if (family !== value) onPick(family); };
+  const optionId = (i: number) => `${id}-opt-${i}`;
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) { setOpen(true); return; }
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setIndex((i) => Math.min(matches.length - 1, Math.max(0, i + step)));
+    } else if (e.key === "Enter" && open) {
+      e.preventDefault();
+      const match = matches[index];
+      if (match) pick(match.family);
+    } else if (e.key === "Escape" && open) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    } else if (e.key === "Tab") {
+      close();
+    }
+  };
+
+  return (
+    <div ref={root} className="relative min-w-0 flex-1">
+      <input
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        aria-autocomplete="list"
+        aria-activedescendant={open && matches[index] ? optionId(index) : undefined}
+        autoComplete="off"
+        spellCheck={false}
+        disabled={disabled}
+        className={`${inputCls} w-full`}
+        value={query}
+        placeholder="Search Google Fonts"
+        onFocus={(e) => { setOpen(true); e.currentTarget.select(); }}
+        onClick={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setTyped(true); setIndex(0); setOpen(true); }}
+        onKeyDown={onKeyDown}
+      />
+      {open ? (
+        <ul
+          ref={listRef}
+          id={`${id}-list`}
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover text-popover-foreground py-1 shadow-md"
+        >
+          {matches.length === 0 ? (
+            <li className="px-2 py-1 text-xs text-muted-foreground">No matching fonts</li>
+          ) : matches.map((f, i) => (
+            <li
+              key={f.family}
+              id={optionId(i)}
+              role="option"
+              aria-selected={f.family === value}
+              onMouseEnter={() => setIndex(i)}
+              onMouseDown={(e) => { e.preventDefault(); pick(f.family); }}
+              className={`flex cursor-pointer items-center justify-between gap-2 px-2 py-1 text-sm ${i === index ? "bg-accent" : ""}`}
+            >
+              <span className="truncate">{f.family}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{f.category}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function FontSample({ family }: { family: string }) {
+  useEffect(() => { if (family) loadGoogleFont(family); }, [family]);
+  return (
+    <p
+      className="truncate text-sm text-muted-foreground"
+      style={{ fontFamily: `"${family.replace(/["\\]/g, "")}", sans-serif` }}
+    >
+      {SAMPLE}
+    </p>
+  );
+}
+
+export function FontsSection({ state, rpc, commit }: { state: FrameState; rpc: Rpc; commit: Commit }) {
+  const [fonts, setFonts] = useState<GoogleFont[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { error, save: savePatch } = useSave(rpc, commit);
+  const baseId = useId();
+
+  useEffect(() => {
+    let cancelled = false;
+    rpc.call("google_fonts", {}).then(
+      (list) => { if (!cancelled) setFonts(list); },
+      (e: unknown) => { if (!cancelled) setLoadError(messageOf(e, "Could not load the font list.")); },
+    );
+    return () => { cancelled = true; };
+  }, [rpc]);
+
+  const save = (key: FontKey, font: { on: boolean; family: string }) => void savePatch({ fonts: { [key]: font } });
+
+  return (
+    <Section title="Fonts" hint="Override bb's fonts with any Google Font.">
+      <ErrorLine message={loadError} />
+      <div className="flex flex-col gap-4">
+        {FONT_ROWS.map((row) => {
+          const font = state.fonts[row.key];
+          const id = `${baseId}-${row.key}`;
+          return (
+            <div key={row.key} className="grid items-center gap-x-4 gap-y-1" style={{ gridTemplateColumns: `${LABEL_COL} minmax(0, 1fr)` }}>
+              <label htmlFor={`${id}-on`} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  id={`${id}-on`}
+                  type="checkbox"
+                  checked={font.on}
+                  onChange={(e) => save(row.key, { on: e.target.checked, family: font.family })}
+                />
+                {row.label}
+              </label>
+              <label className="sr-only" htmlFor={id}>{row.label} font family</label>
+              {fonts ? (
+                <FontPicker
+                  id={id}
+                  fonts={fonts}
+                  value={font.family}
+                  mono={row.mono === true}
+                  disabled={!font.on}
+                  onPick={(family) => save(row.key, { on: font.on, family })}
+                />
+              ) : (
+                <div className="flex h-8 flex-1 items-center gap-2 text-xs text-muted-foreground" aria-busy={!loadError}>
+                  {loadError ? font.family : <><Spinner /> Loading fonts</>}
+                </div>
+              )}
+              <div className="col-start-2 min-w-0">
+                <FontSample family={font.family} />
+                {row.note ? <p className="text-xs text-muted-foreground">{row.note}</p> : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <ErrorLine message={error} />
+    </Section>
+  );
+}
