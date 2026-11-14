@@ -1,0 +1,61 @@
+# calternal-frame: notes for agents
+
+Read this before changing anything. Keep it short; update it in the same commit as the code.
+
+## What it is
+
+A bb plugin that restyles bb's own shell, after Craft's window:
+
+- **Window backdrop:** the wallpaper, blurred and tinted. One seamless surface.
+- **Sidebars:** the left one and the right panel have no surface of their own. They sit flat on the backdrop: no fill, edges or seams.
+- **Chat card:** floats on the backdrop with an 8px gap. It's heavy glass (blur, tint and dim).
+- **Composer:** its own frosted pane inside the card.
+- **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
+- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage bars, and compact navigation.
+
+## Map
+
+| Path | What |
+|---|---|
+| `app.tsx` / `server.ts` | Entry points; registration and wiring only |
+| `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
+| `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
+| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `usage` |
+| `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color` |
+| `ui/` | React: `overlay` (sync + footer portal), `usage-bars`, `nav`, `settings/` |
+
+## Rules learned the hard way
+
+- **Never put `mask`, `filter`, `backdrop-filter`, `opacity < 1` or `clip-path` on an ancestor of the composer.** Chromium treats such an ancestor as a *backdrop root*, and the composer stops blurring. That's why the card's glass lives in `::before`/`::after` layers, and the header fade is a frost on `header::before`, not a mask on the scroll area.
+- **Shadows must fit inside `--cf-gap`.** bb clips the centre region, so a wider shadow gets cut off in a straight line.
+- **Inside the card, `--background` is transparent.** Anything floating must use `bg-popover`. bb's inverse controls (`bg-foreground` + `text-background`) and switches are re-styled in `css.ts`.
+- **Selectors target bb 0.49.** When bb changes its DOM, fix `frame/selectors.ts` first. Desktop "framed" mode is `[data-framed]`.
+- **The collapsed-sidebar toggle shifts only while collapsed.** Expanded, it lines up with the sidebar row.
+- **100% interface size is 17.6px root**, which is bb's 110%. bb is rem-based, so this scales text and controls together.
+- **Pages without a panel group** (Settings, Skills) use their content shell as the card.
+- **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
+- **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
+- **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.
+- **Usage data comes from the `cliproxy-usage` plugin** through `bb.sdk.plugins.callRpc`. That plugin keeps the key.
+
+## Performance
+
+- The backdrop and card blurs paint static images. Never animate anything behind glass.
+- The wallpaper is decoded once (`frame/color.ts`, memoised) for both the sidebar tone and the accent.
+- The always-on sync uses `frame_light`, a few KB. It fetches the wallpaper (~1 MB) only when `wallpaperId` changes, and fonts only when the set of enabled families changes. That matters when bb is used remotely.
+- Style text is only rewritten when it changes, and the last look is cached in localStorage so a reload paints immediately.
+- The footer portal re-attaches on a 1s check. Don't observe the whole DOM.
+
+## Work loop
+
+```sh
+npx tsc --noEmit -p . && bb plugin build && bb plugin reload calternal-frame
+```
+
+Verify visually: `bb browser-automation open --backend local --headless` opens `http://127.0.0.1:38886`. On hd01, Chrome runs from `~/.local/share/bb-chrome` and needs no root. Use `p.shot()`; puppeteer `clip` screenshots re-lay out the page and lie. Test blur with sharp text behind the element.
+
+## kayg's preferences
+
+- Opinionated defaults, with configuration kept in the plugin's settings.
+- Details matter: alignment, concentric radii, no stray bands or seams. Check every route with screenshots.
+- Atomic commits, pushed to both `origin` (Forgejo) and `github`.
