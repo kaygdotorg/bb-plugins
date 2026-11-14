@@ -31,8 +31,11 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Inside the card, `--background` is transparent.** Anything floating must use `bg-popover`. bb's inverse controls (`bg-foreground` + `text-background`) and switches are re-styled in `css.ts`.
 - **Selectors target bb 0.49.** When bb changes its DOM, fix `frame/selectors.ts` first. Desktop "framed" mode is `[data-framed]`.
 - **The collapsed-sidebar toggle shifts only while collapsed.** Expanded, it lines up with the sidebar row.
-- **100% interface size is 17.6px root**, which is bb's 110%. bb is rem-based, so this scales text and controls together.
+- **100% interface size is 17.6px root on desktop** (bb's 110%) **and 16px on phones**, where bb already enlarges touch targets. bb is rem-based, so this scales text and controls together. On touch, the compact nav rows match bb's own row height.
 - **Pages without a panel group** (Settings, Skills) use their content shell as the card.
+- **Phones (<768px) have a different shell.** `main` is a full-screen pane that slides aside to reveal the sidebar drawer *beneath* it. On phones it's the edge-to-edge glass pane, with a solid base so the drawer never shows through. The right panel is a portaled shelf with heavy frost. The card interior rules (`cardInterior()` in `css.ts`) are shared, so add new interior styling there, not only in the desktop block.
+- **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
+- **The usage bars are not a child of bb's footer icon row.** bb counts that row's children to decide which icons overflow into "…". The bars are positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
 - **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
 - **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.
