@@ -1,0 +1,298 @@
+/**
+ * The frame's stylesheet. Calternal's frame, laid over bb's existing shell DOM, after Craft:
+ *
+ *   window backdrop   the wallpaper, heavily blurred and tinted: one seamless surface
+ *   ├─ left sidebar   no surface of its own; sits flat on the backdrop
+ *   ├─ chat card      floats on the backdrop with a gap all round: lighter glass
+ *   └─ right panel    no surface of its own, like the left sidebar
+ *
+ * bb's own selectors this relies on (bb 0.49): `[data-testid="app-layout-root"]`
+ * (sidebar wrapper; `[data-framed]` in the desktop app), `[data-sidebar=…]`,
+ * `main[data-sidebar="inset"]`, and react-resizable-panels' `[data-panel-group]`
+ * / `[data-panel]` inside it. Everything is gated on `html[data-calternal-frame]`
+ * so removing that attribute restores bb exactly.
+ */
+import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
+
+export const CSS = `
+${R} {
+  --cf-bg: var(--background);
+  --cf-side: var(--sidebar);
+  /* Defaults; applyPrefs() overrides these on <html> from the plugin's settings. */
+  --cf-side-blur: blur(12px) saturate(120%);
+  --cf-side-tint: color-mix(in oklab, var(--cf-side) 50%, transparent);
+  --cf-side-dim: transparent;
+  --cf-card-blur: blur(75px) saturate(140%);
+  --cf-card-tint: color-mix(in oklab, var(--cf-bg) 75%, transparent);
+  --cf-card-dim: rgb(0 0 0 / 0.25);
+  /* Interface size: bb sizes text and spacing in rem, so the root size scales both.
+     The plugin's 100% is bb's 110%: bb's own 16px reads small on a glass layout. */
+  font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
+  --cf-gap: 8px;
+  --cf-radius: 14px;
+  /* Clear frosted glass: no grey wash; only a darker veil of the card's own tint. */
+  --cf-composer: color-mix(in oklab, var(--cf-bg) 38%, transparent);
+  --cf-composer-blur: blur(24px) saturate(170%);
+  --cf-edge: rgb(255 255 255 / 0.55);
+  --cf-shadow: 0 6px 14px -7px rgb(60 40 20 / 0.28);
+  background: var(--cf-side) !important;
+}
+${R}.dark {
+  --cf-edge: rgb(255 255 255 / 0.09);
+  /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
+  --cf-shadow: 0 6px 14px -7px rgb(0 0 0 / 0.55);
+}
+${R} body, ${R} #root, ${SHELL}, ${R} [data-app-content-shell] {
+  background: transparent !important;
+}
+
+/* The window backdrop: one fixed layer under everything. */
+${BACKDROP} {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+${BACKDROP}::before {
+  content: "";
+  position: absolute;
+  inset: -140px; /* the blur fades at its edges; keep those off-screen */
+  background: var(--cf-wall, none) center / cover no-repeat;
+  filter: var(--cf-side-blur);
+}
+${BACKDROP}::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--cf-side-dim), var(--cf-side-dim)), var(--cf-side-tint);
+}
+
+/* Accent: one hue drives bb's otherwise grey palette. --cf-accent-h / -c are set by
+   applyAccent(); lightness is fixed per scheme so any hue stays legible. */
+${R} {
+  --cf-accent: oklch(0.56 var(--cf-accent-c, 0.13) var(--cf-accent-h, 62));
+  --cf-accent-fg: oklch(0.99 0.01 var(--cf-accent-h, 62));
+}
+${R}.dark {
+  --cf-accent: oklch(0.76 var(--cf-accent-c, 0.13) var(--cf-accent-h, 62));
+  --cf-accent-fg: oklch(0.2 0.03 var(--cf-accent-h, 62));
+}
+${R}, ${R}.dark {
+  --primary: var(--cf-accent);
+  --primary-foreground: var(--cf-accent-fg);
+  --ring: var(--cf-accent);
+  --sidebar-ring: var(--cf-accent);
+  --accent: color-mix(in oklab, var(--cf-accent) 20%, transparent);
+  --accent-foreground: var(--foreground);
+  --sidebar-accent: color-mix(in oklab, var(--cf-accent) 18%, transparent);
+  --sidebar-accent-foreground: var(--foreground);
+  --surface-selected: color-mix(in oklab, var(--cf-accent) 16%, transparent);
+  --surface-selected-border: color-mix(in oklab, var(--cf-accent) 45%, transparent);
+  --state-hover: color-mix(in oklab, var(--cf-accent) 12%, transparent);
+  --state-active: color-mix(in oklab, var(--cf-accent) 22%, transparent);
+}
+${R} ::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
+${R} .ProseMirror-hideselection ::selection { background-color: transparent; }
+${R} { accent-color: var(--cf-accent); caret-color: var(--cf-accent); }
+
+${R} :is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) {
+  border-radius: 7px !important;
+}
+${R} :is([role="menu"], [role="listbox"]) [role="separator"] { margin-inline: 2px; }
+
+/* bb's inverse controls (bg-foreground + text-background) are its primary buttons: they
+   take the accent. Elsewhere text-background keeps the real background colour, which the
+   card makes clear. */
+${R} :is(button, a, [role="button"]).bg-foreground {
+  background-color: var(--cf-accent) !important;
+  color: var(--cf-accent-fg) !important;
+}
+${R} :is(button, a, [role="button"]).bg-foreground:hover { filter: brightness(1.06); }
+${R} .text-background { color: var(--cf-bg) !important; }
+/* Switches: on = accent track with a light knob; off = bb's own. */
+${R} [role="switch"][data-state="checked"] { background-color: var(--cf-accent) !important; }
+${R} [role="switch"][data-state="checked"] > span { background-color: var(--cf-accent-fg) !important; }
+${R} [role="switch"][data-state="unchecked"] > span { background-color: var(--foreground) !important; }
+
+/* Menus, popovers, context menus: frosted and tinted, not flat grey. */
+${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) {
+  /* Concentric corners: outer radius = item radius + padding (12 = 7 + 5). */
+  border-radius: 12px !important;
+  padding: 5px !important;
+  /* Hover and highlight inside menus read as the accent, not grey. */
+  --state-hover: color-mix(in oklab, var(--cf-accent) 26%, transparent);
+  --accent: color-mix(in oklab, var(--cf-accent) 26%, transparent);
+  background-color: color-mix(in oklab, var(--popover) 80%, transparent) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+}
+
+@media (min-width: 768px) {
+  /* Desktop app: drop bb's recessed window frame; the backdrop is the frame now. */
+  ${SHELL}[data-framed] {
+    padding: 0 !important;
+    background-image: none !important;
+    --bb-window-frame-top: 0px;
+    --bb-window-frame-lip: 0px;
+    --bb-window-frame-leading-lip: 0px;
+  }
+  ${SHELL} [data-sidebar="panel"] {
+    background: transparent !important;
+    border-right-width: 0 !important;
+  }
+
+  /* Sidebars: no fill, no edge. They sit flat on the backdrop. */
+  ${FLAT} {
+    --sidebar: transparent;
+    --background: transparent;
+    --surface-scrim: transparent;
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    border-left-width: 0 !important;
+  }
+  :is(${SIDE_PANEL}) aside { border-left-width: 0 !important; }
+
+  /* The center region is see-through; only the chat card inside it paints. */
+  ${MAIN} {
+    --background: transparent;
+    background: transparent !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+    clip-path: none !important;
+    margin-top: 0 !important;
+    height: 100% !important;
+    padding: 0 !important;
+  }
+  ${MAIN}::before, ${MAIN}::after { content: none !important; }
+  /* Page headers (Plugins' "Plugins / Browse" row) sit flat on the backdrop, like
+     Craft's tab row; inside the card they are clear too. No seams under either. */
+  ${MAIN} { --surface-scrim: transparent; }
+  ${MAIN} header { background: transparent !important; border-bottom-color: transparent !important; }
+  /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
+  :is(${CARD}) { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); }
+  ${SHELL} [data-sidebar="inset-edge"] { display: none !important; }
+  ${GROUP} > [data-resize-handle] { background: transparent !important; }
+
+  /* Only while collapsed (expanded, it lines up with the sidebar's own row): bb pins its toggle to the window's top-left for a card
+     that starts at (0,0). Ours floats one gap (+1px border) in, so the toggle follows. */
+  ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-sidebar-trigger-overlay"],
+  ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-desktop-sidebar-trigger"] {
+    translate: calc(var(--cf-gap) + 1px) calc(var(--cf-gap) + 1px);
+  }
+
+  /* Resize handles: no seam lines. A small grip pill appears on hover only. */
+  ${SHELL} [data-testid="app-sidebar-resize-handle"]::before,
+  ${GROUP} > [data-resize-handle] span.w-px {
+    top: 50% !important;
+    bottom: auto !important;
+    height: 36px !important;
+    width: 4px !important;
+    border-radius: 999px;
+    translate: 0 -50%;
+    background: transparent !important;
+    transition: background-color 120ms ease-out;
+  }
+  ${GROUP} > [data-resize-handle] span.w-px { margin-left: -2px; }
+  ${SHELL} [data-testid="app-sidebar-resize-handle"]:hover::before,
+  ${GROUP} > [data-resize-handle]:hover span.w-px,
+  ${GROUP} > [data-resize-handle][data-resize-handle-state="drag"] span.w-px {
+    background: color-mix(in oklab, var(--foreground) 32%, transparent) !important;
+  }
+
+  /* The chat card floats with a gap all round. Its glass is two layers of its own
+     (the wallpaper, blurred; then a tint), not a backdrop-filter on the card: that
+     would make the card a backdrop root, and the composer inside could then never
+     blur through to the wallpaper (calternal point 34). */
+  ${CARD} {
+    --surface-scrim: transparent;
+    position: relative;
+    isolation: isolate;
+    margin: var(--cf-gap);
+    background: transparent !important;
+    border: 1px solid var(--cf-edge);
+    border-radius: var(--cf-radius);
+    box-shadow: var(--cf-shadow);
+    overflow: clip !important;
+  }
+  ${PLAIN_MAIN} { padding: var(--cf-gap) !important; }
+  ${CARD_FALLBACK} { margin: 0 !important; }
+  :is(${CARD})::before {
+    content: "";
+    position: absolute;
+    inset: -60px;
+    z-index: -2;
+    pointer-events: none;
+    /* fixed: lines the card's copy of the wallpaper up with the window's. */
+    background: var(--cf-wall, none) center / cover no-repeat fixed;
+    filter: var(--cf-card-blur);
+  }
+  :is(${CARD})::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(var(--cf-card-dim), var(--cf-card-dim)), var(--cf-card-tint);
+  }
+  :is(${CARD}) header { border-bottom-color: transparent !important; }
+
+  /* Chat scroll edges: text fades out under the header and frosts away behind the composer,
+     instead of stopping at a hard line or showing through the clear composer footer. */
+  /* The page header floats over its scroll area instead of sitting in a band above it:
+     content scrolls up under the title and fades out gradually across the header's
+     whole height. bb's own header row height drives the padding and the fade. */
+  :is(${CARD}) :has(> header + * [data-page-scroll-viewport]) { position: relative; }
+  :is(${CARD}) header:has(+ * [data-page-scroll-viewport]) {
+    position: absolute !important;
+    inset: 0 0 auto 0;
+    z-index: 15;
+    pointer-events: none;
+  }
+  :is(${CARD}) header:has(+ * [data-page-scroll-viewport]) > * { pointer-events: auto; }
+  /* The fade is a progressive frost on the header's own layer, never a mask on the scroll
+     area: a masked ancestor becomes a backdrop root and the composer could no longer blur. */
+  :is(${CARD}) header:has(+ * [data-page-scroll-viewport])::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 -24px 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--cf-bg) 62%, transparent) 0%, color-mix(in oklab, var(--cf-bg) 40%, transparent) 55%, transparent 100%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
+  }
+  :is(${CARD}) header + * [data-page-scroll-viewport] {
+    padding-top: var(--bb-app-chrome-row-height, 3rem);
+    scroll-padding-top: var(--bb-app-chrome-row-height, 3rem);
+  }
+  :is(${CARD}) [data-scroll-footer] { background: transparent !important; }
+  :is(${CARD}) [data-scroll-footer]::before {
+    content: "";
+    position: absolute;
+    inset: -28px 0 0 0;
+    z-index: -1;
+    pointer-events: none;
+    background: color-mix(in oklab, var(--cf-bg) 45%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  }
+  /* bb's own fade above the composer blends into --background, which is clear here. */
+  :is(${CARD}) [data-overflow-fade] { display: none !important; }
+
+  /* The composer: its own frosted pane, blurring the chat and wallpaper under it. */
+  :is(${CARD}) form[data-promptbox] {
+    background: var(--cf-composer) !important;
+    -webkit-backdrop-filter: var(--cf-composer-blur);
+    backdrop-filter: var(--cf-composer-blur);
+    border-color: var(--cf-edge) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 24px -14px rgb(0 0 0 / 0.5) !important;
+  }
+}
+`;
