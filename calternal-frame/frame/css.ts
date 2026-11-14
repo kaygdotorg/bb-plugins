@@ -168,11 +168,9 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   }
   ${MAIN}::before, ${MAIN}::after { content: none !important; }
   /* Page headers (Plugins' "Plugins / Browse" row) sit flat on the backdrop, like
-     Craft's tab row; inside the card they are clear too. No seams under either. */
+     Craft's tab row. No seams under them. */
   ${MAIN} { --surface-scrim: transparent; }
   ${MAIN} header { background: transparent !important; border-bottom-color: transparent !important; }
-  /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
-  :is(${CARD}) { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); }
   ${SHELL} [data-sidebar="inset-edge"] { display: none !important; }
   ${GROUP} > [data-resize-handle] { background: transparent !important; }
 
@@ -222,7 +220,7 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   :is(${CARD})::before {
     content: "";
     position: absolute;
-    inset: -60px;
+    inset: -160px; /* > 2 × the largest blur: a blur fades its own edges to transparent */
     z-index: -2;
     pointer-events: none;
     /* fixed: lines the card's copy of the wallpaper up with the window's. */
@@ -237,24 +235,87 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     pointer-events: none;
     background: linear-gradient(var(--cf-card-dim), var(--cf-card-dim)), var(--cf-card-tint);
   }
-  :is(${CARD}) header { border-bottom-color: transparent !important; }
+}
+
+@media (min-width: 768px) {${cardInterior(`:is(${CARD})`)}}
+
+/* Phones: bb's main pane is full-screen and slides aside to reveal the sidebar drawer
+   beneath it. The pane becomes edge-to-edge glass (its layers are opaque, so it still
+   covers the drawer); the drawer and its contents sit flat on the backdrop. */
+@media (max-width: 767px) {
+  ${R} { font-size: calc(16px * var(--cf-ui-scale, 1)) !important; }
+  ${SHELL} [data-sidebar="panel"], ${FLAT} {
+    --sidebar: transparent;
+    background: transparent !important;
+    border-color: transparent !important;
+  }
+  ${MAIN} {
+    --background: transparent;
+    /* Solid base under the glass: the pane must hide the drawer beneath it completely. */
+    background: var(--cf-side) !important;
+    isolation: isolate;
+    overflow: clip;
+  }
+  ${MAIN}::before {
+    content: "";
+    position: absolute;
+    inset: -160px; /* > 2 × the largest blur: a blur fades its own edges to transparent */
+    z-index: -2;
+    pointer-events: none;
+    background: var(--cf-side) var(--cf-wall, none) center / cover no-repeat;
+    filter: var(--cf-card-blur);
+  }
+  ${MAIN}::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(var(--cf-card-dim), var(--cf-card-dim)), var(--cf-card-tint);
+  }
+  ${MAIN} header { background: transparent !important; border-bottom-color: transparent !important; }
+  /* The right panel is a shelf overlaying the pane: heavy frost so the chat stays legible behind it. */
+  ${R} [data-testid="secondary-panel-shelf"] {
+    --sidebar: transparent;
+    --background: transparent;
+    background: color-mix(in oklab, var(--cf-side) 72%, transparent) !important;
+    -webkit-backdrop-filter: blur(40px) saturate(140%);
+    backdrop-filter: blur(40px) saturate(140%);
+    border-left-color: transparent !important;
+  }
+  /* Touch: the compact nav rows match bb's own touch row height. */
+  @media (pointer: coarse) {
+    ${R} [data-cf-nav] > button { height: 2.25rem; font-size: 0.875rem; }
+  }
+${cardInterior(MAIN)}}
+`;
+
+/**
+ * Everything inside the chat pane: floating header with its frost, the composer's frosted
+ * band and pane, glass panels. Shared by the desktop card and the full-screen mobile pane.
+ */
+function cardInterior(scope: string): string {
+  return `
+  /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
+  ${scope} { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); --surface-scrim: transparent; }
+  ${scope} header { border-bottom-color: transparent !important; }
 
   /* Chat scroll edges: text fades out under the header and frosts away behind the composer,
      instead of stopping at a hard line or showing through the clear composer footer. */
   /* The page header floats over its scroll area instead of sitting in a band above it:
      content scrolls up under the title and fades out gradually across the header's
      whole height. bb's own header row height drives the padding and the fade. */
-  :is(${CARD}) :has(> header + * [data-page-scroll-viewport]) { position: relative; }
-  :is(${CARD}) header:has(+ * [data-page-scroll-viewport]) {
+  ${scope} :has(> header + * [data-page-scroll-viewport]) { position: relative; }
+  ${scope} header:has(+ * [data-page-scroll-viewport]) {
     position: absolute !important;
     inset: 0 0 auto 0;
     z-index: 15;
     pointer-events: none;
   }
-  :is(${CARD}) header:has(+ * [data-page-scroll-viewport]) > * { pointer-events: auto; }
+  ${scope} header:has(+ * [data-page-scroll-viewport]) > * { pointer-events: auto; }
   /* The fade is a progressive frost on the header's own layer, never a mask on the scroll
      area: a masked ancestor becomes a backdrop root and the composer could no longer blur. */
-  :is(${CARD}) header:has(+ * [data-page-scroll-viewport])::before {
+  ${scope} header:has(+ * [data-page-scroll-viewport])::before {
     content: "";
     position: absolute;
     inset: 0 0 -24px 0;
@@ -266,12 +327,12 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
     mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
   }
-  :is(${CARD}) header + * [data-page-scroll-viewport] {
+  ${scope} header + * [data-page-scroll-viewport] {
     padding-top: var(--bb-app-chrome-row-height, 3rem);
     scroll-padding-top: var(--bb-app-chrome-row-height, 3rem);
   }
-  :is(${CARD}) [data-scroll-footer] { background: transparent !important; }
-  :is(${CARD}) [data-scroll-footer]::before {
+  ${scope} [data-scroll-footer] { background: transparent !important; }
+  ${scope} [data-scroll-footer]::before {
     content: "";
     position: absolute;
     inset: -28px 0 0 0;
@@ -284,15 +345,15 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
   }
   /* bb's own fade above the composer blends into --background, which is clear here. */
-  :is(${CARD}) [data-overflow-fade] { display: none !important; }
+  ${scope} [data-overflow-fade] { display: none !important; }
 
   /* The composer: its own frosted pane, blurring the chat and wallpaper under it. */
-  :is(${CARD}) form[data-promptbox] {
+  ${scope} form[data-promptbox] {
     background: var(--cf-composer) !important;
     -webkit-backdrop-filter: var(--cf-composer-blur);
     backdrop-filter: var(--cf-composer-blur);
     border-color: var(--cf-edge) !important;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 24px -14px rgb(0 0 0 / 0.5) !important;
   }
-}
 `;
+}

@@ -72,7 +72,7 @@ export function ChatNavigation() {
   );
 
   return (
-    <nav aria-label="BB navigation" className="flex flex-col px-2 py-1">
+    <nav data-cf-nav="" aria-label="BB navigation" className="flex flex-col px-2 py-1">
       <button
         type="button"
         className={rowClass(isHomeActive)}
