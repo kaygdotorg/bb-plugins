@@ -135,17 +135,14 @@ function sideSwipes(): () => void {
     state = "idle";
     if (!phone.matches || e.touches.length !== 1) return;
     const touch = e.touches[0];
-    if (touch.clientX < EDGE || touch.clientX > innerWidth - EDGE) return; // the edges are bb's
     const target = e.target as Element;
     const main = target.closest<HTMLElement>(SHELF);
     if (!main) return;
-    const shelf = main.getAttribute("data-sidebar-shelf") ?? "closed";
-    const panel = main.getAttribute("data-panel-shelf") ?? "closed";
+    // Opening only: closing the open drawer is bb's own swipe (it tracks the finger), see optOut below.
+    if ((main.getAttribute("data-sidebar-shelf") ?? "closed") !== "closed" || (main.getAttribute("data-panel-shelf") ?? "closed") !== "closed") return;
     if (target.closest("[data-app-composer], input, textarea, [contenteditable='true'], [data-persistent-drawer-content]")) return;
-    if (panel !== "closed") return;
-    if (shelf === "open") mode = "close-left";
-    else if (shelf === "closed") { if (scrollsSideways(target, main)) return; mode = null; }
-    else return;
+    if (scrollsSideways(target, main)) return;
+    mode = null;
     pane = main;
     x0 = touch.clientX; y0 = touch.clientY; dx = 0;
     samples = [{ t: performance.now(), x: x0 }];
@@ -231,8 +228,9 @@ function sideSwipes(): () => void {
       window.setTimeout(() => document.documentElement.removeAttribute("data-cf-dragging-right"), open ? 0 : 260);
       return;
     }
-    const wasOpen = m === "close-left";
-    if (open === wasOpen) { release(); return; } // spring back: bb's transition runs from here to its state
+    // Press bb's button only if the drawer isn't already where it should be (its own swipe may have moved it).
+    const isOpen = main.getAttribute("data-sidebar-shelf") === "open";
+    if (open === isOpen) { release(); return; } // nothing to change: bb's transition runs from here
     // Change state with bb's own button; hold the pane where the finger left it until bb's attribute flips.
     const attr = "data-sidebar-shelf";
     const before = main.getAttribute(attr);
@@ -264,8 +262,14 @@ function sideSwipes(): () => void {
     pane = null;
     // A drag is not a tap: swallow a click the browser may still send for this touch (it could land on a
     // sidebar row now under the finger).
-    const swallowClick = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
-    document.addEventListener("click", swallowClick, { capture: true, once: true });
+    // Only real (trusted) clicks: the plugin's own click on bb's button (settle) must go through, or the drawer
+    // never opens and the pane snaps back (it did, 2026-11-15).
+    const swallowClick = (c: Event) => {
+      if (!c.isTrusted) return;
+      c.preventDefault(); c.stopPropagation();
+      document.removeEventListener("click", swallowClick, { capture: true });
+    };
+    document.addEventListener("click", swallowClick, { capture: true });
     window.setTimeout(() => document.removeEventListener("click", swallowClick, { capture: true }), 400);
     settle(main, pos, open, m);
   };
@@ -279,12 +283,47 @@ function sideSwipes(): () => void {
     state = "idle"; pane = null;
   };
 
+  /**
+   * Who owns which swipe. bb has its own sidebar swipe (it opens from the edge and closes from anywhere,
+   * tracking the finger); with both running, one drag opened the drawer twice (bb's, then ours toggling it
+   * shut). So while the drawer is closed, the pane carries bb's opt-out attributes (the ones bb honours for
+   * swipeable rows) and opening is ours, from anywhere; once it is open they come off and closing is bb's.
+   */
+  const optOut = () => {
+    for (const main of document.querySelectorAll<HTMLElement>(SHELF)) {
+      const closed = (main.getAttribute("data-sidebar-shelf") ?? "closed") === "closed" && (main.getAttribute("data-panel-shelf") ?? "closed") === "closed";
+      const want = phone.matches && closed;
+      if (main.hasAttribute("data-no-sidebar-swipe") !== want) {
+        main.toggleAttribute("data-no-sidebar-swipe", want);
+        main.toggleAttribute("data-no-secondary-panel-swipe", want);
+      }
+    }
+  };
+  const shelves = new MutationObserver(optOut);
+  let watchedMain: Element | null = null;
+  const attachShelf = () => {
+    const main = document.querySelector(SHELF);
+    if (main && main !== watchedMain) {
+      shelves.disconnect();
+      shelves.observe(main, { attributes: true, attributeFilter: ["data-sidebar-shelf", "data-panel-shelf"] });
+      watchedMain = main;
+    }
+    optOut();
+  };
+  attachShelf();
+  const shelfTimer = window.setInterval(attachShelf, 2000); // main is re-created on navigation
+  phone.addEventListener("change", optOut);
+
   document.addEventListener("touchstart", onStart, { passive: true });
   document.addEventListener("touchmove", onMove, { passive: true });
   document.addEventListener("touchend", onEnd, { passive: true });
   document.addEventListener("touchcancel", onCancel, { passive: true });
   return () => {
     onCancel();
+    shelves.disconnect();
+    window.clearInterval(shelfTimer);
+    phone.removeEventListener("change", optOut);
+    for (const main of document.querySelectorAll(SHELF)) { main.removeAttribute("data-no-sidebar-swipe"); main.removeAttribute("data-no-secondary-panel-swipe"); }
     document.removeEventListener("touchstart", onStart);
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
@@ -442,7 +481,19 @@ function keyboardButton(): () => void {
   const onFocusOut = () => setTimeout(update, 0);
   document.addEventListener("focusin", update);
   document.addEventListener("focusout", onFocusOut);
+  // bb re-renders the composer's button row as you type (send replaces the idle buttons), which drops the
+  // button: put it back after each re-render while the field has focus (one check per frame at most; edits
+  // inside the text itself are ignored).
+  let pending = 0;
+  const rows = new MutationObserver((records) => {
+    if (!marked || button.isConnected || pending) return;
+    if (!records.some((r) => !(r.target as Element).closest?.('[contenteditable="true"]'))) return;
+    pending = requestAnimationFrame(() => { pending = 0; update(); });
+  });
+  rows.observe(document.body, { childList: true, subtree: true });
   return () => {
+    rows.disconnect();
+    cancelAnimationFrame(pending);
     document.removeEventListener("focusin", update);
     document.removeEventListener("focusout", onFocusOut);
     button.remove();

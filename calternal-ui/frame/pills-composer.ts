@@ -100,7 +100,11 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     --cf-cp: ${s(36)};
     --cf-ci: ${s(18)};
     --cf-cinset: ${s(8)};
+    /* The merged toolbar (status, permission, branch) matches the pills beside it: 36 tall, 18pt icons
+       (it kept the 44pt toolbar size, kayg: "icons inconsistent in sizing"). */
+    --cf-tb-c: ${s(36)};
   }
+  ${TOOL} { --cf-seg-w: ${s(40)}; }
   /* One radius for both states: at 52pt tall, 26pt IS the capsule, so the corners never jump mid-morph. */
   ${C} form[data-promptbox] { border-radius: ${s(26)} !important; }
   ${C} [contenteditable="true"] { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
