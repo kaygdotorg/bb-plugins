@@ -16,7 +16,8 @@ import { GLASS_LAYER, SEGMENT, s } from "./pills";
 
 const ROW = `${R} main header [data-testid="app-page-header-content-row"]`;
 const TOGGLE = `${R} [data-testid="app-sidebar-trigger-overlay"]`;
-const TOOLBAR = `div:has(> [data-thread-header-pane-actions])`;
+/** marks.ts stamps these (non-subject :has() is costly: see marks.ts). */
+const TOOLBAR = `div[data-cf-pane-tools]`;
 const ACTIONS = `button[aria-label="Thread actions"]`;
 
 export const PILL_PHONE_CSS = `
@@ -61,7 +62,7 @@ ${GLASS_LAYER}}
   /* While the drawer is open the toggle is pointless (a swipe closes it): like Claude's iOS app, the
      drawer's top row is the wordmark at the 20px inset (brand.ts) and the back/forward toolbar. The
      button stays in the DOM, visually hidden and out of the layout, for assistive tech. */
-  ${R}:has(main[data-sidebar="inset"][data-sidebar-shelf]:not([data-sidebar-shelf="closed"])) ${TOGGLE.replace(R + " ", "")} button {
+  ${R}[data-cf-shelf-open] ${TOGGLE.replace(R + " ", "")} button {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -95,7 +96,7 @@ ${GLASS_LAYER}}
   ${R}.dark ${ROW} > div:first-child > div > div:has(.bb-thread-title) { --cf-pill-alpha: 0.72; }
   ${ROW} > div:first-child > div > div:has(.bb-thread-title)::before {
 ${GLASS_LAYER}}
-  ${ROW} > div:first-child > div > div:has(.bb-thread-title) > p {
+  ${ROW} > div:first-child > div > div[data-cf-title-wrap] > p {
     font-size: ${s(15)};
     font-weight: 620;
     letter-spacing: -0.01em;
@@ -107,8 +108,8 @@ ${GLASS_LAYER}}
      left over ⋯ (one segment, plus the toolbar's gap and padding, both 0 with segments). */
   ${ROW} { --cf-tb-reach: calc(var(--cf-seg-w) + var(--cf-tb-gap) + var(--cf-tb-pad)); }
   ${ROW} > ${TOOLBAR} { margin-left: auto; }
-  ${ROW}:has(${ACTIONS}) > ${TOOLBAR} { padding-left: 0; }
-  ${ROW}:has(${ACTIONS}) > ${TOOLBAR}::before { left: calc(-1 * var(--cf-tb-reach)); }
+  ${ROW}[data-cf-has-actions] > ${TOOLBAR} { padding-left: 0; }
+  ${ROW}[data-cf-has-actions] > ${TOOLBAR}::before { left: calc(-1 * var(--cf-tb-reach)); }
   ${ROW} ${ACTIONS} {
 ${SEGMENT}    z-index: 1;
     margin: 0 var(--cf-tb-gap) 0 auto;
@@ -118,6 +119,6 @@ ${SEGMENT}    z-index: 1;
   ${ROW} ${ACTIONS}::before { content: none; }
   ${ROW} ${ACTIONS} :is(svg, span.size-4) { width: var(--cf-pill-icon); height: var(--cf-pill-icon); }
   /* The thread's actions are the toolbar's first pill: it carries the toolbar's left padding. */
-  ${ROW}:has(${ACTIONS}) > ${TOOLBAR} { margin-left: 0; }
+  ${ROW}[data-cf-has-actions] > ${TOOLBAR} { margin-left: 0; }
 }
 `;

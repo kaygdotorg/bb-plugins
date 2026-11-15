@@ -19,6 +19,7 @@ import { mountPhoneMenu } from "./phone-menu";
 import { mountSidebarTop } from "./sidebar-top";
 import { mountFooterUsage } from "./footer-usage";
 import { mountPerfProbe } from "./perf-probe";
+import { mountMarks } from "./marks";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -36,6 +37,7 @@ export function mountFrame(): () => void {
   root.setAttribute(ROOT_ATTR, "");
   // Before the cached prefs: they choose the clock format the wrapped formatters use.
   const uninstallClock = installClock();
+  const unmountMarks = mountMarks(); // before any CSS that selects on its marks paints
   applyCachedWallpaper();
   applyCachedPrefs();
   applyCachedAccent();
@@ -52,6 +54,7 @@ export function mountFrame(): () => void {
 
   return () => {
     uninstallClock();
+    unmountMarks();
     unmountBrand();
     unmountInputMode();
     unmountPhoneMenu();

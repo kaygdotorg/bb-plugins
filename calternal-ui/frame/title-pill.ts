@@ -115,7 +115,7 @@ ${GLASS_LAYER}}
   }
   ${PILL} button[aria-label="Thread actions"] :is(svg, span.size-4) { display: none; }
   /* While renaming, the editor takes the pointer. */
-  ${PILL}:has(${EDITOR}) button[aria-label="Thread actions"] { pointer-events: none; }
+  ${PILL}[data-cf-renaming] button[aria-label="Thread actions"] { pointer-events: none; } /* marks.ts */
 
   /* ── Inline rename (bb's editor, restyled to sit exactly where the title was). */
   ${PILL}:has(${EDITOR}) { user-select: auto; cursor: text; }

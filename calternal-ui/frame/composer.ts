@@ -94,8 +94,38 @@ export function mountComposer(): () => void {
     // "collapsed" for us means the expanded-only controls (the model button) are gone.
     const modelShown = !!model && model.getBoundingClientRect().width > 0;
     const collapsed = form.hasAttribute("data-promptbox-collapsed") && !modelShown;
-    composer.toggleAttribute("data-cf-collapsed", collapsed);
 
+    // ── Reads first, writes after: a write followed by a layout read forces a second layout, and
+    // this pass runs on every frame of a resize (the sidebar slide resizes the composer): with the
+    // reads interleaved it cost ~9ms a call (desktop trace, 2026-11-15).
+    const modelBox = model?.getBoundingClientRect();
+    let geo: { x: number; y: number; free: number | null; need: number; shown: boolean; chipRoom: number; gap: number } | null = null;
+    if (footer && !collapsed && modelBox && modelBox.width > 0) {
+      const base = followUp.getBoundingClientRect();
+      // The footer is a toolbar capsule (pills-composer.ts): it starts one pill gap after the
+      // model pill (the gap the left group already uses, so + → model → toolbar are equal), and
+      // its centre line is the model pill's, so everything shares one line.
+      const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
+      // Never over the right-hand buttons (the mic): cap the width to the free space.
+      const right = row.lastElementChild?.getBoundingClientRect();
+      // Everything in the row gets its own space. The phone's attachment chip (attachments.ts)
+      // sits after the toolbar (the model pill's end margin makes the toolbar's room); when the
+      // toolbar does not fit whole beside it, the toolbar steps aside (as it does while the
+      // keyboard is up) instead of being clipped or drawn over the chip.
+      const chip = row.querySelector<HTMLElement>("[data-cf-attach-chip]");
+      geo = {
+        x: modelBox.right + gap - base.left,
+        y: modelBox.top + modelBox.height / 2 - base.top,
+        free: right ? Math.max(0, right.left - modelBox.right - 2 * gap) : null,
+        need: footer.scrollWidth, // its natural width (it clips to --cf-foot-w)
+        shown: getComputedStyle(footer).display !== "none",
+        chipRoom: chip && chip.offsetWidth > 0 ? chip.offsetWidth + gap : 0,
+        gap,
+      };
+    }
+
+    // ── Writes.
+    composer.toggleAttribute("data-cf-collapsed", collapsed);
     // Collapsed composers render neither the footer nor the model button.
     if (footer) labelControls(footer);
     if (model) {
@@ -117,31 +147,16 @@ export function mountComposer(): () => void {
     const recording = voice.update(composer);
 
     // Expanded: pin the footer into the bottom row, after the model button.
-    const modelBox = model?.getBoundingClientRect();
-    if (footer && !collapsed && !recording && modelBox && modelBox.width > 0) {
-      const base = followUp.getBoundingClientRect();
-      // The footer is a toolbar capsule (pills-composer.ts): it starts one pill gap after the
-      // model pill (the gap the left group already uses, so + → model → toolbar are equal), and
-      // its centre line is the model pill's, so everything shares one line.
+    if (footer && geo && !recording) {
       const px = (n: number) => `${n.toFixed(1)}px`;
-      const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
-      setVar(followUp, "--cf-foot-x", px(modelBox.right + gap - base.left));
-      setVar(followUp, "--cf-foot-y", px(modelBox.top + modelBox.height / 2 - base.top));
-      // Never over the right-hand buttons (the mic): cap the width to the free space.
-      const right = row.lastElementChild?.getBoundingClientRect();
-      const free = right ? Math.max(0, right.left - modelBox.right - 2 * gap) : Infinity;
-      if (right) setVar(followUp, "--cf-foot-w", px(free));
-      // Everything in the row gets its own space. The phone's attachment chip (attachments.ts)
-      // sits after the toolbar (the model pill's end margin makes the toolbar's room); when the
-      // toolbar does not fit whole beside it, the toolbar steps aside (as it does while the
-      // keyboard is up) instead of being clipped or drawn over the chip.
-      const chip = row.querySelector<HTMLElement>("[data-cf-attach-chip]");
-      const chipRoom = chip && chip.offsetWidth > 0 ? chip.offsetWidth + gap : 0;
-      const need = footer.scrollWidth; // its natural width (it clips to --cf-foot-w)
-      const shown = getComputedStyle(footer).display !== "none" && need > 0;
-      const fits = need <= free - chipRoom + 0.5;
+      setVar(followUp, "--cf-foot-x", px(geo.x));
+      setVar(followUp, "--cf-foot-y", px(geo.y));
+      const free = geo.free ?? Infinity;
+      if (geo.free !== null) setVar(followUp, "--cf-foot-w", px(geo.free));
+      const shown = geo.shown && geo.need > 0;
+      const fits = geo.need <= free - geo.chipRoom + 0.5;
       composer.toggleAttribute("data-cf-foot-off", shown && !fits);
-      setVar(followUp, "--cf-foot-room", px(shown && fits ? need + gap : 0));
+      setVar(followUp, "--cf-foot-room", px(shown && fits ? geo.need + geo.gap : 0));
       composer.toggleAttribute("data-cf-merged", true);
       resize.observe(row);
       resize.observe(model!); // its width changes with the keyboard (phones) and the model name

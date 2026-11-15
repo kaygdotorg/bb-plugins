@@ -13,7 +13,8 @@ export const GROUP = `${MAIN} [data-panel-group]:not([data-panel] [data-panel-gr
 export const CARD_PANEL = `${GROUP} > [data-panel]:not([data-panel] ~ [data-panel])`;
 export const SIDE_PANEL = `${GROUP} > [data-panel] ~ [data-panel]`;
 /** Pages without a panel group (Settings, Skills): their content shell is the card. */
-export const PLAIN_MAIN = `${MAIN}:not(:has([data-panel-group]))`;
+/** marks.ts stamps it (a non-subject :has() here made every bb state change restyle the whole app). */
+export const PLAIN_MAIN = `${MAIN}[data-cf-plain]`;
 export const CARD_FALLBACK = `${PLAIN_MAIN} > [data-app-content-shell]`;
 export const SIDEBAR = `${SHELL} [data-sidebar="sidebar"]`;
 /** Surfaces that have no fill of their own: they show the window backdrop. */

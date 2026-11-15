@@ -114,7 +114,7 @@ ${R}.dark {
 
 /* ── The card's top-right toolbar: bb's header actions (open in app ▾, right panel) as one
    glass toolbar. Their wrappers are flattened so every button is a pill of the toolbar. */
-${R} main header div:has(> [data-thread-header-pane-actions]) {
+${R} main header div[data-cf-pane-tools] {
   position: relative;
   isolation: isolate;
   height: var(--cf-tb);
@@ -122,9 +122,9 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) {
   gap: var(--cf-tb-gap);
   border-radius: 999px;
 }
-${R} main header div:has(> [data-thread-header-pane-actions])::before {
+${R} main header div[data-cf-pane-tools]::before {
 ${GLASS_LAYER}}
-${R} main header div:has(> [data-thread-header-pane-actions]) :is([data-thread-header-workflow-actions], [data-thread-header-pane-actions], [data-thread-header-responsive-action], [data-thread-header-responsive-action] *:not(button):not(button *)) {
+${R} main header div[data-cf-pane-tools] :is([data-thread-header-workflow-actions], [data-thread-header-pane-actions], [data-thread-header-responsive-action], [data-thread-header-responsive-action] *:not(button):not(button *)) {
   display: contents;
 }
 
@@ -138,13 +138,13 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) :is([data-thread-h
 }
 
 /* ── A toolbar item: a segment (SEGMENT). One with words grows to fit them. */
-${R} main header div:has(> [data-thread-header-pane-actions]) button {
+${R} main header div[data-cf-pane-tools] button {
 ${SEGMENT}  margin: 0 !important;
   background-color: transparent;
   box-shadow: none !important;
   color: var(--foreground);
 }
-${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:has(> svg:only-child), :has(> span.size-4:only-child)) {
+${R} main header div[data-cf-pane-tools] button:not(:has(> svg:only-child), :has(> span.size-4:only-child)) {
   width: auto;
   padding: 0 0.625rem;
 }
@@ -169,19 +169,19 @@ ${GLASS_LAYER}  }
 }
 
 /* ── Every toolbar pill: one icon size, the hover tint, the press. (⋯ on phones: below.) */
-${R} main header div:has(> [data-thread-header-pane-actions]) button :is(svg, span.size-4) {
+${R} main header div[data-cf-pane-tools] button :is(svg, span.size-4) {
   width: var(--cf-pill-icon);
   height: var(--cf-pill-icon);
 }
-${R} main header div:has(> [data-thread-header-pane-actions]) button {
+${R} main header div[data-cf-pane-tools] button {
   transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease;
 }
 @media (hover: hover) {
-  ${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):hover {
+  ${R} main header div[data-cf-pane-tools] button:not(:disabled):hover {
     background-color: var(--cf-pill-hover);
   }
 }
-${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):active {
+${R} main header div[data-cf-pane-tools] button:not(:disabled):active {
   scale: 0.97;
   background-color: var(--cf-pill-hover);
 }
@@ -190,6 +190,6 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabl
   ${R} main header button[aria-label="Thread actions"]:not(:disabled):active { scale: 0.97; }
 }
 @media (prefers-reduced-motion: reduce) {
-  ${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]) { transition: none; }
+  ${R} main header :is(div[data-cf-pane-tools] button, button[aria-label="Thread actions"]) { transition: none; }
 }
 `;

@@ -612,6 +612,15 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
 
   /* Only while collapsed (expanded, it lines up with the sidebar's own row): bb pins its toggle to the window's top-left for a card
      that starts at (0,0). Ours floats one gap (+1px border) in, so the toggle follows. */
+  /* The sidebar's slide: bb's 200ms LINEAR curve felt mechanical ("laggy"). Emil Kowalski's strong ease-out
+     instead: the motion starts at once and settles softly. Both moving parts take it, so the card's edge
+     stays on the sidebar's: the fixed sidebar itself and the gap element that pushes the card.
+     sidebar-top.ts copies this timing for the toggle. Keyboard toggles are instant (input-mode.ts). */
+  ${R} [data-side][data-variant] > :is([data-sidebar="gap"], .fixed) {
+    transition-duration: 220ms !important;
+    transition-timing-function: var(--cf-ease-out) !important;
+  }
+
   /* (The overlay's shift is sidebar-top.ts's --cf-toggle-dx, so it slides; it sets the attribute
      below, which replaces a root :has() that re-checked the whole document on every data-state change.) */
   ${R}[data-cf-sb-collapsed] [data-testid="app-desktop-sidebar-trigger"] {
@@ -856,7 +865,9 @@ function cardInterior(scope: string): string {
      trailing margins go and the row gets its own 0.5rem: 12px every time, like your bubbles. */
   ${scope} [data-timeline-row-id] .max-w-none > :last-child,
   ${scope} [data-timeline-row-id] .max-w-none > :last-child > li:last-child { margin-bottom: 0; }
-  ${scope} [data-timeline-row-id] div:has(> .max-w-none) + .relative.w-full { margin-top: 0.5rem; }
+  /* Subject form (the content div itself, when the actions row follows it): a sibling-combinator :has() before
+     the styled element would be non-subject (see marks.ts). */
+  ${scope} [data-timeline-row-id] div:has(> .max-w-none):has(+ .relative.w-full) { margin-bottom: 0.5rem; }
   /* Light mode: the header's icon buttons are bb's grey at 75%, too faint on the light card. */
   ${scope}:where(html:not(.dark) *) header button { color: color-mix(in oklab, var(--foreground) 82%, transparent); }
   /* Finished tool rows ("Ran 3 commands"): bb shows them in its subtle colour at 40% opacity,
@@ -877,17 +888,17 @@ function cardInterior(scope: string): string {
      content scrolls up under the title and fades out gradually across the header's
      whole height. bb's own header row height drives the padding and the fade. */
   ${scope} :has(> header + * [data-page-scroll-viewport]) { position: relative; }
-  ${scope} header:has(+ * [data-page-scroll-viewport]) {
+  ${scope} header[data-cf-scroll-header] {
     position: absolute !important;
     inset: 0 0 auto 0;
     z-index: 15;
     pointer-events: none;
   }
-  ${scope} header:has(+ * [data-page-scroll-viewport]) > * { pointer-events: auto; }
+  ${scope} header[data-cf-scroll-header] > * { pointer-events: auto; }
   /* Text sliding under the title fades out behind a short plain colour gradient, only as
      tall as the title row. No blur: a masked backdrop blur rendered as a frosted block with a
      hard edge in some Chromium builds. */
-  ${scope} header:has(+ * [data-page-scroll-viewport])::before {
+  ${scope} header[data-cf-scroll-header]::before {
     content: "";
     position: absolute;
     inset: 0 0 -0.75rem 0;
