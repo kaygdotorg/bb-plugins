@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   experimental_Icon as Icon,
   experimental_SidebarNavigationIcon as SidebarNavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
 } from "@get-bb/plugin-sdk/app";
+import { FOOTER_ITEMS, publishNavActions } from "./nav-actions";
 
 /** Compact single-column navigation above bb's thread list: 24px rows. */
 type NavItem = ReturnType<typeof useSidebarNavigation>["items"][number];
@@ -58,8 +59,14 @@ export function ChatNavigation() {
   const { items, activeItemId, isHomeActive, isShortcutModifierHeld, actions } =
     useSidebarNavigation();
   const [moreOpen, setMoreOpen] = useState(false);
-  const visibleItems = items.filter((item) => item.isVisible);
-  const hiddenItems = items.filter((item) => !item.isVisible);
+  // New thread and Search live in the sidebar footer (+ and search icons), not here.
+  const navItems = items.filter((item) => !FOOTER_ITEMS.has(item.id));
+  const visibleItems = navItems.filter((item) => item.isVisible);
+  const hiddenItems = navItems.filter((item) => !item.isVisible);
+  useEffect(() => {
+    publishNavActions(actions);
+    return () => publishNavActions(null);
+  }, [actions]);
   const activate = (id: string) => actions.activate(id, { target: "current" });
   const renderItem = (item: NavItem) => (
     <RowItem

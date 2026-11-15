@@ -22,7 +22,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
 | `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `assets` (storage list and removal) |
 | `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color`; behaviour: `composer`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
-| `ui/` | React: `overlay` (sync), `nav`, `settings/` |
+| `ui/` | React: `overlay` (sync), `nav` + `nav-actions` (footer + and search), `settings/` |
 
 ## Rules learned the hard way
 
@@ -59,6 +59,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Voice input (`frame/voice.ts`, driven by the composer pass):** while bb records, the composer gets `data-cf-voice` and the merged icon row hides (it used to cover the waveform). The waveform's box is an accent pill with an elapsed clock; bb paints the bars in the canvas's CSS colour. The failed-recording card is a faint tint, not bb's grey slab. To test headless, replace `navigator.mediaDevices.getUserMedia` with an oscillator stream (`evaluateOnNewDocument`).
 - **Tooltips skip triggers whose menu is open** (`aria-expanded="true"` or `data-state="open"`). A warm tooltip opens on the next frame; a press in that frame cancels it, or it pops up over the menu the press opened.
 - **Spacing is optical, not box-based.** In compact `gap-1` buttons a leading icon gets +2px and a trailing chevron −2px, so icon → text, text → text and text → chevron all read about 6px.
+- **Sidebar defaults:** New thread and Search threads are not in the nav (`ui/nav.tsx` filters bb's ids `__bb__/new-thread`, `__bb__/search-threads`). They are footer actions instead (`app.tsx`), running the same nav actions through `ui/nav-actions.ts`. The footer row reads `usage ···· + search settings …`. `css.ts` only sets `order` on bb's `li[data-footer-item]`, so bb's overflow menu keeps working.
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear. So do lists nested in a menu, picker or dialog (no second glass layer). Modal dialogs (the desktop search palette) get the same glass; phone sheets keep theirs.
 - **Outside the card, bb's light surfaces are opaque white.** Audit light mode separately: the strip above the composer (`section.bg-surface-raised-solid`) uses the composer glass, mention pills get a faint tint (bb also paints them with a gradient), and amber text uses `--cf-warn-ink`, darker in light mode.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.

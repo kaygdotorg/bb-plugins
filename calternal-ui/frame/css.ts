@@ -175,6 +175,15 @@ ${R} button.gap-1 > [data-icon-root]:first-child:not(:only-child),
 ${R} button.gap-1 > .contents > :has(> [data-provider-logo]):first-child { margin-inline-end: 0.125rem; }
 ${R} button.gap-1 > [data-icon="ChevronDown"]:last-child:not(:first-child) { margin-inline-start: -0.125rem; }
 
+/* Sidebar footer: [usage] ···· [+] [search] [settings] […]. bb renders each item as an
+   li[data-footer-item] in one flex row; only their order changes here, so bb's own overflow
+   logic still works. The usage item (cliproxy-usage plugin) takes the free space's margin. */
+${R} [data-sidebar="footer"] li[data-footer-item^="plugin:cliproxy-usage/"] { order: 0; margin-inline-end: auto; }
+${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/new-thread"] { order: 1; }
+${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/search"] { order: 2; }
+${R} [data-sidebar="footer"] li[data-footer-item="builtin:settings"] { order: 3; }
+${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]) { order: 4; }
+
 /* Strips stacked above the composer (bb's git status, plugin notices) are solid panels in
    bb; here they share the composer's glass. Text only, so a plain backdrop-filter is fine. */
 ${R} [data-app-composer] section.bg-surface-raised-solid {
