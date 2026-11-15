@@ -702,7 +702,7 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${R} [data-cf-attach-chip][aria-expanded="true"] { color: var(--cf-accent); border-color: color-mix(in oklab, var(--cf-accent) 45%, transparent); }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
-    ${R} [data-cf-nav] > button { height: 2.25rem; font-size: 0.875rem; }
+    ${R} [data-cf-nav] > button { height: 2.25rem; } /* text size: text-sm, like bb's thread rows */
   }
 ${cardInterior(MAIN)}}
 `;
