@@ -256,6 +256,49 @@ ${R} [data-cf-model-chip] {
 }
 ${R} [data-cf-model-chip] > * { width: 1rem; height: 1rem; }
 
+/* Voice input (frame/voice.ts). While bb records, the merged icon row steps aside (it was
+   drawn over the waveform), and the waveform becomes an accent-tinted pill that grows out
+   of the mic's side, with an elapsed clock at its end. bb paints the bars in the canvas's
+   CSS colour. */
+${R} [data-app-composer][data-cf-voice] [data-follow-up-composer-footer] { display: none !important; }
+${R} [data-cf-voice-pill] {
+  height: 2rem;
+  gap: 0.5rem;
+  padding-inline: 0.875rem 0.75rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--cf-accent) 18%, transparent);
+  color: color-mix(in oklab, var(--cf-accent) 55%, var(--foreground));
+  transform-origin: right center;
+  animation: cf-voice-pill-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+${R} [data-cf-voice-pill] canvas { color: inherit; }
+${R} [data-cf-voice-pill] > :first-child { min-width: 0; flex: 1; height: 1.25rem; } /* bars keep clear of the pill edge */
+${R} [data-cf-voice-clock] {
+  flex: none;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--cf-accent) 45%, var(--foreground));
+}
+${R} [data-app-composer][data-cf-voice="transcribing"] [data-cf-voice-pill] { background: color-mix(in oklab, var(--cf-accent) 10%, transparent); }
+${R} [data-app-composer][data-cf-voice="transcribing"] [data-cf-voice-clock] { opacity: 0.6; }
+@keyframes cf-voice-pill-in {
+  from { transform: scaleX(0.15); opacity: 0; }
+  60% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  ${R} [data-cf-voice-pill] { animation: none; }
+}
+/* A failed recording: bb draws a solid grey slab with a grey Retry. Here it's a faint tint
+   on the glass, with Retry in the accent like other primary-ish actions. */
+${R} [data-promptbox-failed-voice-recordings] > [role="group"] {
+  background: color-mix(in oklab, var(--foreground) 6%, transparent) !important;
+  border-radius: var(--cf-radius);
+}
+${R} [data-promptbox-failed-voice-recordings] button.bg-secondary {
+  background: color-mix(in oklab, var(--cf-accent) 22%, transparent) !important;
+  color: var(--foreground);
+}
+
 /* Keyboard-down button in the composer's submit group (frame/touch.ts): only while the keyboard is up. */
 ${R} [data-cf-kb] { display: none; }
 ${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }

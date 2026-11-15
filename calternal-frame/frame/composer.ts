@@ -14,10 +14,14 @@
  * bb renders no footer and no model button then, so the model icon is remembered from the
  * expanded composer (localStorage); tapping it expands the composer and opens bb's picker.
  */
+import { createVoicePill } from "./voice";
+
 const COMPOSER = '[data-app-composer][data-app-composer-role="primary"]';
 const FOOTER = "[data-follow-up-composer-footer]";
 const ROW = "[data-promptbox-action-row]";
-const MODEL = 'button[aria-label^="Provider, model"]';
+// Never the chip we add for the one-line composer (it must not count as bb's button, or
+// collapsed/expanded flips every frame and the icon flickers).
+const MODEL = 'button[aria-label^="Provider, model"]:not([data-cf-model-chip])';
 const NEW_THREAD = 'button[aria-label="New thread in this environment"]';
 
 /** Maps bb's permission-mode title to one of four icons (css.ts). */
@@ -31,6 +35,7 @@ function permissionKind(title: string): "full" | "edit" | "plan" | "ask" {
 const MODEL_CACHE = "cf-composer-model";
 
 export function mountComposer(): () => void {
+  const voice = createVoicePill();
   // The last model seen, so the collapsed line can show its icon before the picker exists.
   let lastModel: { icon: string; label: string } = { icon: "", label: "Model" };
   try { lastModel = { ...lastModel, ...JSON.parse(localStorage.getItem(MODEL_CACHE) ?? "{}") }; } catch { /* none yet */ }
@@ -85,7 +90,10 @@ export function mountComposer(): () => void {
       const seen = {
         // bb draws the provider logo as a masked span, not an svg.
         icon: model.querySelector("[data-provider-logo]")?.parentElement?.outerHTML ?? lastModel.icon,
-        label: model.getAttribute("aria-label")?.replace(/\s*\(.*\)$/, "") ?? lastModel.label,
+        // "Claude Code: Opus 5.5 · Medium reasoning" (bb's title), else its generic label.
+        label: model.querySelector("[title]")?.getAttribute("title")
+          ?? model.querySelector("[data-cf-title]")?.getAttribute("data-cf-title")
+          ?? lastModel.label,
       };
       if (seen.icon !== lastModel.icon || seen.label !== lastModel.label) {
         lastModel = seen;
@@ -93,9 +101,12 @@ export function mountComposer(): () => void {
       }
     }
 
+    // While bb records voice its row is the recording bar: the merged icons step aside.
+    const recording = voice.update(composer);
+
     // Expanded: pin the footer into the bottom row, after the model button.
     const modelBox = model?.getBoundingClientRect();
-    if (footer && !collapsed && modelBox && modelBox.width > 0) {
+    if (footer && !collapsed && !recording && modelBox && modelBox.width > 0) {
       const base = followUp.getBoundingClientRect();
       // Every icon here is a 2rem box with its glyph centred, so glyph-to-glyph gaps equal the
       // + → model gap (1rem). The model button's right edge is its chevron's visual end plus
@@ -201,6 +212,7 @@ export function mountComposer(): () => void {
     mutations.disconnect();
     resize.disconnect();
     modelChip.remove();
+    voice.dispose();
     document.querySelectorAll("[data-cf-merged], [data-cf-collapsed]").forEach((el) => {
       el.removeAttribute("data-cf-merged");
       el.removeAttribute("data-cf-collapsed");
