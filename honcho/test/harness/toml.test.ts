@@ -3,6 +3,7 @@ import { codexEventLabel, codexHookKey, codexTrustHash } from "../../lib/harness
 import { hasHonchoMcp, readHookStates, rekeyHookStates, setHookTrust, stripBlock, stripHonchoMcp } from "../../lib/harness/toml";
 import { render } from "./gen-assets.mjs";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const FENCED = [
   'model = "x"',
@@ -88,13 +89,24 @@ describe("hooks.state edits", () => {
 });
 
 describe("codex hook trust hash", () => {
-  // A vector from a real codex 0.169 config.toml: the hash it stored when the user
-  // trusted codex-honcho's UserPromptSubmit hook. Not a secret: a hash of a public command.
-  it("reproduces codex's stored trusted_hash", () => {
-    const hash = codexTrustHash({ event: "UserPromptSubmit", handler: { type: "command", command: 'node "/home/kayg/.codex/honcho/codex-honcho.mjs" prompt', timeout: 20 } });
-    expect(hash).toBe("sha256:" + "225436d37a5a0e3180efbfec224e6debe599a1217de2ae027c7d4e06d6b5f7b7");
-    const withMatcher = codexTrustHash({ event: "SessionStart", matcher: "startup|resume|clear|compact", handler: { type: "command", command: 'node "/home/kayg/.codex/honcho/codex-honcho.mjs" recall', timeout: 30, statusMessage: "honcho" } });
-    expect(withMatcher).toBe("sha256:" + "8b95bb06b04fa4bbcd97203a53754a7bec7ec27b54a9c2a2ea0f0027bc71b290");
+  // codex stores sha256 over the key-sorted compact JSON of the normalized hook
+  // identity. The algorithm was checked once against a real codex 0.169
+  // config.toml; the vectors here are synthetic, with the canonical JSON written
+  // out by hand, so no digest of a real user's hook config lives in this repo.
+  const sha = (canonical: string) => "sha256:" + createHash("sha256").update(canonical).digest("hex");
+
+  it("hashes the key-sorted normalized identity, with async always false", () => {
+    const command = 'node "/home/user/.codex/example/hook.mjs" prompt';
+    expect(codexTrustHash({ event: "UserPromptSubmit", handler: { type: "command", command, timeout: 20 } }))
+      .toBe(sha(`{"event_name":"user_prompt_submit","hooks":[{"async":false,"command":${JSON.stringify(command)},"timeout":20,"type":"command"}]}`));
+    expect(codexTrustHash({ event: "Stop", handler: { type: "command", command: "true", timeout: 5 } }))
+      .toBe(sha('{"event_name":"stop","hooks":[{"async":false,"command":"true","timeout":5,"type":"command"}]}'));
+  });
+
+  it("includes the matcher and statusMessage when set", () => {
+    const command = 'node "/home/user/.codex/example/hook.mjs" recall';
+    expect(codexTrustHash({ event: "SessionStart", matcher: "startup|resume", handler: { type: "command", command, timeout: 30, statusMessage: "example" } }))
+      .toBe(sha(`{"event_name":"session_start","hooks":[{"async":false,"command":${JSON.stringify(command)},"statusMessage":"example","timeout":30,"type":"command"}],"matcher":"startup|resume"}`));
   });
 
   it("builds codex's state keys", () => {
