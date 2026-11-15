@@ -59,8 +59,9 @@ export async function mockHoncho() {
     const page = (rows: Row[]) => {
       if (url.searchParams.get("reverse") === "true") rows = [...rows].reverse();
       const size = Number(url.searchParams.get("size") ?? 50);
-      const offset = url.searchParams.has("cursor") ? Number(url.searchParams.get("cursor") || 0) : (Number(url.searchParams.get("page") ?? 1) - 1) * size;
-      send(200, { items: rows.slice(offset, offset + size), total: rows.length, next_page: offset + size < rows.length ? String(offset + size) : null });
+      const current = Number(url.searchParams.get("page") ?? 1);
+      // The real v3 page shape: no cursors, callers loop while page < pages.
+      send(200, { items: rows.slice((current - 1) * size, current * size), total: rows.length, page: current, size, pages: Math.ceil(rows.length / size) });
     };
     if (req.method === "POST" && parts.length === 2) { getCreate(workspaces, body.id); return; }
     const key = `${workspace}/${resourceId}`;

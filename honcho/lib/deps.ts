@@ -39,9 +39,10 @@ export function createDeps(bb: Pick<BbPluginApi, "settings" | "storage">, option
   let loading: Promise<NonNullable<typeof cached>> | undefined;
   let outbox: Outbox | undefined;
   let client: { key: string; value: HonchoClient } | undefined;
-  settings.onChange(() => { version++; cached = undefined; client = undefined; });
+  settings.onChange(() => { version++; cached = undefined; client = undefined; loading = undefined; });
 
   async function load(): Promise<NonNullable<typeof cached>> {
+    const startedVersion = version;
     const signature = await configSignature(path);
     const values = await settings.get().catch(() => ({} as Awaited<ReturnType<typeof settings.get>>));
     const preset = values.preset;
@@ -60,14 +61,14 @@ export function createDeps(bb: Pick<BbPluginApi, "settings" | "storage">, option
       result = await readConfig(overrides, path);
     } catch { throw new HonchoError("validation"); }
     const cloud = preset === "cloud" || (preset === undefined && new URL(result.config.baseUrl).hostname === new URL(CLOUD_URL).hostname);
-    return { at: now(), signature, version, result, cloud };
+    return { at: now(), signature, version: startedVersion, result, cloud };
   }
   async function current(): Promise<NonNullable<typeof cached>> {
     // Re-read after the TTL, or earlier when the file or a bb setting changed.
     if (cached && cached.version === version && now() - cached.at < CONFIG_CACHE_MS && cached.signature === await configSignature(path)) return cached;
     const startedVersion = version;
-    loading ??= load().finally(() => { loading = undefined; });
-    const fresh = await loading;
+    const pending: Promise<NonNullable<typeof cached>> = loading ??= load().finally(() => { if (loading === pending) loading = undefined; });
+    const fresh = await pending;
     if (fresh.version === startedVersion && version === startedVersion) cached = fresh;
     return fresh;
   }

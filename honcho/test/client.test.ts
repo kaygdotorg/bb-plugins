@@ -18,13 +18,21 @@ describe("v3 REST client", () => {
   it("sends message config, timestamps, metadata filters and pagination verbatim", async () => {
     const messages = await client.createMessages("thread", [draft, { ...draft, metadata: { bb_seq: 2, bb_thread: "thread" } }]);
     expect(messages[0]).toMatchObject(draft);
-    const page = await client.listMessages("thread", { bb_thread: "thread" }, { size: 1, cursor: "" });
-    expect(page.items).toHaveLength(1); expect(page.next_page).toBe("1");
-    const next = await client.listMessages("thread", { bb_thread: "thread" }, { size: 1, cursor: page.next_page! }); expect(next.items[0].metadata?.bb_seq).toBe(2);
+    const page = await client.listMessages("thread", { bb_thread: "thread" }, { size: 1, page: 1 });
+    expect(page.items).toHaveLength(1); expect(page).toMatchObject({ page: 1, pages: 2, total: 2 });
+    const next = await client.listMessages("thread", { bb_thread: "thread" }, { size: 1, page: 2 }); expect(next.items[0].metadata?.bb_seq).toBe(2);
     expect((await client.listMessages("thread", { bb_seq: 99 })).items).toEqual([]);
-    expect(mock.requests[1]).toEqual({ method: "POST", path: "/v3/workspaces/test/sessions/thread/messages/list", query: { size: "1", cursor: "" }, body: { filters: { metadata: { bb_thread: "thread" } } } });
+    expect(mock.requests[1]).toEqual({ method: "POST", path: "/v3/workspaces/test/sessions/thread/messages/list", query: { size: "1", page: "1" }, body: { filters: { metadata: { bb_thread: "thread" } } } });
   });
-  it("filters messages by bb_seq ranges and follows cursors", async () => {
+  it("lists every message across pages, not just the first 100", async () => {
+    for (let start = 0; start < 250; start += 100) {
+      await client.createMessages("big", Array.from({ length: Math.min(100, 250 - start) }, (_, i) => ({ ...draft, content: `m${start + i}`, metadata: { bb_seq: start + i } })));
+    }
+    const all = await client.listAllMessages("big");
+    expect(all).toHaveLength(250); expect(all[249]!.content).toBe("m249");
+    expect(await client.listAllMessages("big", {}, 120)).toHaveLength(120);
+  });
+  it("filters messages by bb_seq ranges and follows pages", async () => {
     await client.createMessages("thread", [1, 2, 3, 4, 5].map(n => ({ ...draft, content: `m${n}`, metadata: { bb_thread: "thread", bb_seq: n, bb_part: 0 } })));
     const range = await client.listMessages("thread", { bb_thread: "thread", ...seqRange(2, 4) });
     expect(range.items.map(m => m.metadata?.bb_seq)).toEqual([2, 3, 4]);
@@ -155,5 +163,20 @@ describe("v3 REST client", () => {
   });
   it("rejects unsafe base URLs without including them in errors", () => {
     for (const baseUrl of ["https://user:synthetic-key@example.test", "file:///tmp/example", "https://example.test?key=synthetic-key"]) expect(() => new HonchoClient({ baseUrl, workspace: "test" })).toThrow("Honcho validation.");
+  });
+});
+
+describe("retry safety", () => {
+  it("never retries createMessages or createConclusions after a 5xx or a network error", async () => {
+    const draft = { content: "x", peer_id: "p" };
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("", { status: 502 }));
+    const c = new HonchoClient({ baseUrl: "http://honcho.test", workspace: "w", fetch: transport });
+    await expect(c.createMessages("s", [draft])).rejects.toMatchObject({ kind: "server", status: 502 });
+    await expect(c.createConclusions([{ content: "c", observer_id: "a", observed_id: "b" }])).rejects.toMatchObject({ kind: "server" });
+    expect(transport).toHaveBeenCalledTimes(2);
+    transport.mockReset().mockRejectedValue(new TypeError("network"));
+    await expect(c.createMessages("s", [draft])).rejects.toMatchObject({ kind: "offline" });
+    await expect(c.createConclusions([{ content: "c", observer_id: "a", observed_id: "b" }])).rejects.toMatchObject({ kind: "offline" });
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ActivityEntry, Deps, RpcMethods } from "../../lib/contract";
-import { PRIVACY_DEFAULTS, registerRpc, resolvePeer, type Services } from "../../lib/rpc-server";
+import { PRIVACY_DEFAULTS, PROBE_TIMEOUT_MS, registerRpc, resolvePeer, type Services } from "../../lib/rpc-server";
 import { HonchoError } from "../../lib/honcho-client";
 
 function fakeBb() {
@@ -29,11 +29,13 @@ function fakeServices(overrides: { probe?: () => Promise<"workspace-or-admin" | 
   const calls: Array<[string, ...unknown[]]> = [];
   const spy = (name: string, result: unknown = undefined) => (...args: unknown[]) => { calls.push([name, ...args]); return Promise.resolve(result); };
   const state = { machineId: "m", claude: { hookInstalled: true, handedOver: false, pluginVersion: null }, codex: { hookInstalled: false, handedOver: false, trusted: null }, backups: [] };
+  const cfg = { baseUrl: "https://honcho.example.org", apiKey: overrides.apiKey ?? "sk-test-key-0000", workspace: "w", peerName: "p" };
   const deps = {
-    config: async () => ({ config: { baseUrl: "https://honcho.example.org", apiKey: overrides.apiKey ?? "sk-test-key-0000", workspace: "w", peerName: "p" }, keys: ["sk-test-key-0000"], warnings: overrides.warnings ?? [] }),
+    isCloud: async () => new URL(cfg.baseUrl).hostname === "api.honcho.dev",
+    config: async () => ({ config: { ...cfg }, keys: ["sk-test-key-0000"], warnings: overrides.warnings ?? [] }),
     client: async () => ({ probeKeyLevel: overrides.probe ?? (async () => "workspace-or-admin" as const) }),
     activity: { list: (o: unknown) => { calls.push(["activity.list", o]); return []; }, record: () => {}, subscribe: (fn: (e: ActivityEntry) => void) => { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); } },
-  } as unknown as Deps;
+  } as unknown as Deps & { isCloud(): Promise<boolean> };
   const services: Services = {
     deps,
     capture: { threadStatus: spy("threadStatus", { threadId: "t", state: "saving", lastUploadAt: null, queued: 0, scope: null }), setPaused: spy("setPaused"), pauses: spy("pauses", []), health: spy("health", { oldestPendingAt: null, queued: 0, authFailing: false, tripwire: null }), flushNow: spy("flushNow") } as any,
@@ -41,7 +43,7 @@ function fakeServices(overrides: { probe?: () => Promise<"workspace-or-admin" | 
     harness: { state: spy("harness.state", state), connect: spy("harness.connect", state), handOver: spy("harness.handOver", state), undo: spy("harness.undo", state) } as any,
     backfill: { dryRun: spy("dryRun", { threads: 1, messages: 2, tokens: 3, skippedAlreadyInHoncho: 0, reasoningMessages: 0 }), start: spy("start"), progress: spy("progress", { running: false, done: 0, total: 0 }), stop: spy("stop") } as any,
   };
-  return { services, calls, listeners };
+  return { services, calls, listeners, cfg };
 }
 
 describe("rpc server", () => {
@@ -135,5 +137,68 @@ describe("rpc server", () => {
     expect(published).toEqual([["activity", { id: 1, kind: "upload", threadId: "t1" }]]);
     stop();
     expect(listeners).toHaveLength(0);
+  });
+
+  it("keys the probe cache by url, key and workspace", async () => {
+    const { bb, call } = fakeBb();
+    let level: "workspace-or-admin" | "restricted" = "workspace-or-admin";
+    const probe = vi.fn(async () => level);
+    const { services, cfg } = fakeServices({ probe });
+    registerRpc(bb, services);
+    expect((await call("connection.get")).keyLevel).toBe("workspace-or-admin");
+    await call("connection.get"); expect(probe).toHaveBeenCalledTimes(1);
+    level = "restricted";
+    cfg.apiKey = "sk-rotated"; expect((await call("connection.get")).keyLevel).toBe("restricted");
+    level = "workspace-or-admin";
+    cfg.workspace = "w2"; expect((await call("connection.get")).keyLevel).toBe("workspace-or-admin");
+    level = "restricted";
+    cfg.baseUrl = "https://other.example.org"; expect((await call("connection.get")).keyLevel).toBe("restricted");
+    expect(probe).toHaveBeenCalledTimes(4);
+  });
+
+  it("gives the probe its own timeout and answers unknown", async () => {
+    vi.useFakeTimers();
+    try {
+      const { bb, call } = fakeBb();
+      const { services } = fakeServices({ probe: () => new Promise(() => {}) });
+      registerRpc(bb, services);
+      const pending = call("connection.get");
+      await vi.advanceTimersByTimeAsync(PROBE_TIMEOUT_MS);
+      expect((await pending).keyLevel).toBe("unknown");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("takes the preset from deps.isCloud, not a hostname suffix", async () => {
+    const { bb, call } = fakeBb();
+    const { services, cfg } = fakeServices();
+    registerRpc(bb, services);
+    cfg.baseUrl = "https://evilhoncho.dev"; expect((await call("connection.get")).preset).toBe("self-hosted");
+    cfg.baseUrl = "https://api.honcho.dev"; expect((await call("connection.get")).preset).toBe("cloud");
+  });
+
+  it("validates every input with clean errors", async () => {
+    const { bb, call } = fakeBb();
+    const { services, calls } = fakeServices();
+    registerRpc(bb, services);
+    await expect(call("pause.set", { kind: "machine", id: "x", paused: true } as never)).rejects.toThrow(/Invalid input for pause.set/);
+    await expect(call("pause.set", { kind: "thread", id: "", paused: true })).rejects.toThrow(/Invalid input/);
+    await expect(call("peers.rename", { providerId: "codex" } as never)).rejects.toThrow(/Invalid input for peers.rename/);
+    await expect(call("peers.rename", undefined as never)).rejects.toThrow(/Invalid input/);
+    await expect(call("privacy.test", { text: 5 } as never)).rejects.toThrow(/Invalid input for privacy.test/);
+    await expect(call("privacy.set", { patterns: "x" } as never)).rejects.toThrow(/Invalid input/);
+    await expect(call("conclusions.delete", {} as never)).rejects.toThrow(/Invalid input/);
+    await expect(call("harness.undo", { step: "nope" } as never)).rejects.toThrow(/Invalid input/);
+    expect(calls.filter(([n]) => n === "setPaused")).toEqual([]);
+    // No-input methods still accept an omitted or empty payload.
+    await expect(call("pause.list", undefined as never)).resolves.toEqual([]);
+  });
+
+  it("refuses to rename a provider to the user peer or an empty or invalid id", async () => {
+    const { bb, call } = fakeBb();
+    registerRpc(bb, fakeServices().services);
+    await expect(call("peers.rename", { providerId: "codex", peer: "p" })).rejects.toThrow(/user peer/);
+    await expect(call("peers.rename", { providerId: "codex", peer: "  " })).rejects.toThrow();
+    await expect(call("peers.rename", { providerId: "codex", peer: "a b" })).rejects.toThrow();
+    expect(await call("peers.list")).not.toContainEqual(expect.objectContaining({ peer: "p" }));
   });
 });

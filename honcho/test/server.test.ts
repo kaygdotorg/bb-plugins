@@ -141,7 +141,7 @@ describe("plugin factory", () => {
     const h = await load();
     expect(await h.behavior.callRpc("harness.undo", { step: "connect" })).toMatchObject({ machineId: "host_a" });
     expect(h.inspection.experimental_hostRpcCalls.filter(c => c.method === "harnessUndo").map(c => c.input)).toEqual([{ step: "connect" }]);
-    await expect(h.behavior.callRpc("harness.undo", { step: "everything" })).rejects.toThrow(/connect or handOver/);
+    await expect(h.behavior.callRpc("harness.undo", { step: "everything" })).rejects.toThrow(/validation failed/);
     expect(await h.behavior.callRpc("privacy.get", {})).toMatchObject({ deleteOnDelete: true });
     const status = await h.behavior.runCli(["harness", "state"]);
     expect(status.exitCode).toBe(0);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PrivacySettings } from "../lib/contract";
 import { useAction, useMemoryRpc, useRemote } from "./data";
 import { ago } from "./format";
@@ -39,11 +39,22 @@ function Rules({ settings, onSaved }: { settings: PrivacySettings; onSaved(): vo
   const [remotes, setRemotes] = useState(settings.denyRemotes.join("\n"));
   const [paths, setPaths] = useState(settings.denyPaths.join("\n"));
   const [patterns, setPatterns] = useState(settings.patterns.join("\n"));
+  // A refetch hands over a new object each time. Reset the fields only when the stored value
+  // really changed, and never over local edits.
+  const storedKey = JSON.stringify([settings.denyRemotes, settings.denyPaths, settings.patterns]);
+  const synced = useRef(storedKey);
+  const latest = useRef({ remotes, paths, patterns });
+  latest.current = { remotes, paths, patterns };
   useEffect(() => {
+    if (synced.current === storedKey) return;
+    const previous = JSON.parse(synced.current) as [string[], string[], string[]];
+    const edited = latest.current.remotes !== previous[0].join("\n") || latest.current.paths !== previous[1].join("\n") || latest.current.patterns !== previous[2].join("\n");
+    synced.current = storedKey;
+    if (edited) return;
     setRemotes(settings.denyRemotes.join("\n"));
     setPaths(settings.denyPaths.join("\n"));
     setPatterns(settings.patterns.join("\n"));
-  }, [settings]);
+  }, [storedKey]);
   const dirty = remotes !== settings.denyRemotes.join("\n") || paths !== settings.denyPaths.join("\n") || patterns !== settings.patterns.join("\n");
   const box = (label: string, hint: string, value: string, set: (v: string) => void) => (
     <label className="block space-y-1">
