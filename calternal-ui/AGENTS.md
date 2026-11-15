@@ -41,6 +41,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - `html[data-cf-short]` (visible area under 560px) makes the sidebar scroll as one column.
   - Pulling down at the top of the sidebar opens search. It's vertical only, so bb's sideways edge swipes stay bb's.
   - To test headless, enable CDP `Emulation.setTouchEmulationEnabled`, then use `p.touchscreen`.
+- **Message actions sit 12px under every message.** bb leaves the gap to the last block's margin (3px after a paragraph, 12px after a list); trailing margins are zeroed and the action row gets its own 0.5rem.
 - **Your messages have iMessage tails:** an SVG-masked `::after` (14×20 viewBox) right of and below the bubble, never over it, so translucent fills don't double. The bubble's bottom-right corner is square and its border removed; the tail flares from that straight edge into a point just below the bubble, and its lower edge sweeps back under it, like iMessage. Check shapes on a blank page with the plugin's stylesheet and a solid fill: the live thread scrolls and the real fill is too faint to judge.
 - **bb's thread context strip above the composer is hidden** (`section[aria-label="Thread context before sending"]`: git changed files, pull request). The right sidebar's info tab shows the same, and kayg wants status info there, not in the chat.
 - **Nothing is drawn behind the composer.** Both a masked blur band and a colour fade there read as a block; kayg wants neither.

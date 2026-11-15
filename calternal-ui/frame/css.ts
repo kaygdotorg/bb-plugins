@@ -749,6 +749,12 @@ ${cardInterior(MAIN)}}
  */
 function cardInterior(scope: string): string {
   return `
+  /* Message actions (copy, reply, time): bb puts them straight after the message, so the gap
+     was whatever the last block's margin was (3px after a paragraph, 12px after a list). The
+     trailing margins go and the row gets its own 0.5rem: 12px every time, like your bubbles. */
+  ${scope} [data-timeline-row-id] .max-w-none > :last-child,
+  ${scope} [data-timeline-row-id] .max-w-none > :last-child > li:last-child { margin-bottom: 0; }
+  ${scope} [data-timeline-row-id] div:has(> .max-w-none) + .relative.w-full { margin-top: 0.5rem; }
   /* Light mode: the header's icon buttons are bb's grey at 75%, too faint on the light card. */
   ${scope}:where(html:not(.dark) *) header button { color: color-mix(in oklab, var(--foreground) 82%, transparent); }
   /* Finished tool rows ("Ran 3 commands"): bb shows them in its subtle colour at 40% opacity,
