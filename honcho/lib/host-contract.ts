@@ -3,12 +3,17 @@
 import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import { harnessHostContract } from "./harness/host-ops.js";
 import { recallHostContract } from "./recall/host-contract.js";
+import { secretsHostContract } from "./secrets-host.js";
 
 for (const name of Object.keys(harnessHostContract)) {
   if (name in recallHostContract) throw new Error(`host op ${name} is defined twice`);
 }
 
-export const hostContract = { ...recallHostContract, ...harnessHostContract };
+for (const name of Object.keys(secretsHostContract)) {
+  if (name in recallHostContract || name in harnessHostContract) throw new Error(`host op ${name} is defined twice`);
+}
+
+export const hostContract = { ...recallHostContract, ...harnessHostContract, ...secretsHostContract };
 export type HostContract = typeof hostContract;
 export type HostClient = ExperimentalHostClient<HostContract>;
 

@@ -63,6 +63,7 @@ const HOST_RESULTS: Record<string, unknown> = {
   harnessState: STATE,
   harnessUndo: { state: STATE, restored: [] },
   "recall.write": { counter: 1, path: "/data/recall/x.json" },
+  "secrets.read": { fingerprint: "f", values: ["synthetic-deny-value-1"] },
 };
 
 const open: Array<{ dispose(): Promise<void> }> = [];
@@ -113,7 +114,7 @@ describe("plugin factory", () => {
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.write"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.write", "secrets.read"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {
@@ -129,6 +130,11 @@ describe("plugin factory", () => {
     expect(await env("pi")).toEqual({ BB_HONCHO: "1" });
     await h.behavior.setSettings({ hookBudgetMs: 900 });
     expect((await env("codex")).BB_HONCHO_HOOK_BUDGET_MS).toBe("900");
+  });
+
+  it("feeds bb-secrets values to privacy.test", async () => {
+    const h = await load();
+    expect(await h.behavior.callRpc("privacy.test", { text: "x synthetic-deny-value-1 y" })).toMatchObject({ text: "x [REDACTED] y", count: 1 });
   });
 
   it("routes rpc, cli and the dispatch hook through the wired services", async () => {
