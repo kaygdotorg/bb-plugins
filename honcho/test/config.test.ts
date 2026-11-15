@@ -58,3 +58,16 @@ describe("live config", () => {
     expect((await readConfig({}, path)).config).toMatchObject({ baseUrl: "http://top.test", workspace: "host", apiKey: "top" });
   });
 });
+
+describe("key follows its host", () => {
+  it("drops the file key when bb points at another host, unless bb sets the key", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "honcho-cfg-"));
+    try {
+      const path = join(dir, "config.json");
+      await writeFile(path, JSON.stringify({ baseUrl: "http://one.test", apiKey: "synthetic-file-key" }));
+      expect((await readConfig({ baseUrl: "http://two.test" }, path)).config.apiKey).toBe("");
+      expect((await readConfig({ baseUrl: "http://one.test/v3" }, path)).config.apiKey).toBe("synthetic-file-key");
+      expect((await readConfig({ baseUrl: "http://two.test", apiKey: "synthetic-bb-key" }, path)).config.apiKey).toBe("synthetic-bb-key");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+});

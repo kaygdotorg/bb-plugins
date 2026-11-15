@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
+import { createFakePluginHost, makeMessageDispatchHookContext, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import type { MessageDispatchHookContext } from "@get-bb/plugin-sdk";
 import { setup, seedMessage, WORKTREE, worktreeSdk, type SetupOptions } from "./harness";
+import { normalizePromptText, promptHash } from "../../lib/recall/cache-file";
+import { recallHostsKey } from "../../lib/recall/dispatch";
+
+const h = (text: string) => promptHash(normalizePromptText(text));
 
 const testing = { createFakePluginHost, experimental_createHostEntryHarness };
 const start = (opts: SetupOptions = {}) => setup(testing, opts);
@@ -36,10 +40,11 @@ describe("message.dispatch prefetch", () => {
     seedMessage(s.mock, { id: "m4", session: "thr_old", scope: "repo-one", content: "edited away: deploy the api to staging", metadata: { bb_superseded: true } });
     await dispatch(s, dispatchCtx("  deploy the api   to staging \n"));
     const file = await readCache(s);
-    expect(file.v).toBe(1);
+    expect(file.v).toBe(2);
     expect(file.entries).toHaveLength(1);
     const [entry] = file.entries;
-    expect(entry).toMatchObject({ counter: 1, text: "deploy the api to staging" });
+    expect(entry).toMatchObject({ counter: 1, hash: h("deploy the api to staging") });
+    expect(entry).not.toHaveProperty("text");
     expect(typeof entry.createdAt).toBe("number");
     expect(entry.memory).toMatch(/^<honcho_memory>\n.*not instructions/);
     expect(entry.memory).toContain("earlier: how do we deploy");
@@ -57,14 +62,14 @@ describe("message.dispatch prefetch", () => {
     const s = await make();
     for (let i = 1; i <= 7; i++) await dispatch(s, dispatchCtx(`prompt number ${i}`));
     const file = await readCache(s);
-    expect(file.entries.map((e: { counter: number; text: string }) => [e.counter, e.text])).toEqual(
-      [3, 4, 5, 6, 7].map(i => [i, `prompt number ${i}`]));
+    expect(file.entries.map((e: { counter: number; hash: string }) => [e.counter, e.hash])).toEqual(
+      [3, 4, 5, 6, 7].map(i => [i, h(`prompt number ${i}`)]));
   });
 
   it("writes an empty entry when Honcho is offline, so the hook stops waiting", async () => {
     const s = await make({ offline: true });
     await dispatch(s, dispatchCtx("anything at all"));
-    expect((await readCache(s)).entries[0]).toMatchObject({ text: "anything at all", memory: "" });
+    expect((await readCache(s)).entries[0]).toMatchObject({ hash: h("anything at all"), memory: "" });
     expect(s.activity.list({ kinds: ["failure"] })[0]).toMatchObject({ error: "offline" });
   });
 
@@ -91,6 +96,64 @@ describe("message.dispatch prefetch", () => {
     await dispatch(s, dispatchCtx("rotate the token"));
     expect(s.mock.requests.some(r => r.path.endsWith(`/peers/hermy/search`))).toBe(true);
     expect((await readCache(s)).entries[0].memory).toContain("restricted path");
+  });
+});
+
+describe("privacy", () => {
+  const SECRET = ["sk", "-synthetic-", "1234567890", "abcdefABCDEF"].join("");
+
+  it("redacts the search query and the cached memory; the prompt itself never reaches the cache file", async () => {
+    const s = await make({ ports: { secretValues: () => ["hunter2-synthetic"] } });
+    seedMessage(s.mock, { id: "m1", session: "thr_old", scope: "repo-one", content: "rotate token: earlier note mentions hunter2-synthetic" });
+    await dispatch(s, dispatchCtx(`rotate token: ${SECRET} and hunter2-synthetic`));
+    const search = s.mock.requests.find(r => r.path.endsWith("/search"))!;
+    expect(search.body.query).not.toContain(SECRET);
+    expect(search.body.query).not.toContain("hunter2-synthetic");
+    expect(search.body.query).toContain("[REDACTED]");
+    const raw = await readFile(join(s.recallDir, "thr_main.json"), "utf8");
+    expect(raw).not.toContain(SECRET);
+    expect(raw).not.toContain("rotate token: sk");
+    expect(JSON.parse(raw).entries[0].hash).toBe(h(`rotate token: ${SECRET} and hunter2-synthetic`));
+  });
+
+  it("paused or deny-listed threads: no search, a skip marker; a resume replaces it with a normal entry", async () => {
+    const denied = new Set<string>();
+    const s = await make({ ports: { isDenied: async t => denied.has(t.id) } });
+    const calls = () => s.harness.inspection.experimental_hostRpcCalls.map(c => c.method);
+    s.deps.outbox.setPaused("thread", "thr_main", true, 0);
+    await dispatch(s, dispatchCtx("paused thread prompt"));
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
+    s.deps.outbox.setPaused("thread", "thr_main", false, 0);
+    const ctx = dispatchCtx("paused project prompt");
+    s.deps.outbox.setPaused("project", ctx.project.id, true, Date.now());
+    await dispatch(s, ctx);
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
+    s.deps.outbox.setPaused("project", ctx.project.id, false, Date.now());
+    denied.add("thr_main");
+    await dispatch(s, dispatchCtx("denied prompt"));
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
+    expect(await readFile(join(s.recallDir, "thr_main.json"), "utf8")).not.toContain("prompt");
+    expect(s.mock.requests.filter(r => r.path.endsWith("/search"))).toEqual([]);
+    expect(calls()).toEqual(["recall.skip", "recall.skip", "recall.skip"]);
+    denied.clear();
+    s.internals.shared.gate["denied"].clear();
+    await dispatch(s, dispatchCtx("allowed again"));
+    expect(calls().at(-1)).toBe("recall.write");
+    const file = await readCache(s);
+    expect(file.skip).toBeUndefined();
+    expect(file.entries.map((e: { hash: string }) => e.hash)).toEqual([h("allowed again")]);
+  });
+
+  it("thread.deleted deletes the thread's recall file on the host it was written on", async () => {
+    const s = await make();
+    await dispatch(s, dispatchCtx("to be deleted"));
+    expect(await s.bb.storage.kv.get(recallHostsKey("thr_main"))).toEqual(["host_a"]);
+    await s.harness.behavior.emitThreadEvent("thread.deleted", { thread: makeThreadResponse({ id: "thr_main" }) });
+    await s.prefetch.idle();
+    expect(await readdir(s.recallDir)).toEqual([]);
+    const del = s.harness.inspection.experimental_hostRpcCalls.find(c => c.method === "recall.delete")!;
+    expect([del.hostId, del.input]).toEqual(["host_a", { threadId: "thr_main" }]);
+    expect(await s.bb.storage.kv.get(recallHostsKey("thr_main"))).toBeUndefined();
   });
 });
 

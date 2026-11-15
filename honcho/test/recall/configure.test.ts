@@ -98,4 +98,41 @@ describe("configure", () => {
     expect(result.instructions).toBeNull();
     expect(toolNames(result)).toHaveLength(4);
   });
+
+  it("injects nothing into a paused thread, a paused project, a side chat whose parent is paused, or a deny-listed thread", async () => {
+    const denied = new Set<string>();
+    const s = await make({ ports: { peerCard: async () => ["Name: Sam"], isDenied: async t => denied.has(t.id) } });
+    await resolve(s);
+    await s.internals.cache.refresh();
+    await s.internals.shared.gate.checkDenied({ id: "thr_main", projectId: ctx().project.id, environmentId: ctx().environment.id });
+    expect((await resolve(s)).instructions).toContain("Name: Sam");
+    s.deps.outbox.setPaused("thread", "thr_main", true, 0);
+    const paused = await resolve(s);
+    expect(paused.instructions).toBeNull();
+    expect(toolNames(paused)).toEqual([...HONCHO_TOOL_NAMES].sort()); // tools stay; only injection is skipped
+    s.deps.outbox.setPaused("thread", "thr_main", false, 0);
+    s.deps.outbox.setPaused("project", ctx().project.id, true, Date.now());
+    expect((await resolve(s)).instructions).toBeNull();
+    s.deps.outbox.setPaused("project", ctx().project.id, false, Date.now());
+    s.deps.outbox.setPaused("thread", "thr_parent", true, 0);
+    const side = ctx({ thread: { id: "thr_side", parentThreadId: "thr_parent", sourceThreadId: "thr_parent" }, origin: { kind: "fork", pluginId: "side-chat" } });
+    expect((await resolve(s, side)).instructions).toBeNull();
+    s.deps.outbox.setPaused("thread", "thr_parent", false, 0);
+    denied.add("thr_main");
+    s.internals.shared.gate["denied"].clear();
+    await s.internals.shared.gate.checkDenied({ id: "thr_main", projectId: ctx().project.id, environmentId: ctx().environment.id });
+    expect((await resolve(s)).instructions).toBeNull();
+  });
+
+  it("fails closed while the deny answer is unknown and deny lists are set", async () => {
+    let release!: (v: boolean) => void;
+    const s = await make({ ports: { peerCard: async () => ["Name: Sam"], isDenied: () => new Promise<boolean>(r => { release = r; }) } });
+    await s.bb.storage.kv.set("ui.privacy", { denyRemotes: ["*secret*"], denyPaths: [], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: false });
+    await s.internals.shared.gate.redactor(); // reloads the privacy snapshot
+    await s.internals.cache.refresh();
+    expect((await resolve(s)).instructions).toBeNull();
+    release(false);
+    await new Promise(r => setImmediate(r));
+    expect((await resolve(s)).instructions).toContain("Name: Sam");
+  });
 });

@@ -62,7 +62,9 @@ const HOST_RESULTS: Record<string, unknown> = {
   harnessEnv: ENV_PATHS,
   harnessState: STATE,
   harnessUndo: { state: STATE, restored: [] },
+  "recall.skip": { path: "/data/recall/x.json" },
   "recall.write": { counter: 1, path: "/data/recall/x.json" },
+  "secrets.read": { fingerprint: "f", values: ["synthetic-deny-value-1"] },
 };
 
 const open: Array<{ dispose(): Promise<void> }> = [];
@@ -76,6 +78,8 @@ async function load(settings: Record<string, string | number | boolean> = {}) {
     sdk: {
       threads: { list: async () => { listCalls++; return []; } },
       hosts: { list: async () => [makeHostResponse({ id: "host_a" })] },
+      providers: { list: async () => [] },
+      subscribe: () => () => undefined,
     },
     experimental_callHostRpc: ({ method }) => {
       if (!(method in HOST_RESULTS)) throw new Error(`unexpected host call ${method}`);
@@ -106,12 +110,12 @@ describe("plugin factory", () => {
     expect([...r.providerEnvResolvers.keys()].sort()).toEqual(["claude-code", "codex", "pi"]);
     expect(r.services.map(x => x.name).sort()).toEqual(["capture-reconcile", "recall-refresh"]);
     expect(r.schedules).toEqual([]);
-    expect(r.threadEventHandlers).toMatchObject({ "thread.created": 1, "thread.idle": 1, "thread.archived": 1, "thread.deleted": 1 });
+    expect(r.threadEventHandlers).toMatchObject({ "thread.created": 1, "thread.idle": 1, "thread.archived": 1, "thread.deleted": 2 }); // capture deletes the session, recall the cache file
     expect(r.threadEventHandlers["thread.active"]).toBe(2); // capture schedules, recall refreshes
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.write"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.skip", "recall.write", "secrets.read"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {
@@ -129,11 +133,16 @@ describe("plugin factory", () => {
     expect((await env("codex")).BB_HONCHO_HOOK_BUDGET_MS).toBe("900");
   });
 
+  it("feeds bb-secrets values to privacy.test", async () => {
+    const h = await load();
+    expect(await h.behavior.callRpc("privacy.test", { text: "x synthetic-deny-value-1 y" })).toMatchObject({ text: "x [REDACTED] y", count: 1 });
+  });
+
   it("routes rpc, cli and the dispatch hook through the wired services", async () => {
     const h = await load();
     expect(await h.behavior.callRpc("harness.undo", { step: "connect" })).toMatchObject({ machineId: "host_a" });
     expect(h.inspection.experimental_hostRpcCalls.filter(c => c.method === "harnessUndo").map(c => c.input)).toEqual([{ step: "connect" }]);
-    await expect(h.behavior.callRpc("harness.undo", { step: "everything" })).rejects.toThrow(/connect or handOver/);
+    await expect(h.behavior.callRpc("harness.undo", { step: "everything" })).rejects.toThrow(/validation failed/);
     expect(await h.behavior.callRpc("privacy.get", {})).toMatchObject({ deleteOnDelete: true });
     const status = await h.behavior.runCli(["harness", "state"]);
     expect(status.exitCode).toBe(0);

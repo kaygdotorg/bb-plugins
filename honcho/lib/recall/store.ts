@@ -11,6 +11,9 @@ export const RECALL_MIGRATIONS = [
      confirmed INTEGER NOT NULL DEFAULT 0 CHECK(confirmed IN (0,1)),
      thread TEXT, scope TEXT, marked_at INTEGER NOT NULL);
    CREATE INDEX recall_marks_thread ON recall_conclusion_marks(thread);`,
+  // 0 when the conclusion was saved without a session_id: deleting the thread's session does not
+  // remove it, so the delete path purges it by id (conclusionsForThread).
+  `ALTER TABLE recall_conclusion_marks ADD COLUMN attached INTEGER NOT NULL DEFAULT 1 CHECK(attached IN (0,1));`,
 ] as const;
 
 export interface ConclusionMark { id: string; agentWritten: boolean; confirmed: boolean; thread: string | null; scope: string | null }
@@ -29,9 +32,15 @@ export class RecallStore {
       }
     })();
   }
-  markAgentWritten(id: string, thread: string | null, scope: string | null): void {
-    this.db.prepare(`INSERT INTO recall_conclusion_marks (id,agent_written,thread,scope,marked_at) VALUES (?,1,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET agent_written=1, thread=COALESCE(thread,excluded.thread), scope=COALESCE(scope,excluded.scope)`).run(id, thread, scope, Date.now());
+  markAgentWritten(id: string, thread: string | null, scope: string | null, attached = true): void {
+    this.db.prepare(`INSERT INTO recall_conclusion_marks (id,agent_written,thread,scope,marked_at,attached) VALUES (?,1,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET agent_written=1, thread=COALESCE(thread,excluded.thread), scope=COALESCE(scope,excluded.scope),
+        attached=MIN(attached,excluded.attached)`).run(id, thread, scope, Date.now(), attached ? 1 : 0);
+  }
+  /** Conclusions saved from a thread, and whether each carries the thread's session_id. */
+  conclusionsForThread(thread: string): Array<{ id: string; attached: boolean }> {
+    return (this.db.prepare("SELECT id, attached FROM recall_conclusion_marks WHERE thread=? ORDER BY marked_at").all(thread) as Array<{ id: string; attached: number }>)
+      .map(r => ({ id: r.id, attached: r.attached === 1 }));
   }
   confirm(id: string): void {
     this.db.prepare(`INSERT INTO recall_conclusion_marks (id,confirmed,marked_at) VALUES (?,1,?)

@@ -5,6 +5,14 @@ import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import { HONCHO_TOOL_NAMES } from "../../lib/tools";
 import { setup, seedConclusion, seedMessage, type SetupOptions } from "../recall/harness";
 
+/** A synthetic thread the tools can look up when they create its session. */
+const threadSdk = (extra: Record<string, unknown> = {}) => ({
+  threads: { get: async ({ threadId }: { threadId: string }) => ({ id: threadId, projectId: "proj_1", environmentId: "env_1", providerId: "claude-code", parentThreadId: null, sourceThreadId: null, originKind: null, originPluginId: null }) },
+  environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_a", path: "/synthetic/plain", isGitRepo: false }) },
+  projects: { get: async ({ projectId }: { projectId: string }) => ({ id: projectId, name: "Repo One", gitRemoteUrl: null }) },
+  ...extra,
+});
+
 const testing = { createFakePluginHost, experimental_createHostEntryHarness };
 const start = (opts: SetupOptions = {}) => setup(testing, opts);
 type Setup = Awaited<ReturnType<typeof start>>;
@@ -83,5 +91,52 @@ describe("honcho tools", () => {
     expect(isError(await call(s, "honcho_search", { query: "x", workspace: true }))).toBe(true);
     expect(isError(await call(s, "honcho_chat", { query: "x" }))).toBe(false);
     expect(s.mock.requests.filter(r => r.path.endsWith("/scopes/list"))).toHaveLength(1);
+  });
+
+  it("honcho_conclude redacts secrets before saving and refuses when nothing is left", async () => {
+    const s = await make({ ports: { secretValues: () => ["hunter2-synthetic"] } });
+    const saved = text(await call(s, "honcho_conclude", { content: "deploy password is hunter2-synthetic, use staging" }));
+    expect(saved).toContain("1 secret was redacted");
+    expect(s.mock.conclusions.at(-1)!.content).toBe("deploy password is [REDACTED], use staging");
+    const before = s.mock.conclusions.length;
+    expect(isError(await call(s, "honcho_conclude", { content: "hunter2-synthetic" }))).toBe(true);
+    expect(s.mock.conclusions).toHaveLength(before);
+  });
+
+  it("honcho_conclude creates a missing session as capture would, then attaches the conclusion to it", async () => {
+    const s = await make({ sdk: threadSdk() });
+    s.mock.fault(404); // the thread's session does not exist yet
+    const saved = await call(s, "honcho_conclude", { content: "prefers tabs" });
+    expect(isError(saved)).toBe(false);
+    const session = s.mock.requests.find(r => r.method === "POST" && /\/sessions$/.test(r.path))!;
+    expect(session.body).toMatchObject({
+      id: "thr_main", scopes: ["repo-one"],
+      peers: { claude_code: { observe_me: false, observe_others: false }, hermy: { observe_me: true, observe_others: false } },
+      metadata: { provider: "claude-code", host: "host_a", environment: "env_1", project: "proj_1" },
+    });
+    const created = s.mock.conclusions.filter(c => c.content === "prefers tabs");
+    expect(created).toHaveLength(1);
+    expect(created[0].session_id).toBe("thr_main");
+    expect(s.recall.conclusionsForThread("thr_main")).toEqual([{ id: created[0].id, attached: true }]);
+  });
+
+  it("honcho_conclude in a deny-listed thread never creates a session: saved unattached and recorded for the delete path", async () => {
+    const s = await make({ sdk: threadSdk(), ports: { isDenied: async () => true } });
+    s.mock.fault(404);
+    expect(isError(await call(s, "honcho_conclude", { content: "likes vim" }))).toBe(false);
+    expect(s.mock.requests.some(r => r.method === "POST" && /\/sessions$/.test(r.path))).toBe(false);
+    const created = s.mock.conclusions.find(c => c.content === "likes vim")!;
+    expect(created.session_id).toBeUndefined();
+    expect(s.recall.conclusionsForThread("thr_main")).toEqual([{ id: created.id, attached: false }]);
+  });
+
+  it("honcho_conclude reports success with the id when only the local mark fails", async () => {
+    const s = await make();
+    s.internals.shared.store.markAgentWritten = () => { throw new Error("disk full"); };
+    const saved = await call(s, "honcho_conclude", { content: "uses fish" });
+    expect(isError(saved)).toBe(false);
+    const created = s.mock.conclusions.find(c => c.content === "uses fish")!;
+    expect(text(saved)).toContain(created.id);
+    expect(s.activity.list({ kinds: ["failure"] })[0]).toMatchObject({ threadId: "thr_main", error: "Error" });
   });
 });

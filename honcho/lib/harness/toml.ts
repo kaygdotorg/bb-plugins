@@ -61,6 +61,30 @@ export function stripHonchoMcp(content: string): string {
   return hasHonchoMcp(stripped) ? dropUnfencedHonchoTables(stripped) : stripped;
 }
 
+/** The honcho MCP tables, as written (fenced or not), or null if there are none. */
+export function extractHonchoMcp(content: string): string | null {
+  const tables: string[][] = [];
+  let current: string[] | null = null;
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === BLOCK_START || trimmed === BLOCK_END) { current = null; continue; }
+    const header = trimmed.match(HEADER);
+    if (header) {
+      current = isHonchoTable(normalizeDotted(header[1]!)) ? [] : null;
+      if (current) tables.push(current);
+    }
+    current?.push(line);
+  }
+  const parts = tables.map((t) => t.join("\n").replace(/^\n+/, "").replace(/\n+$/, "")).filter(Boolean);
+  return parts.length ? parts.join("\n\n") : null;
+}
+
+/** Appends honcho MCP tables inside codex-honcho's fence, so its own strip still finds them. */
+export function appendHonchoMcp(content: string, tables: string): string {
+  const base = content.replace(/\n+$/, "");
+  return `${base ? `${base}\n\n` : ""}${BLOCK_START}\n${tables}\n${BLOCK_END}\n`;
+}
+
 export function hasHonchoMcp(content: string): boolean {
   return content.split("\n").some((line) => {
     const header = line.trim().match(HEADER);

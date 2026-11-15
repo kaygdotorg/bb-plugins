@@ -1,10 +1,12 @@
 // bb-honcho hook body. Started only by bb-honcho-hook.sh when BB_HONCHO=1.
 // Modes (argv[2], falling back to the event name on stdin):
 //   prompt   Claude Code / Codex UserPromptSubmit: inject the per-turn recall
-//            entry bb's host worker cached for this thread and prompt.
+//            entry bb's host worker cached for this thread and prompt. The cache
+//            (v2) holds a sha256 of the normalized dispatched text, never the text.
 //   pretool  Claude Code PreToolUse on mcp__plugin_honcho_honcho__.*: deny.
 // It must never fail a turn: every error path prints nothing and exits 0.
 // Dependency-free on purpose: it runs from a copy in a bb-owned directory.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -17,14 +19,67 @@ const MAX_STDIN = 4 * 1024 * 1024;
 const HONCHO_MCP = /^mcp__plugin_honcho_honcho__/;
 const DENY_MESSAGE = "honcho MCP is disabled inside bb, use honcho_chat / honcho_search instead";
 
-/** Same normalization the recall cache writer uses: trim, collapse whitespace, first 500 chars. */
+const FILE_VERSION = 2;
+const TEXT_CHARS = 500;
+
+/** Same normalization and hash the recall cache writer uses (lib/recall/cache-file.ts). */
 function normalize(text) {
-  return String(text).trim().replace(/\s+/g, " ").slice(0, 500);
+  return String(text).trim().replace(/\s+/g, " ").slice(0, TEXT_CHARS);
+}
+function hash(normalized) {
+  return createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
-/** Collapses whitespace in the whole prompt, so a cached prefix is still a substring. */
-function normalizePrompt(text) {
-  return String(text).trim().replace(/\s+/g, " ");
+// What bb adds around the dispatched text before the harness sees it (bb-app server/dist):
+// the agent-to-agent envelope on the first text block (template agentThreadMessage),
+const ENVELOPE = /^\[bb message from thread:[^;\]\s]+(?:;[^\]]*)?\]\s*/;
+// plugin mention context appended after the input (resolvePluginMentionContextInputs),
+const MENTION_CONTEXT = /(?:^|\n)Context for @[^\n]* \(resolved by plugin "[^"\n]+"\):\n/;
+// and attachment markers, one per line (claude-code buildPromptText, codex toCodexUserInput).
+const ATTACHMENT = /^\[Attached (?:image: \S+|(?:image|file)(?: "[^"\n]*")?(?: \([^()\n]*\))?\. It is on disk at .+ \u2014 use the Read tool to view it\.|file(?: "[^"\n]*")?: .+)\]$/;
+
+/**
+ * The normalized texts this prompt may have been dispatched as: the prompt
+ * itself, then with each known wrapper stripped in turn (mention context
+ * suffix, leading/trailing attachment lines, a leading envelope). Nothing else
+ * is stripped, so an entry matches only when its text equals one of these.
+ */
+function candidates(prompt) {
+  const out = new Set();
+  let text = String(prompt).replace(/\r\n?/g, "\n");
+  const add = () => { const n = normalize(text); if (n) out.add(n); };
+  add();
+  const context = MENTION_CONTEXT.exec(text);
+  if (context) { text = text.slice(0, context.index); add(); }
+  const lines = text.split("\n");
+  const blank = (line) => !line.trim();
+  const marker = (line) => ATTACHMENT.test(line.trim());
+  let changed = false;
+  while (lines.length && (blank(lines[lines.length - 1]) || marker(lines[lines.length - 1]))) { if (marker(lines.pop())) changed = true; }
+  while (lines.length && (blank(lines[0]) || marker(lines[0]))) { if (marker(lines.shift())) changed = true; }
+  if (changed) { text = lines.join("\n"); add(); }
+  const envelope = ENVELOPE.exec(text);
+  if (envelope) { text = text.slice(envelope[0].length); add(); }
+  return [...out];
+}
+
+/**
+ * The newest (by counter) fresh entry whose hash is one of the prompt's
+ * candidates: { memory } to inject, { memory: "" } to stop waiting, or null
+ * when nothing matches yet. Never an earlier, different prompt's result.
+ */
+function pickEntry(file, hashes, startedAt) {
+  if (!file || typeof file !== "object" || file.v !== FILE_VERSION || !Array.isArray(file.entries)) return null;
+  let best = null;
+  for (const entry of file.entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const { hash: entryHash, createdAt, memory, counter } = entry;
+    if (typeof entryHash !== "string" || typeof memory !== "string" || typeof createdAt !== "number" || typeof counter !== "number") continue;
+    if (createdAt < startedAt - STALE_MS) continue;
+    if (!hashes.has(entryHash)) continue;
+    if (!best || counter > best.counter || (counter === best.counter && createdAt > best.createdAt)) best = entry;
+  }
+  return best ? { memory: best.memory } : null;
 }
 
 function readStdin() {
@@ -48,25 +103,6 @@ function budgetMs() {
   return Math.min(raw, MAX_BUDGET_MS);
 }
 
-/** The newest usable entry for this prompt, or null. Never an earlier prompt's result. */
-function pickEntry(file, prompt, startedAt) {
-  if (!file || typeof file !== "object" || file.v !== 1 || !Array.isArray(file.entries)) return null;
-  const haystack = normalizePrompt(prompt);
-  let best = null;
-  for (const entry of file.entries) {
-    if (!entry || typeof entry !== "object") continue;
-    const { text, createdAt, memory, counter } = entry;
-    if (typeof text !== "string" || typeof memory !== "string" || typeof createdAt !== "number") continue;
-    const needle = normalize(text);
-    if (!needle || !memory.trim()) continue;
-    if (createdAt < startedAt - STALE_MS) continue;
-    if (!haystack.includes(needle)) continue;
-    const rank = [typeof counter === "number" ? counter : -Infinity, createdAt];
-    if (!best || rank[0] > best.rank[0] || (rank[0] === best.rank[0] && rank[1] > best.rank[1])) best = { entry, rank };
-  }
-  return best ? best.entry : null;
-}
-
 function readCache(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
 }
@@ -76,6 +112,8 @@ function emit(value) {
   return new Promise((resolve) => process.stdout.write(JSON.stringify(value) + "\n", () => resolve()));
 }
 
+const debug = (reason) => { if (process.env.BB_HONCHO_HOOK_DEBUG === "1") process.stderr.write(`bb-honcho-hook: ${reason}\n`); };
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function prompt(input) {
@@ -84,16 +122,24 @@ async function prompt(input) {
   const thread = process.env.BB_THREAD_ID;
   if (!text.trim() || !dir || !thread || !/^[A-Za-z0-9_-]{1,128}$/.test(thread)) return;
   const path = join(dir, `${thread}.json`);
+  const hashes = new Set(candidates(text).map(hash));
+  if (!hashes.size) return;
   const deadline = START + budgetMs();
   for (;;) {
-    const entry = pickEntry(readCache(path), text, START);
+    const file = readCache(path);
+    // Skip marker (paused or deny-listed thread): nothing to wait for.
+    if (file && typeof file === "object" && file.v === FILE_VERSION && file.skip === true) { debug("skip-marker"); return; }
+    const entry = pickEntry(file, hashes, START);
+    // A matching entry is terminal: empty memory means "nothing for this prompt", stop at once.
     if (entry) {
+      if (!entry.memory.trim()) { debug("terminal-empty-match"); return; }
+      debug("hit");
       const event = typeof input.hook_event_name === "string" && input.hook_event_name ? input.hook_event_name : "UserPromptSubmit";
       await emit({ hookSpecificOutput: { hookEventName: event, additionalContext: entry.memory } });
       return;
     }
     const left = deadline - Date.now();
-    if (left <= 0) return;
+    if (left <= 0) { debug("miss"); return; }
     await sleep(Math.min(POLL_MS, left));
   }
 }
