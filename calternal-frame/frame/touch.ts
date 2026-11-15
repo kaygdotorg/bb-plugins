@@ -5,14 +5,17 @@
  *  - When the visible area is short anyway, html gets [data-cf-short] and the sidebar
  *    scrolls as one column (css.ts) instead of collapsing its thread list.
  *  - Pull down at the top of the sidebar to open thread search.
+ *  - While the keyboard is up for the composer, a keyboard-down button sits in its icon row.
  * Listeners are passive where possible and attached to single elements, never the DOM tree.
  */
+import { mountSwipes } from "./swipe";
+
 const SHELF = 'main[data-sidebar="inset"]';
 const SIDEBAR = '[data-sidebar="sidebar"]';
 const PULL_TRIGGER = 72; // px of pull, after resistance, that opens search
 const SHORT_VIEWPORT = 560;
 
-function isEditing(el: Element | null): el is HTMLElement {
+export function isEditing(el: Element | null): el is HTMLElement {
   return !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable);
 }
 
@@ -118,9 +121,45 @@ function pullToSearch(): () => void {
   };
 }
 
+/** The keyboard is up when the visible area is much shorter than the layout and an editor has focus. */
+function keyboardButton(): () => void {
+  const vv = window.visualViewport;
+  if (!vv) return () => {};
+  const button = document.createElement("button");
+  button.type = "button";
+  button.setAttribute("data-cf-kb", "");
+  button.setAttribute("aria-label", "Hide keyboard");
+  button.style.cssText = "align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:0.375rem;color:var(--muted-foreground);background:transparent;border:0;";
+  // Lucide "keyboard" with a chevron-down under it.
+  button.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="12" rx="2"/><path d="M6 7h.01M10 7h.01M14 7h.01M18 7h.01M7 11h10"/><path d="m9 19 3 3 3-3"/></svg>';
+  // pointerdown + preventDefault: the editor keeps focus until we blur it on purpose.
+  button.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (isEditing(document.activeElement)) document.activeElement.blur();
+  });
+
+  const update = () => {
+    const up = vv.height < window.innerHeight - 150 && isEditing(document.activeElement)
+      && !!document.activeElement?.closest("[data-app-composer]");
+    document.documentElement.toggleAttribute("data-cf-keyboard", up);
+    if (!up) return;
+    const group = document.activeElement?.closest("[data-app-composer]")?.querySelector("[data-promptbox-submit-group]");
+    if (group && button.parentElement !== group) group.prepend(button);
+  };
+  vv.addEventListener("resize", update, { passive: true });
+  document.addEventListener("focusin", update);
+  document.addEventListener("focusout", () => setTimeout(update, 0));
+  return () => {
+    vv.removeEventListener("resize", update);
+    document.removeEventListener("focusin", update);
+    button.remove();
+    document.documentElement.removeAttribute("data-cf-keyboard");
+  };
+}
+
 export function mountTouch(): () => void {
   // Any touch-capable device (iPhone, iPad, touch laptops); mouse-only desktops skip all of it.
   if (navigator.maxTouchPoints === 0) return () => {};
-  const disposers = [watchDrawer(), watchViewport(), pullToSearch()];
+  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes()];
   return () => { for (const dispose of disposers) dispose(); };
 }
