@@ -29,7 +29,7 @@ const rowClass = (active: boolean) =>
   `flex h-6 w-full min-w-0 items-center gap-2 rounded-md pl-[8px] pr-2 text-left text-sm transition-colors ${
     active
       ? "bg-accent text-accent-foreground"
-      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+      : "text-sidebar-foreground hover:bg-accent/60 hover:text-foreground" // the thread rows' colour
   }`;
 
 function RowItem({

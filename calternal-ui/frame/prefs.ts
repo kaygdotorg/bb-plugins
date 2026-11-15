@@ -17,7 +17,8 @@ function surfaceVars(prefix: "side" | "card", base: "--cf-side" | "--cf-bg", s: 
   return {
     [`--cf-${prefix}-blur`]: s.blur.on && s.blur.value > 0 ? `blur(${s.blur.value}px) saturate(${saturate}%)` : "none",
     [`--cf-${prefix}-tint`]: s.tint.on ? `color-mix(in oklab, var(${base}) ${s.tint.value}%, transparent)` : "transparent",
-    [`--cf-${prefix}-dim`]: s.dim.on ? `rgb(0 0 0 / ${Math.min(100, s.dim.value) / 100})` : "transparent",
+    // Only the strength: css.ts picks the colour per theme (black in dark, white in light).
+    [`--cf-${prefix}-dim-a`]: s.dim.on ? String(Math.min(100, s.dim.value) / 100) : "0",
   };
 }
 
@@ -87,7 +88,7 @@ export function applyCachedPrefs() {
 }
 
 export function clearPrefs() {
-  for (const p of ["side", "card"]) for (const k of ["blur", "tint", "dim"]) root().removeProperty(`--cf-${p}-${k}`);
+  for (const p of ["side", "card"]) for (const k of ["blur", "tint", "dim-a"]) root().removeProperty(`--cf-${p}-${k}`);
   root().removeProperty("--cf-ui-scale");
   document.getElementById("cf-fonts")?.remove();
   document.getElementById("cf-fontfaces")?.remove();

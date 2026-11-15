@@ -28,6 +28,8 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 - **Never put `mask`, `filter`, `backdrop-filter`, `opacity < 1` or `clip-path` on an ancestor of the composer.** Chromium treats such an ancestor as a *backdrop root*, and the composer stops blurring. That's why the card's glass lives in `::before`/`::after` layers. Never put a mask on a backdrop-filter either: Aside's Chromium draws it as a block with a hard edge. The title fade is a plain colour gradient on `header::before`.
 - **Shadows must fit inside `--cf-gap`.** bb clips the centre region, so a wider shadow gets cut off in a straight line. The card's float comes from a two-layer shadow (contact + soft, blur minus spread = the gap) and from contrast: bright sidebars (35% tint), deep card (85% tint, 30% dim). kayg declined a lit border.
+- **Test light mode on every change.** "Dim" deepens toward the theme (`--cf-dim-rgb`: black in dark, white in light; prefs set only the strength `--cf-*-dim-a`). A black wash made the light card muddy grey. In light mode, sidebar text is inked darker (the wallpaper there is bright). bb's Tailwind colours resolve variables at the root, so check computed colours, not just the variable.
+- **The card has no painted edge** (transparent 1px border, kept for layout): kayg saw any tint as a white line.
 - **Inside the card, `--background` is transparent.** Anything floating must use `bg-popover`. bb's inverse controls (`bg-foreground` + `text-background`) and switches are re-styled in `css.ts`.
 - **Selectors target bb 0.49.** When bb changes its DOM, fix `frame/selectors.ts` first. Desktop "framed" mode is `[data-framed]`.
 - **The collapsed-sidebar toggle shifts only while collapsed.** Expanded, it lines up with the sidebar row.

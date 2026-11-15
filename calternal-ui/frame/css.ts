@@ -21,10 +21,15 @@ ${R} {
   /* Defaults; applyPrefs() overrides these on <html> from the plugin's settings. */
   --cf-side-blur: blur(12px) saturate(120%);
   --cf-side-tint: color-mix(in oklab, var(--cf-side) 50%, transparent);
-  --cf-side-dim: transparent;
+  /* "Dim" deepens a surface toward the theme: black in dark mode, white in light mode (a
+     black wash over a light card made it muddy grey). applyPrefs() sets only the strength. */
+  --cf-dim-rgb: 255 255 255;
+  --cf-side-dim-a: 0;
+  --cf-card-dim-a: 0.3;
+  --cf-side-dim: rgb(var(--cf-dim-rgb) / var(--cf-side-dim-a));
   --cf-card-blur: blur(75px) saturate(140%);
   --cf-card-tint: color-mix(in oklab, var(--cf-bg) 75%, transparent);
-  --cf-card-dim: rgb(0 0 0 / 0.25);
+  --cf-card-dim: rgb(var(--cf-dim-rgb) / var(--cf-card-dim-a));
   /* Interface size: bb sizes text and spacing in rem, so the root size scales both.
      The plugin's 100% is bb's 110%: bb's own 16px reads small on a glass layout. */
   font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
@@ -54,10 +59,17 @@ ${R} {
 }
 ${R}.dark {
   --radius: 10px;
+  --cf-dim-rgb: 0 0 0;
   --cf-edge: rgb(255 255 255 / 0.09);
   --cf-warn-ink: var(--warning, oklch(0.75 0.15 70));
   /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
   --cf-shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 8px 20px -8px rgb(0 0 0 / 0.75);
+}
+/* Light mode: the sidebars sit on a bright, colourful wallpaper with only a light tint, so
+   bb's mid-grey secondary text is too faint there. Ink it darker (dark mode needs nothing). */
+${R}:not(.dark) :is([data-sidebar="sidebar"], ${SIDE_PANEL}) {
+  --muted-foreground: color-mix(in oklab, var(--foreground) 74%, transparent);
+  --sidebar-foreground: var(--foreground);
 }
 ${R} body, ${R} #root, ${SHELL}, ${R} [data-app-content-shell] {
   background: transparent !important;
@@ -524,7 +536,9 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
        inside the border box, so a border at the window edge showed a strip of wallpaper. */
     margin: 0 var(--cf-gap);
     background: transparent !important;
-    border: 1px solid var(--cf-edge);
+    /* Transparent: kayg wants no painted edge (any tint showed as a white line when zoomed).
+       The 1px width stays, so nothing that lines up with the card moves. */
+    border: 1px solid transparent;
     border-block-width: 0;
     /* The same corner as the phone pane (the screen's, ~62pt), squircle where supported. */
     border-radius: var(--cf-device-radius);
