@@ -148,18 +148,18 @@ ${R} [data-cf-swipe-label][data-ready][data-tone="danger"] { color: var(--destru
 ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
   position: relative;
   border-color: transparent !important;
-  border-bottom-right-radius: 0.3rem;
+  border-bottom-right-radius: 0.375rem;
 }
 ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   content: "";
   position: absolute;
-  right: -0.5rem;
+  right: -0.6875rem;
   bottom: 0;
-  width: 0.5625rem;
-  height: 1rem;
+  width: 0.75rem;
+  height: 1.125rem;
   background: var(--surface-recessed);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16'%3E%3Cpath d='M0 0v16h9C4.5 15 1 11.5 0 0Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16'%3E%3Cpath d='M0 0v16h9C4.5 15 1 11.5 0 0Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath d='M0 0C0 8 1.6 13.6 9.6 17.2C10.3 17.5 10.4 17.9 9.8 18C6 18.3 2.4 17.6 0 16.4Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath d='M0 0C0 8 1.6 13.6 9.6 17.2C10.3 17.5 10.4 17.9 9.8 18C6 18.3 2.4 17.6 0 16.4Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   pointer-events: none;
 }
 
@@ -184,6 +184,64 @@ ${R} [data-cf-time] {
 ${R}[data-cf-silent-menu] :is([role="menu"], [data-persistent-drawer-content], [data-persistent-drawer-backdrop]) { opacity: 0 !important; }
 
 /* Menus, popovers, context menus: frosted and tinted, not flat grey. */
+/* Warm tooltips (frame/tooltip.ts): one warm cream surface for the whole app. bb's own
+   tooltips are hidden so they never double up. */
+${R} [data-radix-popper-content-wrapper]:has([role="tooltip"]) { display: none !important; }
+${R} [data-cf-tip] {
+  --cf-tip-surface: #f5efe9;
+  --cf-tip-ink: #1d1814;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(22rem, calc(100vw - 16px));
+  padding: 0.375rem 0.625rem;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--cf-tip-surface);
+  color: var(--cf-tip-ink);
+  font: 500 0.75rem/1.3 var(--font-sans);
+  box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.94;
+  filter: blur(4px);
+  transform-origin: center bottom;
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), scale 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+${R} [data-cf-tip][data-side="bottom"] { transform-origin: center top; }
+${R} [data-cf-tip]:is([data-state="open"], [data-state="open-instant"]) { opacity: 1; scale: 1; filter: none; }
+${R} [data-cf-tip][data-state="open-instant"] { transition-duration: 60ms; }
+/* While warm, an open tooltip glides to the next trigger instead of popping again. */
+${R} [data-cf-tip][data-glide="true"] { transition: translate 140ms cubic-bezier(0.23, 1, 0.32, 1), opacity 60ms; }
+${R} [data-cf-tip] kbd {
+  font: 500 0.6875rem/1 var(--font-sans);
+  padding: 0.125rem 0.3rem;
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, var(--cf-tip-ink) 10%, transparent);
+  color: color-mix(in oklab, var(--cf-tip-ink) 70%, transparent);
+}
+${R} [data-cf-tip] i {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--cf-tip-surface);
+  rotate: 45deg;
+  bottom: -4px;
+}
+${R} [data-cf-tip][data-side="bottom"] i { bottom: auto; top: -4px; }
+@media (prefers-reduced-motion: reduce) {
+  ${R} [data-cf-tip] { scale: 1; filter: none; transition: opacity 80ms; }
+}
+
+/* Every floating menu (context menus, dropdowns, drop-ups, pickers) gets the same glass as the
+   context menu; panels inside them go clear so it reads as one surface. */
+${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) :is(.bg-popover, .bg-card, .bg-background, .bg-muted, .bg-surface-raised, .bg-surface-recessed, .bg-surface-raised-solid) {
+  background-color: transparent !important;
+}
 ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) {
   /* Concentric corners: outer radius = item radius + padding (14 = 8 + 6). */
   border-radius: var(--cf-radius) !important;
