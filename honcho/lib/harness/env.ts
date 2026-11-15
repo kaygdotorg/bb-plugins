@@ -14,7 +14,8 @@ const FAILURE_REPORT_MS = 5 * 60_000;
 export interface ProviderEnvDeps {
   activity?: ActivityLog;
   call?: HarnessCaller;
-  hookBudgetMs?: number;
+  /** The shared `hookBudgetMs` setting, read on every resolve so a change applies to the next harness start. */
+  hookBudgetMs?: number | (() => number);
   /** ACP provider ids (`acp-<agentId>`); bb needs exact ids, it has no wildcard. */
   acpProviderIds?: readonly string[];
   /** Test seam for the cache clock. */
@@ -30,7 +31,10 @@ export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">
   const cache = new Map<string, { at: number; value: EnvPaths }>();
   const inflight = new Map<string, Promise<EnvPaths>>();
   const lastFailure = new Map<string, number>();
-  const budget = String(Math.max(0, Math.round(deps.hookBudgetMs ?? DEFAULT_HOOK_BUDGET_MS)));
+  const budget = () => {
+    const value = typeof deps.hookBudgetMs === "function" ? deps.hookBudgetMs() : deps.hookBudgetMs;
+    return String(Math.max(0, Math.round(Number.isFinite(value) ? value! : DEFAULT_HOOK_BUDGET_MS)));
+  };
 
   function fetchPaths(hostId: string): Promise<EnvPaths> {
     let pending = inflight.get(hostId);
@@ -72,7 +76,7 @@ export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">
   const hookEnv = (p: EnvPaths) => [
     gate,
     entry("BB_HONCHO_RECALL_DIR", p.recallDir, "Where the bb honcho hook reads per-turn recall"),
-    entry("BB_HONCHO_HOOK_BUDGET_MS", budget, "How long the bb honcho hook waits for recall"),
+    entry("BB_HONCHO_HOOK_BUDGET_MS", budget(), "How long the bb honcho hook waits for recall"),
   ];
 
   // Without the paths, contribute nothing: the hook stays off and claude-honcho /

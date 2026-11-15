@@ -98,18 +98,8 @@ describe("message.dispatch prefetch", () => {
 });
 
 describe("provider env", () => {
-  it("contributes the recall dir and hook budget for claude-code and codex only", async () => {
-    const s = await make({ settings: { hookBudgetMs: 650 } });
-    const env = await s.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_main", projectId: "p", hostId: "host_a" });
-    expect(Object.fromEntries(env.map(e => [e.name, e.value]))).toEqual({ BB_HONCHO_RECALL_DIR: s.recallDir, BB_HONCHO_HOOK_BUDGET_MS: "650" });
-    expect([...s.harness.registrations.providerEnvResolvers.keys()].sort()).toEqual(["claude-code", "codex"]);
-  });
-  it("omits the dir when the host cannot be reached", async () => {
+  it("contributes none: the harness slice owns the one env resolver per provider", async () => {
     const s = await make();
-    const original = s.host.experimental_call;
-    s.host.experimental_call = (async () => { throw new Error("daemon offline"); }) as typeof original;
-    const env = await s.harness.behavior.resolveProviderEnv("codex", { threadId: null, projectId: null, hostId: "host_b" });
-    expect(env.map(e => e.name)).toEqual(["BB_HONCHO_HOOK_BUDGET_MS"]);
-    expect(env[0].value).toBe("400");
+    expect([...s.harness.registrations.providerEnvResolvers.keys()]).toEqual([]);
   });
 });

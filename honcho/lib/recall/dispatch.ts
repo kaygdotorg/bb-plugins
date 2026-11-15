@@ -1,4 +1,4 @@
-import type { BbPluginApi, ExperimentalPluginProviderEnvEntry, MessageDispatchHookContext } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, MessageDispatchHookContext } from "@get-bb/plugin-sdk";
 import { HonchoError, type Message } from "../honcho-client.js";
 import { normalizePromptText } from "./cache-file.js";
 import { formatTurnMemory } from "./format.js";
@@ -11,12 +11,12 @@ const SEARCH_LIMIT = 8;
 /**
  * Per-turn prefetch: answer `proceed` at once, then search Honcho off the
  * dispatch path and have the thread's own host write the cache file.
- * Also contributes BB_HONCHO_RECALL_DIR and BB_HONCHO_HOOK_BUDGET_MS (non-secret).
+ * The hook's env (BB_HONCHO_RECALL_DIR, BB_HONCHO_HOOK_BUDGET_MS) comes from the
+ * harness slice's registerProviderEnv: bb allows one env resolver per provider.
  */
 export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, recall: RecallRuntime): { idle(): Promise<void> } {
-  const { shared, settings, deps } = recallInternals(recall);
+  const { shared, deps } = recallInternals(recall);
   const running = new Set<Promise<void>>();
-  const dirs = new Map<string, string>();
 
   async function prefetch(ctx: MessageDispatchHookContext): Promise<void> {
     const hostId = ctx.host?.id;
@@ -69,21 +69,5 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
     return { action: "proceed" };
   });
 
-  for (const providerId of HOOK_PROVIDERS) {
-    bb.providers.experimental_contributeEnv(providerId, async ({ hostId }) => {
-      const entries: ExperimentalPluginProviderEnvEntry[] = [
-        { name: "BB_HONCHO_HOOK_BUDGET_MS", value: String(settings.hookBudgetMs()), reason: "How long the honcho prompt hook waits for per-turn memory" },
-      ];
-      let dir = dirs.get(hostId);
-      if (!dir && shared.host) {
-        try {
-          dir = (await shared.host.call("recall.dir", {}, { hostId, signal: AbortSignal.timeout(5_000) })).dir;
-          dirs.set(hostId, dir);
-        } catch { /* fallback: no dir, the hook exits and the session gets session-start recall only */ }
-      }
-      if (dir) entries.unshift({ name: "BB_HONCHO_RECALL_DIR", value: dir, reason: "Where the honcho prompt hook reads per-turn memory (not secret)" });
-      return entries;
-    });
-  }
   return { async idle() { while (running.size) await Promise.all([...running]); } };
 }
