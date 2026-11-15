@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { summarize } from "./lib/pool";
 
 const bucketSchema = z.object({
   window: z.string(),
@@ -43,10 +44,37 @@ const snapshotSchema = z.object({
 
 export type UsageSnapshot = z.infer<typeof snapshotSchema>;
 
+/** One quota window pooled across a provider's accounts (lib/pool.ts). */
+const windowSchema = z.object({
+  used: z.number().min(0).max(1),
+  accounts: z.number().int(),
+  resetsAt: z.string(),
+});
+export type UsageWindow = z.infer<typeof windowSchema>;
+
+/** The compact view for the sidebar footer: Claude and Codex, each pooled. */
+const summarySchema = z.object({
+  status: z.enum(["ok", "unavailable"]),
+  message: z.string().nullable(),
+  providers: z.array(z.object({
+    provider: z.enum(["claude", "codex"]),
+    accounts: z.number().int(),
+    session: windowSchema.nullable(),
+    weekly: windowSchema.nullable(),
+  })),
+});
+export type UsageSummary = z.infer<typeof summarySchema>;
+
 export const rpcContract = defineRpcContract({
+  /** Every account with its quota windows (the disclosure; other plugins may read it too). */
   usage_read: {
     input: z.object({ refresh: z.boolean() }),
     output: snapshotSchema,
+  },
+  /** Pooled per provider, for the footer. */
+  usage_summary: {
+    input: z.object({ refresh: z.boolean() }),
+    output: summarySchema,
   },
 });
 
@@ -300,6 +328,44 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Stored as a server-side secret and sent only to the configured CLIProxyAPI instance.",
       secret: true,
     },
+    // How the sidebar footer shows usage (read by the app through useSettings()).
+    footer: {
+      type: "boolean",
+      label: "Show usage in the sidebar footer",
+      description: "Replaces the chart icon with each provider's usage percentage. Click it for the full breakdown.",
+      default: true,
+    },
+    footerWindow: {
+      type: "select",
+      label: "Footer window",
+      options: ["auto", "session", "weekly"],
+      experimental_optionLabels: { auto: "5-hour session, else weekly", session: "5-hour session", weekly: "Weekly" },
+      default: "auto",
+    },
+    footerProviders: {
+      type: "select",
+      label: "Footer providers",
+      options: ["both", "claude", "codex"],
+      experimental_optionLabels: { both: "Claude and Codex", claude: "Claude only", codex: "Codex only" },
+      default: "both",
+    },
+    footerLabels: {
+      type: "select",
+      label: "Footer labels",
+      options: ["icons", "names"],
+      experimental_optionLabels: { icons: "Provider icons", names: "Provider names" },
+      default: "icons",
+    },
+    warnPercent: {
+      type: "number",
+      label: "Amber from (% used)",
+      default: 75,
+    },
+    criticalPercent: {
+      type: "number",
+      label: "Red from (% used)",
+      default: 90,
+    },
   });
 
   let config = await settings.get();
@@ -418,5 +484,6 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(rpcContract, {
     usage_read: ({ refresh }) => readUsage(refresh),
+    usage_summary: async ({ refresh }) => summarize(await readUsage(refresh)),
   });
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { definePluginApp, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, UsageSnapshot } from "./server";
+import { FooterUsage } from "./footer";
 
 function formatProvider(provider: string): string {
   const normalized = provider.toLowerCase();
@@ -229,6 +230,8 @@ function UsageDisclosure({ dismiss }: { dismiss(): void }) {
 }
 
 export default definePluginApp((app) => {
+  // The percentages that stand in for the chart icon (footer.tsx).
+  app.slots.experimental_appOverlay({ id: "footer-usage", component: FooterUsage });
   app.experimental_sidebarFooter.register({
     kind: "disclosure",
     id: "cliproxy-usage",

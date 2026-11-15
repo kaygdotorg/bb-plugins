@@ -1,21 +1,9 @@
-Keep a todo list beside the work it belongs to, in the sidebar and in
-your agent threads.
+See how much of your Claude and Codex quota is left, across every account in your
+CLIProxyAPI instance.
 
-## What you get
+- The sidebar footer shows each provider's pooled usage as a percentage, coloured
+  as it fills.
+- Click it for every account's quota windows and reset times.
 
-- An **Example todos** page in the left sidebar that adds, completes, and
-  removes todos.
-- A `bb cliproxy-usage` command that does the same from a terminal.
-- Live updates, so a change made in one place reaches every open page at once.
-
-## How it works
-
-The todos live in this plugin's own storage on the BB server, one list per
-installation. Nothing leaves the machine, and the plugin needs no account, API
-key, or external service.
-
-## For agents
-
-The bundled skill tells an agent to read the list with `bb cliproxy-usage list`, add
-one todo at a time with `bb cliproxy-usage add`, and close finished work with
-`bb cliproxy-usage done`.
+The management key stays on the bb server. The plugin only reads quota data: it never
+consumes queued usage records.
