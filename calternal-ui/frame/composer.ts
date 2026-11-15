@@ -44,6 +44,8 @@ export function mountComposer(): () => void {
   let morphing: { form: HTMLElement; until: number } | null = null;
   let opening: { form: HTMLElement; composer: HTMLElement; anim: Animation; at: number; from: number; to: number } | null = null;
   let expandedH = 0; // the two-row form's height, last seen (the early open grows toward it)
+  let collapsedH = 0; // the one-line form's height, last seen (the early close shrinks toward it)
+  let closing: { form: HTMLElement; composer: HTMLElement; anim: Animation; fade: Animation | null; at: number; from: number; to: number } | null = null;
   const MORPH_MS = 350;
   const MORPH_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
   const phone = matchMedia("(max-width: 767px)");
@@ -247,11 +249,37 @@ export function mountComposer(): () => void {
       revealRows(form);
       return;
     }
+    // The early close's handover, the mirror of the open's (see beginClose).
+    if (closing && closing.form === form && collapsed) {
+      const current = form.getBoundingClientRect().height;
+      closing.anim.cancel();
+      const h = form.getBoundingClientRect().height;
+      if (h > closing.from - 8) {
+        const rest = Math.max(1, MORPH_MS - (now - closing.at));
+        closing.anim = form.animate({ height: [`${current}px`, `${closing.to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: rest, easing: MORPH_EASE, fill: "forwards" });
+        requestAnimationFrame(() => { if (!disposed) morphHeight(form, !!form.closest("[data-app-composer]")?.hasAttribute("data-cf-collapsed")); });
+        return;
+      }
+      const left = Math.max(140, MORPH_MS - (now - closing.at));
+      closing.fade?.cancel();
+      closing.composer.removeAttribute("data-cf-closing");
+      closing = null;
+      lastForm = { el: form, h, collapsed };
+      if (Math.abs(current - h) >= 2) {
+        morphing = { form, until: now + left + 10 };
+        form.animate({ height: [`${current}px`, `${h}px`] }, { duration: left, easing: MORPH_EASE });
+      }
+      return;
+    }
     const h = form.getBoundingClientRect().height;
     const was = lastForm;
     if (was.el === form && collapsed !== was.collapsed) flippedAt = now;
     lastForm = { el: form, h, collapsed };
-    if (!collapsed) expandedH = h;
+    // Resting heights only: mid-animation the box's height is the animation's, not bb's.
+    if (!form.getAnimations().length) {
+      if (!collapsed) expandedH = h;
+      else collapsedH = h;
+    }
     // bb flips the flag a frame before it lays out the new rows: animate any real height change that
     // follows a flip closely, whichever pass sees it.
     if (was.el !== form || now - flippedAt > 400 || Math.abs(was.h - h) < 4) return;
@@ -304,6 +332,45 @@ export function mountComposer(): () => void {
     document.addEventListener("touchmove", onMove, { capture: true, passive: true });
     document.addEventListener("touchend", stop, true);
     window.setTimeout(() => { stop(); back(); }, 2000);
+  }
+
+  /**
+   * The close starts when the text field loses focus, which is when the keyboard starts down (kayg: ChatGPT and
+   * Claude collapse WITH the keyboard; bb only collapses once it is gone). The buttons row fades out, the
+   * capsule narrows (CSS, [data-cf-closing]) and the box shrinks toward the one-line height last seen; when
+   * bb collapses, morphHeight carries on. If focus stayed in the composer (a tap on its own buttons), or bb
+   * doesn't collapse, it reverses.
+   */
+  function beginClose(e: FocusEvent) {
+    if (!phone.matches || !animates() || opening || closing) return;
+    const target = e.target as Element;
+    if (!target.closest?.('[contenteditable="true"]')) return;
+    const host = target.closest<HTMLElement>("[data-app-composer]");
+    if (!host || host.hasAttribute("data-cf-collapsed")) return;
+    if (e.relatedTarget instanceof Node && host.contains(e.relatedTarget)) return; // focus stays in the composer
+    const form = host.querySelector<HTMLElement>("form[data-promptbox]");
+    if (!form) return;
+    // Only an empty draft collapses in bb; with text, nothing changes.
+    if ((target.textContent ?? "").trim()) return;
+    const from = form.getBoundingClientRect().height;
+    const to = collapsedH > 0 && collapsedH < from - 8 ? collapsedH : Math.max(52, from / 2.6);
+    host.setAttribute("data-cf-closing", "");
+    const row = form.querySelector<HTMLElement>("[data-promptbox-action-row]");
+    const fade = row?.animate({ opacity: [1, 0] }, { duration: 140, easing: "linear", fill: "forwards" }) ?? null;
+    // min-height 0 and a clip: as a layout item the form won't go below its content's height otherwise.
+    const anim = form.animate({ height: [`${from}px`, `${to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
+    const me = { form, composer: host, anim, fade, at: performance.now(), from, to };
+    closing = me;
+    window.setTimeout(() => {
+      if (closing !== me) return;
+      // bb kept it expanded: back to where it was.
+      const current = form.getBoundingClientRect().height;
+      me.anim.cancel();
+      me.fade?.cancel();
+      host.removeAttribute("data-cf-closing");
+      closing = null;
+      form.animate({ height: [`${current}px`, `${from}px`] }, { duration: 220, easing: MORPH_EASE });
+    }, 1500);
   }
 
   /** bb's new rows (the buttons) ease in instead of popping: a short fade and rise, after the box has room. */
@@ -376,6 +443,7 @@ export function mountComposer(): () => void {
   window.addEventListener("resize", schedule, { passive: true });
   document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
   document.addEventListener("touchstart", beginOpen, { capture: true, passive: true });
+  document.addEventListener("focusout", beginClose, true);
   schedule();
   return () => {
     disposed = true;
@@ -386,6 +454,8 @@ export function mountComposer(): () => void {
     window.removeEventListener("resize", schedule);
     document.removeEventListener("pointerdown", onPointerDown, { capture: true });
     document.removeEventListener("touchstart", beginOpen, { capture: true });
+    document.removeEventListener("focusout", beginClose, true);
+    closing?.anim.cancel();
     opening?.anim.cancel();
     mutations.disconnect();
     resize.disconnect();

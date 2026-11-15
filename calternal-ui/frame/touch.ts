@@ -84,17 +84,29 @@ function openSearch() {
 }
 
 /**
- * Swipe sideways anywhere in the chat (phones), like Claude's and ChatGPT's apps: left to right opens the
- * sidebar drawer, right to left the right panel. bb only opens them from the screen edge (left there to
- * bb). Not from the composer (text selection), nor from anything that scrolls sideways itself (code
- * blocks, tables, the attachment strip). The swipe is decided once it is clearly horizontal (|dx| > 1.5
- * |dy| past 12px), and opens on release past 56px, or on a quick flick (> 0.35 px/ms). It presses bb's
- * own buttons (the drawer toggle; the right-panel button, hidden in the header on phones), so bb animates.
+ * Sideways swipes in the chat (phones) that move the pane WITH the finger, like Claude's and ChatGPT's apps:
+ *   - drawer closed: left to right drags the pane open over the sidebar (0 → the drawer's width);
+ *   - drawer closed: right to left drags it off to the left for the right panel (0 → -screen width);
+ *   - drawer open: dragging the pane (its visible strip) to the left closes it again.
+ * bb moves the pane with `translate` (its classes: open = --sidebar-width-mobile, right panel = -100%) and a
+ * 220ms transition. While dragging, the pane's inline translate follows the finger (no transition) and it
+ * looks like the floating card ([data-cf-dragging], css.ts). On release it opens if past 40% of the way or
+ * flicked that way (> 0.3px/ms), else springs back. To change state it presses bb's own button and keeps the
+ * pane under the finger until bb's attribute has flipped, then lets go in that same microtask, so bb's
+ * transition carries on from exactly there (no hitch). Not from the composer, from things that scroll
+ * sideways, or from the 24px screen edges (bb's own edge swipe).
  */
+const TOGGLE_OVERLAY = '[data-testid="app-sidebar-trigger-overlay"]';
+
 function sideSwipes(): () => void {
-  const EDGE = 24, DECIDE = 12, OPEN = 56, FLICK = 0.35;
+  const EDGE = 24, DECIDE = 10, FLICK = 0.3, PAST = 0.4;
   const phone = matchMedia("(max-width: 767px)");
-  let x0 = 0, y0 = 0, t0 = 0, dx = 0, state: "idle" | "maybe" | "horizontal" | "no" = "idle";
+  type Mode = "open-left" | "open-right" | "close-left";
+  let pane: HTMLElement | null = null;
+  let mode: Mode | null = null;
+  let x0 = 0, y0 = 0, dx = 0, width = 0;
+  let state: "idle" | "maybe" | "drag" | "no" = "idle";
+  let samples: { t: number; x: number }[] = [];
 
   const scrollsSideways = (el: Element | null, stop: Element) => {
     for (let e = el; e && e !== stop; e = e.parentElement) {
@@ -102,6 +114,13 @@ function sideSwipes(): () => void {
     }
     return false;
   };
+  const drawerWidth = () => document.querySelector<HTMLElement>('[data-sidebar="sidebar"]')?.getBoundingClientRect().width || innerWidth * 0.75;
+  const position = () => {
+    if (mode === "open-left") return Math.min(width, Math.max(0, dx));
+    if (mode === "close-left") return Math.min(width, Math.max(0, width + dx));
+    return Math.max(-width, Math.min(0, dx));
+  };
+
   const onStart = (e: TouchEvent) => {
     state = "idle";
     if (!phone.matches || e.touches.length !== 1) return;
@@ -109,34 +128,118 @@ function sideSwipes(): () => void {
     if (touch.clientX < EDGE || touch.clientX > innerWidth - EDGE) return; // the edges are bb's
     const target = e.target as Element;
     const main = target.closest<HTMLElement>(SHELF);
-    if (!main || (main.getAttribute("data-sidebar-shelf") ?? "closed") !== "closed") return;
+    if (!main) return;
+    const shelf = main.getAttribute("data-sidebar-shelf") ?? "closed";
+    const panel = main.getAttribute("data-panel-shelf") ?? "closed";
     if (target.closest("[data-app-composer], input, textarea, [contenteditable='true'], [data-persistent-drawer-content]")) return;
-    if (scrollsSideways(target, main)) return;
-    x0 = touch.clientX; y0 = touch.clientY; t0 = performance.now(); dx = 0;
+    if (panel !== "closed") return;
+    if (shelf === "open") mode = "close-left";
+    else if (shelf === "closed") { if (scrollsSideways(target, main)) return; mode = null; }
+    else return;
+    pane = main;
+    x0 = touch.clientX; y0 = touch.clientY; dx = 0;
+    samples = [{ t: performance.now(), x: x0 }];
     state = "maybe";
   };
+
   const onMove = (e: TouchEvent) => {
-    if (state !== "maybe" && state !== "horizontal") return;
+    if ((state !== "maybe" && state !== "drag") || !pane) return;
     const touch = e.touches[0];
     dx = touch.clientX - x0;
     const dy = touch.clientY - y0;
-    if (state === "maybe" && Math.hypot(dx, dy) > DECIDE) state = Math.abs(dx) > 1.5 * Math.abs(dy) ? "horizontal" : "no";
+    samples.push({ t: performance.now(), x: touch.clientX });
+    if (samples.length > 6) samples.shift();
+    if (state === "maybe") {
+      if (Math.hypot(dx, dy) < DECIDE) return;
+      if (Math.abs(dx) <= 1.5 * Math.abs(dy)) { state = "no"; return; }
+      if (mode !== "close-left") mode = dx > 0 ? "open-left" : "open-right";
+      if (mode === "close-left" && dx > 0) { state = "no"; return; }
+      width = mode === "open-right" ? innerWidth : drawerWidth();
+      state = "drag";
+      pane.setAttribute("data-cf-dragging", "");
+      pane.style.transition = "none";
+      // bb's sidebar button is a fixed overlay outside the pane: it rides with the pane (else it sat on top of
+      // the drawer's wordmark mid-drag, kayg's screenshot).
+      const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);
+      if (toggle) toggle.style.transition = "none";
+    }
+    const at = `${position().toFixed(1)}px 0`;
+    pane.style.translate = at;
+    const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);
+    if (toggle) toggle.style.translate = at;
   };
+
+  const settle = (main: HTMLElement, from: number, open: boolean, m: Mode) => {
+    const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);
+    const release = () => {
+      main.style.removeProperty("translate");
+      main.style.removeProperty("transition");
+      main.removeAttribute("data-cf-dragging");
+      // The button slides home with the pane's timing (when the drawer is open, CSS hides it anyway).
+      if (toggle) {
+        toggle.style.transition = "translate 220ms cubic-bezier(0.32, 0.72, 0, 1)";
+        toggle.style.removeProperty("translate");
+        window.setTimeout(() => toggle.style.removeProperty("transition"), 260);
+      }
+    };
+    const wasOpen = m === "close-left";
+    if (open === wasOpen) { release(); return; } // spring back: bb's transition runs from here to its state
+    // Change state with bb's own button; hold the pane where the finger left it until bb's attribute flips.
+    const attr = m === "open-right" ? "data-panel-shelf" : "data-sidebar-shelf";
+    const before = main.getAttribute(attr);
+    const watch = new MutationObserver(() => {
+      if (main.getAttribute(attr) === before) return;
+      watch.disconnect();
+      window.clearTimeout(timer);
+      release(); // same microtask as bb's flip: its transition starts from the held position
+    });
+    watch.observe(main, { attributes: true, attributeFilter: [attr] });
+    const timer = window.setTimeout(() => { watch.disconnect(); release(); }, 600);
+    main.style.translate = `${from.toFixed(1)}px 0`;
+    if (toggle) toggle.style.translate = `${from.toFixed(1)}px 0`;
+    if (m === "open-right") {
+      [...document.querySelectorAll<HTMLButtonElement>("main header [data-thread-header-pane-actions] button")]
+        .find((b) => /^Show right panel/i.test(b.getAttribute("aria-label") ?? ""))?.click();
+    } else {
+      document.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click();
+    }
+  };
+
   const onEnd = () => {
-    if (state !== "horizontal") { state = "idle"; return; }
+    if (state !== "drag" || !pane || !mode) { state = "idle"; pane = null; return; }
     state = "idle";
-    const v = Math.abs(dx) / Math.max(1, performance.now() - t0);
-    if (Math.abs(dx) < OPEN && v < FLICK) return;
-    if (dx > 0) document.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click();
-    else [...document.querySelectorAll<HTMLButtonElement>("main header [data-thread-header-pane-actions] button")]
-      .find((b) => /^Show right panel/i.test(b.getAttribute("aria-label") ?? ""))?.click();
+    const first = samples[0], last = samples[samples.length - 1];
+    const v = (last.x - first.x) / Math.max(1, last.t - first.t); // px/ms, + to the right
+    const pos = position();
+    const m = mode;
+    let open: boolean;
+    if (m === "open-left") open = v > FLICK || (v > -FLICK && pos > width * PAST);
+    else if (m === "open-right") open = v < -FLICK || (v < FLICK && -pos > width * PAST);
+    else open = !(v < -FLICK || (v < FLICK && pos < width * (1 - PAST))); // close-left: open = stays open
+    const main = pane;
+    pane = null;
+    // A drag is not a tap: swallow a click the browser may still send for this touch (it could land on a
+    // sidebar row now under the finger).
+    const swallowClick = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
+    document.addEventListener("click", swallowClick, { capture: true, once: true });
+    window.setTimeout(() => document.removeEventListener("click", swallowClick, { capture: true }), 400);
+    settle(main, pos, open, m);
   };
-  const onCancel = () => { state = "idle"; };
+  const onCancel = () => {
+    if (pane && state === "drag") {
+      pane.style.removeProperty("translate"); pane.style.removeProperty("transition"); pane.removeAttribute("data-cf-dragging");
+      const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);
+      toggle?.style.removeProperty("translate"); toggle?.style.removeProperty("transition");
+    }
+    state = "idle"; pane = null;
+  };
+
   document.addEventListener("touchstart", onStart, { passive: true });
   document.addEventListener("touchmove", onMove, { passive: true });
   document.addEventListener("touchend", onEnd, { passive: true });
   document.addEventListener("touchcancel", onCancel, { passive: true });
   return () => {
+    onCancel();
     document.removeEventListener("touchstart", onStart);
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);

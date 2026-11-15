@@ -728,11 +728,14 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     background: var(--cf-side) !important;
     isolation: isolate;
     overflow: clip;
-    transition: border-radius 220ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 220ms ease-out;
+    /* bb slides this pane with a translate transition (its class): keep it. An earlier transition here for
+       the corners and shadow replaced bb's, so the drawer and the right panel jumped instead of sliding.
+       The corners and shadow switch at once (animating them repainted the full-screen pane every frame). */
+    transition: translate 220ms cubic-bezier(0.32, 0.72, 0, 1);
   }
   /* At rest the pane is a full-screen sheet. When it slides aside for the drawer or the
      right panel, it becomes the floating card: rounded, with the card's edge and shadow. */
-  ${MAIN}:is([data-sidebar-shelf]:not([data-sidebar-shelf="closed"]), [data-panel-shelf]:not([data-panel-shelf="closed"])) {
+  ${MAIN}:is([data-sidebar-shelf]:not([data-sidebar-shelf="closed"]), [data-panel-shelf]:not([data-panel-shelf="closed"]), [data-cf-dragging]) {
     /* Like Claude's iOS app: the pane takes the screen's own corner radius, so it reads as
        the display itself sliding aside. Squircle corners where supported (Chromium). */
     border-radius: var(--cf-device-radius);

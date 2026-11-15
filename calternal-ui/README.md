@@ -35,7 +35,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 - **The header:** the thread title sits on the left; the ⋯ menu also holds the right panel, and opening it keeps your keyboard up.
 - **Swipe a thread** left to archive it, right to pin it.
 - **Pull down** on the title bar (or at the top of the sidebar) to search.
-- **Swipe sideways** anywhere in a chat: right to open the sidebar, left to open the right panel.
+- **Swipe sideways** anywhere in a chat: the chat follows your finger, right to open the sidebar, left for the right panel.
 - **A keyboard-down button** sits in the composer while you type.
 
 ## Install
