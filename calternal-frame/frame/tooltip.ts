@@ -43,14 +43,19 @@ function labelOf(el: HTMLElement): { text: string; keys: string | null } | null 
   // Text fields never get one (their title/placeholder is not a tooltip).
   if (el.isContentEditable || el.matches("input, textarea, select")) return null;
   const title = el.getAttribute("title") ?? el.dataset.cfTitle ?? null;
-  const aria = el.getAttribute("aria-label");
-  const text = (title || aria || "").trim();
+  const ariaLabel = el.getAttribute("aria-label");
+  const text = (title || ariaLabel || "").trim();
   if (!text) return null;
   // A visible label already says it: no tooltip (titles are explicit, so they always show).
   const visible = visibleText(el);
   if (!title && visible.length > 1 && text.toLowerCase().includes(visible.toLowerCase())) return null;
-  const keys = el.getAttribute("aria-keyshortcuts");
-  return { text, keys: keys ? keys.replace(/\+/g, " ").replace(/Meta/g, "⌘").replace(/Control/g, "Ctrl") : null };
+  // bb often writes the shortcut into the label too ("Settings (⌘,)"): show it once, as the chip.
+  const inLabel = /\s*\(([^()]*(?:⌘|⌥|⇧|⌃|Ctrl|Shift|Alt|Cmd|Meta|Option)[^()]*)\)\s*$/i.exec(text);
+  const aria = el.getAttribute("aria-keyshortcuts");
+  const keys = aria
+    ? aria.replace(/\+/g, " ").replace(/Meta/g, "⌘").replace(/Control/g, "Ctrl")
+    : inLabel ? inLabel[1].replace(/\s*\+\s*/g, " ").trim() : null;
+  return { text: inLabel ? text.slice(0, inLabel.index).trim() : text, keys };
 }
 
 /** Moves a native title aside so the browser never shows its own popup next to ours. */

@@ -188,8 +188,9 @@ ${R}[data-cf-silent-menu] :is([role="menu"], [data-persistent-drawer-content], [
    tooltips are hidden so they never double up. */
 ${R} [data-radix-popper-content-wrapper]:has([role="tooltip"]) { display: none !important; }
 ${R} [data-cf-tip] {
-  --cf-tip-surface: #f5efe9;
-  --cf-tip-ink: #1d1814;
+  /* The accent, mixed into the theme's surface: tooltips follow the wallpaper or custom colour. */
+  --cf-tip-surface: color-mix(in oklab, var(--cf-accent) 22%, var(--cf-side));
+  --cf-tip-ink: var(--foreground);
   position: fixed;
   left: 0;
   top: 0;
@@ -211,6 +212,7 @@ ${R} [data-cf-tip] {
   transform-origin: center bottom;
   transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), scale 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
+${R}.dark [data-cf-tip] { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 6px 18px -8px rgb(0 0 0 / 0.6); }
 ${R} [data-cf-tip][data-side="bottom"] { transform-origin: center top; }
 ${R} [data-cf-tip]:is([data-state="open"], [data-state="open-instant"]) { opacity: 1; scale: 1; filter: none; }
 ${R} [data-cf-tip][data-state="open-instant"] { transition-duration: 60ms; }
