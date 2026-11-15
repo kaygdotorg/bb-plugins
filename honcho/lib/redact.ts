@@ -69,6 +69,92 @@ const literalValue = (value: string) => { const v = unquote(value).trim(); retur
 /** Environment variables that never hold credentials (unless their name says so, see SECRET_NAME). */
 const PLAIN_ENV = /^(?:PATH|MANPATH|INFOPATH|HOME|USER|LOGNAME|SHELL|TERM|COLORTERM|LANG|LANGUAGE|TZ|EDITOR|VISUAL|PAGER|PWD|OLDPWD|DISPLAY|HOSTNAME|TMPDIR|CI|DEBUG|NODE_ENV|NODE_OPTIONS|RUST_LOG|RUST_BACKTRACE|CC|CXX|CFLAGS|CXXFLAGS|LDFLAGS|LC_\w+|XDG_\w+|\w+_(?:PATH|HOME|DIR|ENV|LEVEL|MODE|VERSION|PORT|HOST))$/;
 
+/** Longest piece of a line a user pattern is run on. */
+export const USER_LINE_MAX = 10_000;
+/** Longest user pattern source accepted. */
+export const PATTERN_MAX = 500;
+
+const NL_NAME = String.raw`(?:pass(?:word|code)|pin|api[ _-]?key|secret|token)`;
+// The value is a quoted string or a run of non-space chars; trailing punctuation is trimmed by the caller.
+const NL_SECRET = new RegExp(String.raw`(?<![\w-])${NL_NAME}\s*(?:\bis\b|=|:)\s*("[^"\r\n]{1,200}"|'[^'\r\n]{1,200}'|[^\s"'\`]{1,200})`, "gi");
+/** The value after "password is": quoted text counts; a bare word must look like a credential
+ * (a digit, a symbol or inner capitals, 4+ chars) so "the password is required" stays. */
+function nlValue(value: string): boolean {
+  if (/^(["']).+\1$/.test(value)) return value.length > 2 && !TYPE_WORDS.test(unquote(value));
+  if (value.length < 4 || /^[[{(<$]/.test(value) || value.includes("(") || TYPE_WORDS.test(value)) return false;
+  return /\d/.test(value) || /[^A-Za-z\d]/.test(value) || /[A-Z]/.test(value.slice(1)) && /[a-z]/.test(value);
+}
+
+/** Why a user regex is refused, or null when it passes. A cheap static check, no dependency:
+ * nested unbounded quantifiers (`(a+)+`), unbounded groups of overlapping alternatives
+ * (`(a|a)*`, `(.|x)+`), backreferences and lookbehind. */
+export function unsafePattern(source: string): string | null {
+  if (source.length > PATTERN_MAX) return `Longer than ${PATTERN_MAX} characters.`;
+  if (/\\[1-9]|\\k</.test(source.replace(/\\\\/g, ""))) return "Backreferences are not allowed; they can make matching very slow.";
+  if (/\(\?<[=!]/.test(source.replace(/\\./g, ""))) return "Lookbehind is not allowed.";
+  interface Group { quantified: boolean; branches: string[]; atoms: string[]; first: boolean }
+  const stack: Group[] = [{ quantified: false, branches: [], atoms: [], first: true }];
+  const unbounded = (at: number): { open: boolean; end: number } | null => {
+    const c = source[at];
+    let end = at, open = false;
+    if (c === "*" || c === "+") { open = true; end = at + 1; }
+    else if (c === "?") end = at + 1;
+    else if (c === "{") {
+      const m = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(at));
+      if (!m) return null;
+      end = at + m[0].length;
+      open = m[2] !== undefined && (m[3] === "" || Number(m[3]) > 100);
+    } else return null;
+    if (source[end] === "?" || source[end] === "+") end++;
+    return { open, end };
+  };
+  for (let i = 0; i < source.length;) {
+    const c = source[i];
+    const top = stack[stack.length - 1];
+    let atom: string | null = null;
+    if (c === "\\") { atom = source.slice(i, i + 2); i += 2; }
+    else if (c === "[") {
+      let j = i + 1;
+      if (source[j] === "^") j++;
+      if (source[j] === "]") j++;
+      while (j < source.length && source[j] !== "]") j += source[j] === "\\" ? 2 : 1;
+      atom = source.slice(i, j + 1); i = j + 1;
+    } else if (c === "(") {
+      stack.push({ quantified: false, branches: [], atoms: [], first: true });
+      i++;
+      if (source[i] === "?") { i++; if (source[i] === ":" || source[i] === "=" || source[i] === "!") i++; else if (source[i] === "<") { while (i < source.length && source[i] !== ">") i++; i++; } }
+      continue;
+    } else if (c === ")") {
+      const group = stack.pop()!;
+      if (!stack.length) return "Unbalanced parenthesis.";
+      const q = unbounded(i + 1);
+      const parent = stack[stack.length - 1];
+      group.branches.push(group.atoms[0] ?? "");
+      if (q?.open) {
+        if (group.quantified) return "Nested repetition such as (a+)+ can make matching very slow; rewrite it without a repeated group inside a repeated group.";
+        if (group.branches.length > 1 && overlapping(group.branches)) return "A repeated alternation whose branches overlap, such as (a|a)* or (.|x)+, can make matching very slow.";
+      }
+      if (group.quantified || q?.open) parent.quantified = true;
+      i = q ? q.end : i + 1;
+      parent.first = false;
+      continue;
+    } else if (c === "|") { top.branches.push(top.atoms[0] ?? ""); top.atoms = []; top.first = true; i++; continue; }
+    else { atom = c; i++; }
+    if (top.first) { top.atoms.push(atom); top.first = false; }
+    const q = unbounded(i);
+    if (q) { if (q.open) top.quantified = true; i = q.end; }
+  }
+  return stack.length === 1 ? null : "Unbalanced parenthesis.";
+}
+/** True when two alternatives may start with the same character: equal first atoms, or a wildcard or class. */
+function overlapping(firsts: string[]): boolean {
+  const wild = (a: string) => a === "." || a.startsWith("[") || /^\\[wWdDsSbB]/.test(a) || a === "";
+  for (let i = 0; i < firsts.length; i++) for (let j = i + 1; j < firsts.length; j++) {
+    if (firsts[i] === firsts[j] || wild(firsts[i]) || wild(firsts[j])) return true;
+  }
+  return false;
+}
+
 /** Counts disjoint replaced spans, including adjacent matches separately. */
 export function redact(text: string, options: RedactionOptions = {}): RedactionResult {
   const spans: Array<[number, number]> = [];
@@ -79,6 +165,24 @@ export function redact(text: string, options: RedactionOptions = {}): RedactionR
       if (!value || !accept(value)) continue;
       const start = m.index! + (group ? m[0].lastIndexOf(value) : 0);
       spans.push([start, start + value.length]);
+    }
+  };
+  /** User patterns see one line at a time, in pieces of at most USER_LINE_MAX chars, so even a
+   * pattern the static check missed has bounded input. */
+  const collectBounded = (regex: RegExp) => {
+    const re = new RegExp(regex.source, regex.flags.replace(/[gy]/g, "") + "g");
+    let offset = 0;
+    for (const line of text.split("\n")) {
+      for (let from = 0; from < line.length || (from === 0 && line.length === 0); from += USER_LINE_MAX) {
+        const piece = line.slice(from, from + USER_LINE_MAX);
+        for (const m of piece.matchAll(re)) {
+          if (!m[0]) continue;
+          const start = offset + from + m.index!;
+          spans.push([start, start + m[0].length]);
+        }
+        if (line.length === 0) break;
+      }
+      offset += line.length + 1;
     }
   };
   collect(/-----BEGIN ([A-Z\d ]+)-----[\s\S]*?-----END \1-----/g);
@@ -107,7 +211,18 @@ export function redact(text: string, options: RedactionOptions = {}): RedactionR
       start += value.length;
     }
   }
-  for (const pattern of options.patterns ?? []) collect(pattern);
+  // Natural-language secrets: "my password is Hunter2x", "api key: ...", "the token = ...".
+  for (const m of text.matchAll(NL_SECRET)) {
+    const raw = m[1];
+    const value = raw.replace(/[.,;:!?)\]}]+$/, "");
+    if (!nlValue(value)) continue;
+    const start = m.index! + m[0].length - raw.length;
+    spans.push([start, start + value.length]);
+  }
+  for (const pattern of options.patterns ?? []) {
+    // A pattern saved before the safety check existed is skipped rather than risk a stalled capture.
+    if (unsafePattern(pattern.source) === null) collectBounded(pattern);
+  }
   spans.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
   const merged: Array<[number, number]> = [];
   for (const span of spans) {

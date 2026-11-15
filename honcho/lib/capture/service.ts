@@ -132,6 +132,8 @@ export type CaptureHandle = CaptureService & {
   knownScope(threadId: string): string | null;
   /** True when the privacy deny list covers the thread. */
   isDenied(thread: ThreadRef): Promise<boolean>;
+  /** Privacy settings changed: forget cached deny decisions and re-evaluate held threads now. */
+  privacyChanged(): void;
 };
 
 export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureHandle {
@@ -841,6 +843,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
     scopeFor: thread => facts.scopeFor(thread),
     knownScope: threadId => facts.known(threadId),
+    privacyChanged() {
+      // A held thread keeps its "not captured" reason until it is processed again, which could be
+      // a backoff away; run it now so its status follows the new deny list.
+      for (const st of states.values()) if (st.blocked !== null) schedule(st.id, 0);
+    },
     isDenied: async thread => (await facts.denied(thread, await privacy())) !== null,
 
     async threadStatus(threadId): Promise<ThreadMemoryStatus> {
