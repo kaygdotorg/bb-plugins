@@ -73,7 +73,10 @@ export function mountComposer(): () => void {
     const row = composer.querySelector<HTMLElement>(ROW);
     const model = composer.querySelector<HTMLElement>(MODEL);
     if (!followUp || !form || !row) return;
-    const collapsed = form.hasAttribute("data-promptbox-collapsed");
+    // bb also marks a desktop composer collapsed after Escape while still showing everything:
+    // "collapsed" for us means the expanded-only controls (the model button) are gone.
+    const modelShown = !!model && model.getBoundingClientRect().width > 0;
+    const collapsed = form.hasAttribute("data-promptbox-collapsed") && !modelShown;
     composer.toggleAttribute("data-cf-collapsed", collapsed);
 
     // Collapsed composers render neither the footer nor the model button.

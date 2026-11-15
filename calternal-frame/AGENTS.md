@@ -51,6 +51,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - bb's row under the composer is *positioned* into the free space after the model button (`--cf-foot-x/y/h/w`, one `ResizeObserver`), never moved. Its wrappers are `display: contents`, so `order` applies to their children.
   - Labels become icons with tooltips (`data-cf-title`): a folder for the environment ("Personal workspace · main"; phones show "Thread details: <branch>" instead, as a branch icon), one icon per permission mode (Full Access in amber), and the context % only from 80%.
   - "New thread here" is appended to the + menu when it opens; bb's own button stays the action.
+  - "Collapsed" means bb's attribute *and* no visible model button: desktop composers get `data-promptbox-collapsed` after Escape while showing everything.
   - Phones, collapsed: bb renders neither the footer nor the model button. The model icon (bb's `[data-provider-logo]` span, not an svg) is cached in localStorage and shown before the mic; tapping it expands the composer, then opens the picker.
 - **Tooltips skip triggers whose menu is open** (`aria-expanded="true"` or `data-state="open"`). A warm tooltip opens on the next frame; a press in that frame cancels it, or it pops up over the menu the press opened.
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear.
