@@ -19,11 +19,13 @@ export function createAssets(
     const prefs = store.prefs().fonts;
     return (Object.keys(prefs) as (keyof FontPrefs)[]).filter((k) => prefs[k].on && prefs[k].family === family);
   }
+  /** The wordmark counts as a user of its font while it shows. */
+  const brandUses = (family: string) => { const b = store.prefs().brand; return b.text.trim() !== "" && b.font === family; };
 
   function list(): Assets {
     return {
       wallpapers: wallpapers.sizes(),
-      fonts: fonts.installed().map((f) => ({ ...f, usedBy: usedBy(f.family).map((k) => FONT_SURFACES[k]) })),
+      fonts: fonts.installed().map((f) => ({ ...f, usedBy: [...usedBy(f.family).map((k) => FONT_SURFACES[k]), ...(brandUses(f.family) ? ["Wordmark"] : [])] })),
     };
   }
 
@@ -35,6 +37,8 @@ export function createAssets(
       for (const k of using) next[k] = { ...next[k], on: false };
       store.savePrefs({ ...prefs, fonts: next });
     }
+    // The wordmark falls back to the system's cursive font.
+    if (brandUses(family)) { const p = store.prefs(); store.savePrefs({ ...p, brand: { ...p.brand, font: "" } }); }
     fonts.remove(family);
   }
 

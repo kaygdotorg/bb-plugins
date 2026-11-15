@@ -20,5 +20,6 @@ export const DEFAULT_PREFS: FramePrefs = {
   uiScale: 100,
   clock: "24h",
   chatWidth: "wide",
+  brand: { text: "bb", font: "Dancing Script" },
   accent: { mode: "wallpaper", color: "#d9925b" },
 };

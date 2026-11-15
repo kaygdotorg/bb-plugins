@@ -10,6 +10,7 @@ import { applyWallpaper } from "../frame/wallpaper";
 import { applyFontFaces, applyPrefs } from "../frame/prefs";
 import { applyAccent } from "../frame/accent";
 import { registerTimesLoader } from "../frame/times";
+import { applyBrand } from "../frame/brand";
 
 export function FrameOverlay() {
   const rpc = useRpc<typeof rpcContract>();
@@ -34,7 +35,8 @@ export function FrameOverlay() {
       }
       void applyAccent(next.accent, wallpaper);
 
-      const fontsKey = Object.values(next.fonts).filter((f) => f.on).map((f) => f.family).sort().join("|");
+      const fontsKey = [...Object.values(next.fonts).filter((f) => f.on).map((f) => f.family), next.brand.text.trim() ? next.brand.font : ""].sort().join("|");
+      applyBrand(next.brand);
       if (applied.current.fonts !== fontsKey) {
         applyFontFaces((await rpc.call("font_faces", {})).css);
         applied.current = { ...applied.current, fonts: fontsKey };

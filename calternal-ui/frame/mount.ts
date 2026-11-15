@@ -13,6 +13,7 @@ import { mountTooltips } from "./tooltip";
 import { mountComposer } from "./composer";
 import { mountTitlePill } from "./title-pill";
 import { installClock } from "./clock";
+import { mountBrand } from "./brand";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -37,9 +38,11 @@ export function mountFrame(): () => void {
   const unmountTooltips = mountTooltips();
   const unmountComposer = mountComposer();
   const unmountTitlePill = mountTitlePill();
+  const unmountBrand = mountBrand();
 
   return () => {
     uninstallClock();
+    unmountBrand();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();

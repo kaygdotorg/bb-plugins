@@ -70,7 +70,11 @@ export function createFonts(store: Store, log: BbPluginApi["log"]) {
 
   /** @font-face CSS for the enabled overrides; installs anything missing on the way. */
   async function faces(): Promise<string> {
-    const families = [...new Set(Object.values(store.prefs().fonts).filter((f) => f.on && f.family).map((f) => f.family))].sort();
+    const prefs = store.prefs();
+    // The font overrides in use, plus the wordmark's font while it shows.
+    const used = Object.values(prefs.fonts).filter((f) => f.on && f.family).map((f) => f.family);
+    if (prefs.brand.text.trim() && prefs.brand.font) used.push(prefs.brand.font);
+    const families = [...new Set(used)].sort();
     const key = families.join("|");
     if (facesCache?.key === key) return facesCache.css;
     const parts: string[] = [];

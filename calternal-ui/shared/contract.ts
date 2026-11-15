@@ -32,6 +32,8 @@ export const prefsSchema = z.object({
   clock: z.enum(["24h", "12h", "system"]),
   /** Chat layout: "wide" fills the card (your bubbles right, the agent left); "centered" is bb's 760px column. */
   chatWidth: z.enum(["wide", "centered"]),
+  /** The wordmark at the top of the sidebar: its text ("" hides it) and a Google Font family. */
+  brand: z.object({ text: z.string().max(40), font: z.string().max(120) }),
 });
 export type FramePrefs = z.infer<typeof prefsSchema>;
 export type SurfacePrefs = z.infer<typeof surfaceSchema>;
@@ -46,6 +48,7 @@ const prefsPatchSchema = z.object({
   uiScale: z.number().min(75).max(150).optional(),
   clock: z.enum(["24h", "12h", "system"]).optional(),
   chatWidth: z.enum(["wide", "centered"]).optional(),
+  brand: z.object({ text: z.string().max(40), font: z.string().max(120) }).partial().optional(),
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }).optional(),
 });
 export type FramePrefsPatch = z.infer<typeof prefsPatchSchema>;

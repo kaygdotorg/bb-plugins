@@ -48,6 +48,7 @@ export default async function plugin(bb: BbPluginApi) {
       for (const font of Object.values(patch.fonts ?? {})) {
         if (font?.on && font.family) await fonts.install(font.family);
       }
+      if (patch.brand?.font) await fonts.install(patch.brand.font);
       const current = store.prefs();
       const url = patch.wallpaperUrl?.trim();
       if (url && !/^https:\/\//i.test(url)) throw new Error("Use an https:// image URL.");
@@ -62,6 +63,7 @@ export default async function plugin(bb: BbPluginApi) {
         uiScale: patch.uiScale ?? current.uiScale,
         clock: patch.clock ?? current.clock,
         chatWidth: patch.chatWidth ?? current.chatWidth,
+        brand: { ...current.brand, ...patch.brand },
         accent: patch.accent ?? current.accent,
       });
       return state();

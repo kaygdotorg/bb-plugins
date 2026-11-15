@@ -15,7 +15,7 @@ const FONT_ROWS: { key: FontKey; label: string; note?: string; mono?: boolean }[
 const SAMPLE = "The quick brown fox \u2014 0123 {}";
 const MAX_MATCHES = 40;
 
-function FontPicker({
+export function FontPicker({
   id, fonts, value, mono, disabled, onPick,
 }: {
   id: string; fonts: GoogleFont[]; value: string; mono: boolean; disabled: boolean; onPick: (family: string) => void;
