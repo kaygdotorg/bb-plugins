@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ConclusionView, Deps, RecallService } from "../contract.js";
 import type { Conclusion } from "../honcho-client.js";
 import { MemoryCache, REFRESH_INTERVAL_MS } from "./cache.js";
-import { RECALL_SETTING_DESCRIPTORS, type RecallPorts, type RecallSettings } from "./ports.js";
+import { clampHookBudget, RECALL_SETTING_DESCRIPTORS, type RecallPorts, type RecallSettings } from "./ports.js";
 import { recallShared, toView, type RecallShared } from "./shared.js";
 
 export type RecallDeps = Deps & { recall?: RecallPorts };
@@ -29,7 +29,7 @@ function defineSettings(bb: BbPluginApi): RecallSettings {
   handle.onChange(apply);
   return {
     codexUseBbTools: () => values.codexUseBbTools,
-    hookBudgetMs: () => Number.isFinite(values.hookBudgetMs) && values.hookBudgetMs > 0 ? Math.min(Math.round(values.hookBudgetMs), 10_000) : 400,
+    hookBudgetMs: () => clampHookBudget(values.hookBudgetMs),
   };
 }
 

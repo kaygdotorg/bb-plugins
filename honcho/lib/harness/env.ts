@@ -3,9 +3,10 @@
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import type { ActivityLog } from "../contract.js";
 import type { EnvPaths } from "./ops.js";
+import { clampHookBudget, DEFAULT_HOOK_BUDGET_MS } from "../recall/ports.js";
 import { harnessHostCaller, type HarnessCaller } from "./service.js";
 
-export const DEFAULT_HOOK_BUDGET_MS = 400;
+export { DEFAULT_HOOK_BUDGET_MS };
 /** bb drops a resolver after 5 s; give up first so the harness still starts. */
 const HOST_CALL_TIMEOUT_MS = 4_000;
 const REFRESH_MS = 5 * 60_000;
@@ -33,7 +34,7 @@ export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">
   const lastFailure = new Map<string, number>();
   const budget = () => {
     const value = typeof deps.hookBudgetMs === "function" ? deps.hookBudgetMs() : deps.hookBudgetMs;
-    return String(Math.max(0, Math.round(Number.isFinite(value) ? value! : DEFAULT_HOOK_BUDGET_MS)));
+    return String(clampHookBudget(value));
   };
 
   function fetchPaths(hostId: string): Promise<EnvPaths> {

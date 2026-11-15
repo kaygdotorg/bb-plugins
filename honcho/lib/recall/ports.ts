@@ -1,4 +1,5 @@
 import type { ExperimentalHostClient } from "@get-bb/plugin-sdk";
+import { z } from "zod";
 import type { Conclusion, HonchoClient } from "../honcho-client.js";
 import type { RecallHostContract } from "./host-contract.js";
 
@@ -28,6 +29,15 @@ export interface RecallSettings {
   hookBudgetMs(): number;
 }
 
+/** The hook's own cap (MAX_BUDGET_MS in hooks/bb-honcho-hook.mjs); a test pins that they agree. */
+export const MAX_HOOK_BUDGET_MS = 5_000;
+export const DEFAULT_HOOK_BUDGET_MS = 400;
+
+/** A finite value is rounded and capped at the hook's maximum; 0 turns per-turn waiting off.
+ * Anything else (unset, negative, NaN) is the default. */
+export const clampHookBudget = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.min(Math.round(value), MAX_HOOK_BUDGET_MS) : DEFAULT_HOOK_BUDGET_MS;
+
 export const RECALL_SETTING_DESCRIPTORS = {
   codexUseBbTools: {
     type: "boolean", label: "Give Codex the bb honcho tools",
@@ -36,8 +46,9 @@ export const RECALL_SETTING_DESCRIPTORS = {
   },
   hookBudgetMs: {
     type: "number", label: "Per-turn recall hook budget (ms)",
-    description: "How long the harness prompt hook waits for this turn's memory.",
-    default: 400,
+    description: `How long the harness prompt hook waits for this turn's memory: 0 to ${MAX_HOOK_BUDGET_MS} ms (0 never waits).`,
+    experimental_schema: z.number().int().min(0).max(MAX_HOOK_BUDGET_MS),
+    default: DEFAULT_HOOK_BUDGET_MS,
   },
 } as const;
 

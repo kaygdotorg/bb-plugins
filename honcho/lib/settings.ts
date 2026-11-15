@@ -2,7 +2,7 @@
 // bb rejects a key defined twice in one load, so slices never define their
 // own: server.ts calls defineSettings once and hands out the views below.
 import type { BbPluginApi, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
-import { RECALL_SETTING_DESCRIPTORS, type RecallSettings } from "./recall/ports.js";
+import { clampHookBudget, DEFAULT_HOOK_BUDGET_MS, MAX_HOOK_BUDGET_MS, RECALL_SETTING_DESCRIPTORS, type RecallSettings } from "./recall/ports.js";
 
 /** Connection overrides. Empty values inherit from ~/.honcho/config.json; the file stays the zero-config source. */
 export const CONNECTION_SETTING_DESCRIPTORS = {
@@ -13,8 +13,7 @@ export const CONNECTION_SETTING_DESCRIPTORS = {
   apiKey: { type: "string", label: "API key", description: "Overrides the key in ~/.honcho/config.json.", secret: true },
 } satisfies Record<string, PluginSettingDescriptor>;
 
-export const DEFAULT_HOOK_BUDGET_MS = RECALL_SETTING_DESCRIPTORS.hookBudgetMs.default;
-export const MAX_HOOK_BUDGET_MS = 10_000;
+export { clampHookBudget, DEFAULT_HOOK_BUDGET_MS, MAX_HOOK_BUDGET_MS };
 export const DEFAULT_BACKFILL_RATE = 300;
 
 export const SETTING_DESCRIPTORS = {
@@ -38,15 +37,29 @@ export function defineSettings(bb: Pick<BbPluginApi, "settings">) {
 export type HonchoSettings = ReturnType<typeof defineSettings>;
 export type HonchoSettingValues = Awaited<ReturnType<HonchoSettings["get"]>>;
 
-export const clampHookBudget = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.min(Math.round(value), MAX_HOOK_BUDGET_MS) : DEFAULT_HOOK_BUDGET_MS;
-
-/** A synchronous view of the values, kept current by onChange; callbacks that
- * cannot await (configure, provider env) read it. */
+/**
+ * A synchronous view of the values, kept current by onChange; callbacks that
+ * cannot await (configure, provider env) read it.
+ *
+ * Defaults at load: bb has no synchronous settings read, only the load-safe
+ * `get()`. server.ts awaits `ready` inside the (async) factory before it
+ * registers configure and the env resolvers, so in production nothing reads
+ * the view before the first load. Should the read fail, or anything read the
+ * view earlier, it serves the descriptor defaults, which are the safe side:
+ * codex gets no bb tools (`codexUseBbTools` false) and the hook waits the
+ * default budget. A value from onChange is never overwritten by the slower
+ * initial read.
+ */
 export function settingsView(handle: HonchoSettings) {
-  let values: Partial<HonchoSettingValues> = {};
-  handle.onChange(next => { values = next; });
-  const ready = handle.get().then(next => { values = next; }, () => undefined);
+  let values: Partial<HonchoSettingValues> = {
+    codexUseBbTools: SETTING_DESCRIPTORS.codexUseBbTools.default,
+    hookBudgetMs: SETTING_DESCRIPTORS.hookBudgetMs.default,
+    captureRequiresSwitchover: SETTING_DESCRIPTORS.captureRequiresSwitchover.default,
+    backfillMessagesPerMinute: SETTING_DESCRIPTORS.backfillMessagesPerMinute.default,
+  };
+  let changed = false;
+  handle.onChange(next => { changed = true; values = next; });
+  const ready: Promise<void> = handle.get().then(next => { if (!changed) values = next; }, () => undefined);
   const recall: RecallSettings = {
     codexUseBbTools: () => values.codexUseBbTools === true,
     hookBudgetMs: () => clampHookBudget(values.hookBudgetMs),
