@@ -74,7 +74,19 @@ function anchorOf(el: HTMLElement): HTMLElement {
  * bb's own floating content (hover cards like the context ring's, menus, popovers) already
  * explains the control: while one is open, ours stays away.
  */
-const hostPopupOpen = () => !!document.querySelector("[data-radix-popper-content-wrapper]");
+function hostPopupOpen(): boolean {
+  // Only an open, visible popup that isn't a tooltip: bb's hidden tooltips mount on every
+  // hover, and counting them silenced ours.
+  for (const w of document.querySelectorAll<HTMLElement>("[data-radix-popper-content-wrapper]")) {
+    const content = w.firstElementChild as HTMLElement | null;
+    if (!content || content.getAttribute("data-state") === "closed") continue;
+    // bb's own tooltips mount on every hover (hidden by css.ts): never step aside for those.
+    if (w.querySelector('[role="tooltip"]')) continue;
+    const box = w.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0 && getComputedStyle(w).visibility !== "hidden") return true;
+  }
+  return false;
+}
 
 /** Moves a native title aside so the browser never shows its own popup next to ours. */
 function stashTitle(el: HTMLElement) {

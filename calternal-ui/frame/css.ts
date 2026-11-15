@@ -424,6 +424,12 @@ ${R} [data-cf-tip][data-side="bottom"] i { bottom: auto; top: -4px; }
 ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) :is(.bg-popover, .bg-card, .bg-background, .bg-muted, .bg-surface-raised, .bg-surface-recessed, .bg-surface-raised-solid) {
   background-color: transparent !important;
 }
+/* bb's own panel inside a popup (the context hover card) also brings a border and shadow:
+   a card inside the glass card. Only the outer glass keeps an edge. */
+${R} [data-radix-popper-content-wrapper] > [data-state] > :is(.bg-popover, .bg-card) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
 ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) {
   /* Concentric corners: outer radius = item radius + padding (14 = 8 + 6). */
   border-radius: var(--cf-radius) !important;
@@ -743,6 +749,8 @@ ${cardInterior(MAIN)}}
  */
 function cardInterior(scope: string): string {
   return `
+  /* Light mode: the header's icon buttons are bb's grey at 75%, too faint on the light card. */
+  ${scope}:where(html:not(.dark) *) header button { color: color-mix(in oklab, var(--foreground) 82%, transparent); }
   /* Finished tool rows ("Ran 3 commands"): bb shows them in its subtle colour at 40% opacity,
      which measured ~2:1. Any fade below ~85% fails on light glass, so they stay quieter by
      colour alone: the subtle grey, inked so it measures >= 4.5:1 in both themes, no fade. */
