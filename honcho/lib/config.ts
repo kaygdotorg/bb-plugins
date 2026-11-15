@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -32,6 +32,10 @@ async function readConfigFile(path: string): Promise<ObjectValue> {
     // Neither parser diagnostics nor filesystem paths can safely be echoed.
     throw new Error("Could not read Honcho config JSON.");
   }
+}
+/** Cheap change detector (mtime + size; "missing" when absent), so callers can re-read only after an edit. */
+export async function configSignature(path = defaultConfigPath()): Promise<string> {
+  try { const s = await stat(path); return `${s.mtimeMs}:${s.size}`; } catch { return "missing"; }
 }
 export async function listConfigKeys(path = defaultConfigPath()): Promise<string[]> {
   return configKeys(await readConfigFile(path));
