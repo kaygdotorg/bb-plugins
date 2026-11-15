@@ -5,12 +5,13 @@
 import { basename } from "node:path";
 import type { PluginThreadEventPayloads } from "@get-bb/plugin-sdk";
 import type { CaptureService, PrivacySettings, ThreadMemoryStatus } from "../contract.js";
-import { HonchoError, seqRange, type HonchoClient, type MessageDraft, type PeerConfig } from "../honcho-client.js";
+import { HonchoError, seqRange, type Conclusion, type HonchoClient, type MessageDraft, type PeerConfig } from "../honcho-client.js";
 import { sessionMetadata } from "../mapping.js";
 import type { InFlight, RetryError } from "../outbox.js";
 import { readPrivacy, recordProviderSeen, resolvePeer } from "../rpc-server.js";
 import { isEditMessage, providerThreadIdOf, transformEvents, type CaptureEvent, type TransformContext, type TransformResult } from "../transform.js";
-import { allConclusions, sessionHasMessages, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
+import { sessionHasMessages, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
+import { captureCursorStart } from "./switchover.js";
 import { scopeKey, threadFacts, type ThreadRef } from "./scope.js";
 
 type Thread = PluginThreadEventPayloads["thread.created"]["thread"];
@@ -22,6 +23,8 @@ const READ_TYPES = ["client/turn/requested", "turn/input/accepted", "client/turn
 const GATE_TYPES = ["provider.env-resolved", "turn/completed", "thread/identity"] as const satisfies readonly EventType[];
 const PAGE = 500;
 const BATCH = 100;
+/** Purge-on-delete scans at most this many pages of 100 derived conclusions: Honcho can't filter by source id. */
+const PURGE_SCAN_PAGES = 50;
 /** A prompt that never got turn/input/accepted stops holding the cursor back after this. */
 const STALE_PENDING_MS = 10 * 60_000;
 export const SWITCHOVER_ENV = "BB_HONCHO";
@@ -32,7 +35,6 @@ const KV = {
   tripwire: "capture:tripwire",
   pendingDelete: (t: string) => `capture:pending-delete:${t}`,
   pendingDeletePrefix: "capture:pending-delete:",
-  pauseSince: (kind: string, id: string) => `capture:pause-since:${kind}:${id}`,
 };
 
 interface ThreadState {
@@ -103,6 +105,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   const random = deps.random ?? Math.random;
   const grace = deps.graceMs ?? 30_000;
   const facts = threadFacts(bb, deps.git);
+  const firstStartedAt = outbox.recordFirstStart(clock.now());
   const limit = semaphore(deps.concurrency ?? 4);
   const states = new Map<string, ThreadState>();
   const deleted = new Set<string>();
@@ -132,12 +135,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     }
     return hit;
   };
-  /** Advance without content (nothing to send): a zero-message marker, so the outbox also clears retry state. */
+  /** Advance without content (nothing to send), and clear retry state. */
   const settle = (id: string, to: number) => {
-    const cursor = outbox.cursor(id);
-    const last = Math.max(to, cursor);
-    outbox.begin({ thread: id, firstSeq: Math.min(cursor + 1, last), lastSeq: last, startedAt: clock.now() });
-    outbox.complete(id, last);
+    outbox.advance(id, to);
+    outbox.clearRetry(id);
   };
 
   async function readEvents(threadId: string, afterSeq: number, types: readonly EventType[] = READ_TYPES): Promise<CaptureEvent[]> {
@@ -187,13 +188,20 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   // ---------- per-thread pipeline ----------
 
-  /** Returns the switch-over start seq (exclusive), or undefined while the harness still captures. */
+  /** Returns the switch-over marker (capture covers seq > marker), or undefined while the harness still captures. */
   async function gate(st: ThreadState, thread: Thread): Promise<number | undefined> {
     const known = outbox.switchOver(thread.id);
     if (known !== undefined) return known;
     if (gateAlwaysOpen(thread.providerId) || !(await requiresSwitchover())) {
-      outbox.markSwitchOver(thread.id, 0);
-      return 0;
+      // Nothing to hand over, but a thread that predates the plugin must not be captured from seq 0:
+      // that would be an implicit backfill, and backfill is opt-in. Its marker is its max seq now.
+      let marker = 0;
+      if (thread.createdAt < firstStartedAt) {
+        const latest = await bb.sdk.threads.events.list({ threadId: thread.id, order: "desc", limit: "1" });
+        marker = latest[0]?.seq ?? 0;
+      }
+      outbox.markSwitchOver(thread.id, marker);
+      return outbox.switchOver(thread.id)!;
     }
     const events = await readEvents(thread.id, st.gateScanSeq, GATE_TYPES);
     for (const e of events) {
@@ -319,9 +327,30 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   };
   const sendable = (thread: Thread, seq: number, createdAt: number) => outbox.shouldSend(thread.id, seq, { id: thread.projectId, createdAt });
 
-  async function post(client: HonchoClient, threadId: string, messages: MessageDraft[]): Promise<void> {
-    for (const chunk of chunks(messages)) await client.createMessages(threadId, chunk);
+  /** Posts messages; a validation (400/422) rejection splits the batch and retries the
+   * halves until the single bad message is found. That message is skipped and recorded
+   * in activity (seq and part only, never content). Other errors propagate for backoff.
+   * Returns the number of messages skipped. */
+  async function post(client: HonchoClient, threadId: string, messages: MessageDraft[]): Promise<number> {
+    let skipped = 0;
+    const send = async (group: MessageDraft[]): Promise<void> => {
+      try { for (const chunk of chunks(group)) await client.createMessages(threadId, chunk); }
+      catch (error) {
+        if (!(error instanceof HonchoError) || error.kind !== "validation") throw error;
+        if (group.length === 1) {
+          skipped++;
+          deps.activity.record({ kind: "failure", threadId, summary: `skipped message seq ${seqOf(group[0])} part ${partOf(group[0])}: rejected by honcho (validation)`, error: "validation" });
+          bb.log.warn(`honcho capture: ${threadId} skipped seq ${seqOf(group[0])} (validation)`);
+          return;
+        }
+        const mid = Math.ceil(group.length / 2);
+        await send(group.slice(0, mid));
+        await send(group.slice(mid));
+      }
+    };
+    await send(messages);
     authFailing = false;
+    return skipped;
   }
 
   /** Crash recovery: the marker was written but the cursor never moved. Honcho
@@ -339,10 +368,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     const missing = result.messages.filter(m => !have.has(`${seqOf(m)}:${partOf(m)}`));
     if (missing.length && !deleted.has(thread.id)) {
       await ensureSession(st, thread, client, missing, lastModel(live), result.providers);
-      await post(client, thread.id, missing);
-      st.lastUploadAt = clock.now();
-      deps.activity.record({ kind: "upload", threadId: thread.id, summary: `resent ${missing.length} message(s) after an interrupted upload`,
-        messages: missing.length, redactions: result.redactionCount, reasoning: missing.some(m => m.configuration?.reasoning?.enabled === true) });
+      const skipped = await post(client, thread.id, missing);
+      const sent = missing.length - skipped;
+      if (sent > 0) st.lastUploadAt = clock.now();
+      if (sent > 0) deps.activity.record({ kind: "upload", threadId: thread.id, summary: `resent ${sent} message(s) after an interrupted upload`,
+        messages: sent, redactions: result.redactionCount, reasoning: missing.some(m => m.configuration?.reasoning?.enabled === true) });
     }
     outbox.complete(thread.id, marker.lastSeq);
   }
@@ -369,7 +399,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     }
     st.blocked = null;
     await forkBoundary(thread);
-    if (outbox.cursor(id) < startSeq && !outbox.inFlight(id).length) outbox.advance(id, startSeq);
+    if (outbox.cursor(id) < captureCursorStart(startSeq) && !outbox.inFlight(id).length) outbox.advance(id, captureCursorStart(startSeq));
 
     const marker = outbox.inFlight(id)[0];
     if (marker) await recover(st, thread, marker, settings);
@@ -432,12 +462,13 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       const ready = group.filter(m => sendable(thread, seqOf(m), Date.parse(m.created_at ?? "") || 0));
       if (disposed || deleted.has(thread.id)) return;
       outbox.begin({ thread: thread.id, firstSeq: Math.min(first, last), lastSeq: last, startedAt: clock.now() });
-      if (ready.length) await post(client, thread.id, ready);
+      const skipped = ready.length ? await post(client, thread.id, ready) : 0;
       outbox.complete(thread.id, last);
       first = last + 1;
-      if (!ready.length) continue;
+      const sent = ready.length - skipped;
+      if (sent <= 0) continue;
       st.lastUploadAt = clock.now();
-      deps.activity.record({ kind: "upload", threadId: thread.id, summary: `saved ${ready.length} message(s)`, messages: ready.length,
+      deps.activity.record({ kind: "upload", threadId: thread.id, summary: `saved ${sent} message(s)`, messages: sent,
         redactions: index === 0 ? result.redactionCount : 0, reasoning: ready.some(m => m.configuration?.reasoning?.enabled === true) });
     }
   }
@@ -471,26 +502,42 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   async function purgeAndDelete(threadId: string, settings: PrivacySettings): Promise<void> {
     const client = await deps.client();
     let purged = 0;
+    let capped = false;
     if (settings.purgeConclusionsOnDelete) {
-      const own = new Set((await allConclusions(client, { session_id: threadId })).map(c => c.id));
-      const messageIds = new Set((await sessionMessages(client, threadId, {})).map(m => m.id));
-      const everything = await allConclusions(client);
-      // Derived conclusions carry no session_id: follow source_ids (transitively)
-      // and source_message_ids back to this session.
-      const doomed = new Set<string>();
-      for (let grew = true; grew;) {
-        grew = false;
-        for (const c of everything) {
-          if (own.has(c.id) || doomed.has(c.id)) continue;
-          if ((c.source_ids ?? []).some(s => own.has(s) || doomed.has(s)) || (c.source_message_ids ?? []).some(s => messageIds.has(s))) { doomed.add(c.id); grew = true; }
-        }
+      const own = new Set<string>();
+      for (let page = 1; ; page++) {
+        const result = await client.listConclusions({ session_id: threadId }, { page, size: 100 });
+        for (const c of result.items) own.add(c.id);
+        if (result.items.length < 100 || (result.total != null && own.size >= result.total)) break;
       }
-      for (const id of doomed) { await client.deleteConclusion(id); purged++; }
+      // Derived conclusions carry no session_id and Honcho can't filter by source id, so scan the
+      // user's own derived conclusions (observer = observed = peer) in a bounded number of pages,
+      // and follow source_ids (transitively) back to this session's conclusions.
+      if (own.size) {
+        const peer = (await deps.config()).config.peerName;
+        const found: Conclusion[] = [];
+        for (let page = 1; ; page++) {
+          if (page > PURGE_SCAN_PAGES) { capped = true; break; }
+          const result = await client.listConclusions({ observer: peer, observed: peer }, { page, size: 100 });
+          found.push(...result.items);
+          if (result.items.length < 100 || (result.total != null && found.length >= result.total)) break;
+        }
+        const doomed = new Set<string>();
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const c of found) {
+            if (own.has(c.id) || doomed.has(c.id)) continue;
+            if ((c.source_ids ?? []).some(x => own.has(x) || doomed.has(x))) { doomed.add(c.id); grew = true; }
+          }
+        }
+        for (const id of doomed) { await client.deleteConclusion(id); purged++; }
+        if (capped) bb.log.warn(`honcho capture: purge of ${threadId} scanned only ${PURGE_SCAN_PAGES * 100} conclusions`);
+      }
     }
     await client.deleteSession(threadId);
     for (const key of [KV.pendingDelete(threadId), scopeKey(threadId), KV.tripwireChecked(threadId)]) await bb.storage.kv.delete(key);
     deps.activity.record({ kind: "delete", threadId, summary: settings.purgeConclusionsOnDelete
-      ? `deleted the honcho session and ${purged} derived conclusion(s); the peer card may reflect this thread until it regenerates`
+      ? `deleted the honcho session and ${purged} derived conclusion(s)${capped ? ` (scan capped at ${PURGE_SCAN_PAGES * 100} conclusions)` : ""}; the peer card may reflect this thread until it regenerates`
       : "deleted the honcho session" });
   }
 
@@ -574,16 +621,12 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
         const latest = await bb.sdk.threads.events.list({ threadId: target.id, order: "desc", limit: "1" }).catch(() => []);
         boundary = latest[0]?.seq ?? 0;
       }
-      const wasPaused = outbox.isPausedNow(target.kind, target.id);
-      outbox.setPaused(target.kind, target.id, paused, boundary);
-      if (paused && !wasPaused) await bb.storage.kv.set(KV.pauseSince(target.kind, target.id), now);
-      if (!paused) await bb.storage.kv.delete(KV.pauseSince(target.kind, target.id));
+      outbox.setPaused(target.kind, target.id, paused, boundary, now);
     },
 
     async pauses() {
       const open = outbox.pauses().filter(r => r.to === null);
-      return Promise.all(open.map(async r => ({ kind: r.kind, id: r.id,
-        since: (await bb.storage.kv.get<number>(KV.pauseSince(r.kind, r.id))) ?? (r.kind === "project" ? r.from : 0) })));
+      return open.map(r => ({ kind: r.kind, id: r.id, since: r.sinceAt ?? (r.kind === "project" ? r.from : 0) }));
     },
 
     async health() {

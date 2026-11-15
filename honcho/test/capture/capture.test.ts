@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCaptureService, type CaptureHandle } from "../../lib/capture/service";
-import { HonchoClient } from "../../lib/honcho-client";
+import { HonchoClient, HonchoError, type MessageDraft } from "../../lib/honcho-client";
 import { Outbox } from "../../lib/outbox";
 import { mockHoncho } from "../mock-honcho";
 import { captureDeps, fakeBb, FakeClock } from "./fake-bb";
@@ -151,6 +151,7 @@ describe("forks", () => {
     fake.prompt("thr_fork", "side question");
     fake.agent("thr_fork", "side answer");
     const outbox = new Outbox(fake.db);
+    outbox.recordFirstStart(parentCreated - 1); // the plugin was already running when the parent was created
     const { svc } = service({ outbox });
     await pass(svc);
     expect(texts("thr_fork")).toEqual(["side question", "side answer"]);
@@ -296,10 +297,10 @@ describe("deletion", () => {
     await fake.emit("thread.deleted", { thread: fake.threads.get("thr_a") });
     await pass(svc);
     expect(mock.requests.some(r => r.method === "DELETE" && r.path.endsWith("/sessions/thr_a"))).toBe(true);
-    expect(mock.conclusions.map(c => c.id).sort()).toEqual(["con_other", "con_own"]); // con_own goes with the session cascade
+    expect(mock.conclusions.map(c => c.id).sort()).toEqual(["con_msg", "con_other", "con_own"]); // con_own goes with the session cascade; source_message_ids are not followed
     expect(posts()).toHaveLength(1);
     expect(outbox.cursor("thr_a")).toBe(0);
-    expect(deps.activity.entries.find(e => e.kind === "delete")?.summary).toContain("3 derived conclusion(s)");
+    expect(deps.activity.entries.find(e => e.kind === "delete")?.summary).toContain("2 derived conclusion(s)");
   });
 
   it("keeps the session when delete-on-delete is off", async () => {
@@ -385,5 +386,155 @@ describe("tripwire", () => {
     await fake.emit("thread.created", { thread: fake.threads.get("thr_b") });
     await pass(svc);
     expect((await svc.health()).tripwire).toContain("fixture-repo-01234567");
+  });
+});
+
+describe("poison batches", () => {
+  /** A client whose server rejects (422) any batch containing the poison text. */
+  const poisoned = (poison: string, calls: number[] = []) => async () => {
+    const client = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test" });
+    const create = client.createMessages.bind(client);
+    client.createMessages = (async (session: string, messages: readonly MessageDraft[]) => {
+      calls.push(messages.length);
+      if (messages.some(m => m.content.includes(poison))) throw new HonchoError("validation", 422);
+      return create(session, messages);
+    }) as typeof client.createMessages;
+    return client;
+  };
+
+  it("splits the batch, skips the single bad message, records it without content, and advances", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "one"); fake.agent("thr_a", "two");
+    const badSeq = fake.agent("thr_a", "POISON content");
+    fake.agent("thr_a", "four"); fake.agent("thr_a", "five");
+    const last = fake.turnDone("thr_a");
+    const outbox = new Outbox(fake.db);
+    const calls: number[] = [];
+    const { svc, deps } = service({ outbox, client: poisoned("POISON", calls) });
+    await pass(svc);
+    expect(texts()).toEqual(["one", "two", "four", "five"]);
+    expect(outbox.cursor("thr_a")).toBeGreaterThanOrEqual(last - 1);
+    expect(outbox.retry("thr_a")).toBeUndefined();
+    expect(outbox.inFlight()).toHaveLength(0);
+    expect(calls[0]).toBe(5); // the full batch first, then halves
+    const skips = deps.activity.entries.filter(e => e.kind === "failure");
+    expect(skips).toHaveLength(1);
+    expect(skips[0].summary).toContain(`seq ${badSeq}`);
+    expect(JSON.stringify(skips)).not.toContain("POISON");
+    // Nothing is retried on the next pass.
+    fake.prompt("thr_a", "later");
+    await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
+    await pass(svc);
+    expect(texts()).toEqual(["one", "two", "four", "five", "later"]);
+  });
+
+  it("keeps the backoff for auth errors instead of splitting", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "one"); fake.agent("thr_a", "two");
+    const outbox = new Outbox(fake.db);
+    const calls: number[] = [];
+    const client = async () => {
+      const c = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test" });
+      c.createMessages = (async (_s: string, m: readonly MessageDraft[]) => { calls.push(m.length); throw new HonchoError("auth", 401); }) as typeof c.createMessages;
+      return c;
+    };
+    const { svc } = service({ outbox, client });
+    await pass(svc);
+    expect(calls).toEqual([2]);
+    expect(outbox.retry("thr_a")?.lastError).toBe("auth");
+    expect(outbox.cursor("thr_a")).toBe(0);
+  });
+});
+
+describe("purge cost", () => {
+  it("lists only the session's conclusions plus a bounded observer/observed scan, never the whole workspace", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "remember this");
+    const { svc } = service();
+    await pass(svc);
+    mock.conclusions.push(
+      { id: "con_own", content: "e", observer_id: "hermy", observed_id: "hermy", session_id: "thr_a", level: "explicit" },
+      { id: "con_derived", content: "d", observer_id: "hermy", observed_id: "hermy", level: "deductive", source_ids: ["con_own"] },
+      { id: "con_foreign", content: "f", observer_id: "someone", observed_id: "someone", level: "deductive", source_ids: ["con_own"] },
+    );
+    mock.requests.length = 0;
+    fake.deleteThread("thr_a");
+    await fake.emit("thread.deleted", { thread: fake.threads.get("thr_a") });
+    await pass(svc);
+    const lists = mock.requests.filter(r => r.path.endsWith("/conclusions/list"));
+    expect(lists.map(r => r.body.filters)).toEqual([{ session_id: "thr_a" }, { observer_id: "hermy", observed_id: "hermy" }]);
+    expect(mock.conclusions.map(c => c.id).sort()).toEqual(["con_foreign", "con_own"]);
+  });
+
+  it("skips the scan when the session has no conclusions, and caps it at a bounded number of pages", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "x");
+    const { svc, deps } = service();
+    await pass(svc);
+    mock.requests.length = 0;
+    fake.deleteThread("thr_a");
+    await fake.emit("thread.deleted", { thread: fake.threads.get("thr_a") });
+    await pass(svc);
+    expect(mock.requests.filter(r => r.path.endsWith("/conclusions/list"))).toHaveLength(1);
+    expect(deps.activity.entries.find(e => e.kind === "delete")?.summary).toContain("0 derived");
+  });
+
+  it("stops scanning at the page cap and says so", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "x");
+    const { svc, deps } = service();
+    await pass(svc);
+    mock.conclusions.push({ id: "con_own", content: "e", observer_id: "hermy", observed_id: "hermy", session_id: "thr_a", level: "explicit" });
+    for (let i = 0; i < 5_200; i++) mock.conclusions.push({ id: `c${i}`, content: "d", observer_id: "hermy", observed_id: "hermy", level: "deductive", source_ids: ["nope"] });
+    mock.requests.length = 0;
+    fake.deleteThread("thr_a");
+    await fake.emit("thread.deleted", { thread: fake.threads.get("thr_a") });
+    await pass(svc);
+    expect(mock.requests.filter(r => r.path.endsWith("/conclusions/list"))).toHaveLength(1 + 50);
+    expect(deps.activity.entries.find(e => e.kind === "delete")?.summary).toContain("scan capped");
+  });
+});
+
+describe("gate-open providers", () => {
+  it("does not capture a pi thread that predates the plugin from seq 0 (backfill is opt-in)", async () => {
+    const created = clock.now();
+    fake.addThread("thr_old", { providerId: "pi", createdAt: created });
+    fake.prompt("thr_old", "old prompt"); fake.agent("thr_old", "old reply");
+    const old = fake.turnDone("thr_old");
+    clock.advance(60_000);
+    const outbox = new Outbox(fake.db);
+    const { svc } = service({ outbox, settings: () => ({ captureRequiresSwitchover: true }) });
+    await pass(svc);
+    expect(outbox.switchOver("thr_old")).toBe(old);
+    expect(outbox.meta("first_started_at")).toBe(String(created + 60_000));
+    expect(texts("thr_old")).toEqual([]);
+    fake.prompt("thr_old", "new prompt");
+    await fake.emit("thread.idle", { thread: fake.threads.get("thr_old") });
+    await pass(svc);
+    expect(texts("thr_old")).toEqual(["new prompt"]);
+  });
+
+  it("captures a thread created after the plugin started from the beginning", async () => {
+    const outbox = new Outbox(fake.db);
+    const { svc } = service({ outbox, settings: () => ({ captureRequiresSwitchover: true }) });
+    clock.advance(1_000);
+    fake.addThread("thr_acp", { providerId: "acp-fixture" });
+    fake.prompt("thr_acp", "first");
+    await pass(svc);
+    expect(outbox.switchOver("thr_acp")).toBe(0);
+    expect(texts("thr_acp")).toEqual(["first"]);
+  });
+});
+
+describe("pause since", () => {
+  it("is stored in the outbox with the pause range, not in kv", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "x");
+    const outbox = new Outbox(fake.db);
+    const { svc } = service({ outbox });
+    await svc.setPaused({ kind: "thread", id: "thr_a" }, true);
+    expect(outbox.pauses()[0].sinceAt).toBe(clock.now());
+    expect([...fake.kv.keys()].some(k => k.includes("pause-since"))).toBe(false);
+    expect(await svc.pauses()).toEqual([{ kind: "thread", id: "thr_a", since: clock.now() }]);
   });
 });
