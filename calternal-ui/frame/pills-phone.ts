@@ -33,12 +33,13 @@ export const PILL_PHONE_CSS = `
   }
 
   @media (min-width: 430px) { ${R} { --cf-ph-side: ${s(20)}; } }
-  /* Dark: the pills' glass was nearly invisible over dark text (fill ~26 over a 20 page); Claude's read ~68.
-     A lighter neutral tint, still glass. */
-  ${R}.dark {
-    --cf-pill-tint: 72 72 76;
-    --cf-pill-alpha: 0.55;
-    --cf-pill-filter: blur(6px) saturate(160%) brightness(0.92);
+  /* The header pills are glass only: no tint, just blur (kayg: iOS's are liquid glass, which the web can't
+     do; transparency + blur is the honest version). The blur carries legibility: 10px smears the chat text
+     passing under the title so it never competes with it (3px left it readable). The edge stays, so each
+     pill still reads as a shape. Both themes. */
+  ${R}, ${R}.dark {
+    --cf-pill-alpha: 0;
+    --cf-pill-filter: blur(10px) saturate(180%);
   }
 
   /* The header: a row of floating pills. Room on the left for the back pill. */
@@ -101,10 +102,8 @@ ${GLASS_LAYER}}
     max-width: calc(100% - 2 * (var(--cf-ph-side) + var(--cf-pill) + var(--cf-ctl-gap)));
     padding: 0 ${s(16)};
     border-radius: 999px;
-    /* Words sit on this glass, and page text passes under it: a denser tint than the icon pills' keeps >= 4.5:1. */
-    --cf-pill-alpha: 0.78;
+    --cf-pill-alpha: 0; /* glass only, as the other pills */
   }
-  ${R}.dark ${ROW} > div:first-child > div > div:has(.bb-thread-title) { --cf-pill-alpha: 0.72; }
   ${ROW} > div:first-child > div > div:has(.bb-thread-title)::before {
 ${GLASS_LAYER}}
   ${ROW} > div:first-child > div > div[data-cf-title-wrap] > p {
