@@ -108,3 +108,11 @@ describe("secrets deny set", () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+describe("secret-request payload path", () => {
+  it("reads the dotenv path from the request payload, without a resolution", async () => {
+    const { secretRequestPaths } = await import("../lib/secrets");
+    const event = { data: { interaction: { rendererId: "secret-request", payload: { destination: { kind: "dotenv", path: "/tmp/x/.env" } } } } };
+    expect(secretRequestPaths(event)).toEqual(["/tmp/x/.env"]);
+  });
+});

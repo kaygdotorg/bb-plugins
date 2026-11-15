@@ -33,6 +33,10 @@ export function secretRequestPaths(event: unknown): string[] {
       const detail = (o.resolution as { description?: { detail?: unknown } } | undefined)?.description?.detail;
       const line = typeof detail === "string" ? detail.split(/\r?\n/)[0].trim() : "";
       if (line.startsWith("/")) out.push(line);
+      // The request itself names the file too (payload.destination.path), so a cancelled or
+      // still-pending request is covered as well (bb secrets plugin: requestInput payload).
+      const dest = (o.payload as { destination?: { kind?: unknown; path?: unknown } } | undefined)?.destination;
+      if (dest && typeof dest.path === "string" && dest.path.startsWith("/") && !out.includes(dest.path)) out.push(dest.path);
     }
     for (const v of Object.values(o)) walk(v, depth + 1);
   };
