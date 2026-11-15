@@ -104,7 +104,7 @@ describe("plan and upload", () => {
   });
   it("skips paused threads and the privacy deny list", async () => {
     env = await setup([thread({ id: "thr_pa" }), thread({ id: "thr_dn" }), thread({ id: "thr_ok" })], { isDenied: t => t.id === "thr_dn" });
-    env.outbox.setPaused("thread", "thr_pa", true);
+    env.outbox.setPaused("thread", "thr_pa", true, 0);
     expect((await env.service.dryRun()).threads).toBe(1);
   });
   it("estimates tokens as chars/4", async () => {

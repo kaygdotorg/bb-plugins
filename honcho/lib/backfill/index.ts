@@ -91,7 +91,6 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
   const newCaches = (): Caches => ({ exists: new Map(), directory: new Map() });
 
   async function scanThread(port: HonchoPort, thread: ThreadSummary, opts: BackfillOptions, caches: Caches): Promise<ScanResult> {
-    if (deps.outbox.isPaused(thread.id, thread.projectId)) return empty(); // never upload a paused thread
     if (await deps.isDenied?.(thread)) return empty();
     const cursor = store.cursor(thread.id);
     const marker = deps.outbox.switchOver(thread.id); // live capture owns events from here on
@@ -125,7 +124,14 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     if (pendingFloor !== undefined && marker === undefined) finalCursor = Math.max(cursor, Math.min(finalCursor, pendingFloor));
 
     const since = opts.since ? Date.parse(opts.since) : NaN;
-    let messages = result.messages.filter(m => Number.isNaN(since) || Date.parse(m.created_at!) >= since);
+    // pause ranges and superseded edits are checked per message, same gate as live capture
+    const project = thread.projectId ? { id: thread.projectId } : undefined;
+    let messages = result.messages.filter(m => {
+      const at = Date.parse(m.created_at!);
+      const seqNo = Number(m.metadata?.bb_seq);
+      if (!deps.outbox.shouldSend(thread.id, seqNo, project && { id: project.id, createdAt: at })) return false;
+      return Number.isNaN(since) || at >= since;
+    });
     let skipped = 0;
     const skip = (keep: MessageDraft[]) => { skipped += messages.length - keep.length; messages = keep; };
 
@@ -209,7 +215,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     return out;
   }
 
-  async function upload(port: HonchoPort, thread: ThreadSummary, scan: ScanResult, signal: AbortSignal): Promise<boolean> {
+  async function upload(port: HonchoPort, thread: ThreadSummary, scan: ScanResult, signal: AbortSignal, filtered = false): Promise<boolean> {
     const config = await deps.config();
     if (scan.messages.length) {
       const scope = scopeSlug(await deps.scopeFor?.(thread) ?? thread.projectId);
@@ -231,12 +237,14 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
           if (signal.aborted) return false;
         }
       }
-      if (batch.cursorAfter !== undefined) store.advance(thread.id, batch.cursorAfter, batch.messages.length, now());
-      else store.advance(thread.id, store.cursor(thread.id), batch.messages.length, now());
+      // a --since run only filters: it never moves the cursor, so a later full run still imports older messages
+      // (bb_seq dedupe keeps the overlap from uploading twice)
+      const cursorAfter = filtered ? store.cursor(thread.id) : batch.cursorAfter ?? store.cursor(thread.id);
+      store.advance(thread.id, cursorAfter, batch.messages.length, now());
       state.done += batch.messages.length;
       store.updateRun(state.done, state.total);
     }
-    store.advance(thread.id, scan.finalCursor, 0, now());
+    if (!filtered) store.advance(thread.id, scan.finalCursor, 0, now());
     return true;
   }
 
@@ -258,7 +266,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
         if (signal.aborted) break;
         try {
           const scan = await scanThread(port, thread, opts, caches);
-          if (!(await upload(port, thread, scan, signal))) break;
+          if (!(await upload(port, thread, scan, signal, Boolean(opts.since)))) break;
           if (scan.messages.length || scan.skipped) deps.activity.record({
             kind: "backfill", threadId: thread.id, messages: scan.messages.length, redactions: scan.redactions,
             summary: `backfilled ${scan.messages.length} messages${scan.skipped ? `, ${scan.skipped} already in honcho` : ""}`,
