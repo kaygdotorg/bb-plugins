@@ -49,7 +49,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - It points at the nearest element with a box: bb sometimes puts a `title` on a `display: contents` span (the model pill), whose rect is 0,0.
   - Only the trigger's own blur or scroll closes it: bb shifts focus and a live thread scrolls constantly. Mouse and keyboard only; touch never shows them.
 - **Composer (`frame/composer.ts`):** one bottom row, `[+] [model] [context ring] [permission] [environment] ··· [mic] [send]`.
-  - bb's row under the composer is *positioned* into the free space after the model button (`--cf-foot-x/y/h/w`, one `ResizeObserver`), never moved. Its wrappers are `display: contents`, so `order` applies to their children.
+  - bb's row under the composer is *positioned* into the free space after the model button (`--cf-foot-x/y/h/w`, one `ResizeObserver`), never moved. It shares the model button's box (not the row's), has no padding or gap, and every icon is a 2rem box, so all glyph gaps are 1rem like + → model. Its wrappers are `display: contents`, so `order` applies to their children.
   - Labels become icons with tooltips (`data-cf-title`): a folder for the environment ("Personal workspace · main"; phones show "Thread details: <branch>" instead, as a branch icon), one icon per permission mode (Full Access in amber), and the context % only from 80%.
   - "New thread here" is appended to the + menu when it opens; bb's own button stays the action.
   - "Collapsed" means bb's attribute *and* no visible model button: desktop composers get `data-promptbox-collapsed` after Escape while showing everything.

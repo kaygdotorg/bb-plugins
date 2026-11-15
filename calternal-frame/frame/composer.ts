@@ -97,13 +97,17 @@ export function mountComposer(): () => void {
     const modelBox = model?.getBoundingClientRect();
     if (footer && !collapsed && modelBox && modelBox.width > 0) {
       const base = followUp.getBoundingClientRect();
-      const rowBox = row.getBoundingClientRect();
-      followUp.style.setProperty("--cf-foot-x", `${Math.round(modelBox.right - base.left + 6)}px`);
-      followUp.style.setProperty("--cf-foot-y", `${Math.round(rowBox.top - base.top)}px`);
-      followUp.style.setProperty("--cf-foot-h", `${Math.round(rowBox.height)}px`);
+      // Every icon here is a 2rem box with its glyph centred, so glyph-to-glyph gaps equal the
+      // + → model gap (1rem). The model button's right edge is its chevron's visual end plus
+      // half that gap, so the first box starts right there. Vertically it shares the model
+      // button's box, not the row's (the row is not symmetric).
+      const px = (n: number) => `${n.toFixed(1)}px`;
+      followUp.style.setProperty("--cf-foot-x", px(modelBox.right - base.left));
+      followUp.style.setProperty("--cf-foot-y", px(modelBox.top - base.top));
+      followUp.style.setProperty("--cf-foot-h", px(modelBox.height));
       // Never over the right-hand buttons (the mic): cap the width to the free space.
       const right = row.lastElementChild?.getBoundingClientRect();
-      if (right) followUp.style.setProperty("--cf-foot-w", `${Math.max(0, Math.round(right.left - modelBox.right - 10))}px`);
+      if (right) followUp.style.setProperty("--cf-foot-w", px(Math.max(0, right.left - modelBox.right - 4)));
       composer.setAttribute("data-cf-merged", "");
       resize.observe(row);
     } else {

@@ -194,6 +194,7 @@ ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
   top: var(--cf-foot-y);
   height: var(--cf-foot-h);
   margin: 0 !important;
+  padding: 0 !important; /* bb pads this row 15px; the icons' own boxes do the spacing */
   min-height: 0 !important;
   max-height: none !important;
   width: auto !important;
@@ -202,7 +203,7 @@ ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+  gap: 0; /* each icon is a 2rem box: glyph gaps come out at 1rem, like + → model */
 }
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] > div { display: contents; }
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] :is([data-promptbox-hide-branch-compact], button[aria-label="New thread in this environment"]) { display: none !important; }
@@ -215,7 +216,8 @@ ${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { 
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] > span { display: none !important; }
 /* Environment: the folder icon only; the name and branch live in its tooltip. */
 ${R} [data-app-composer][data-cf-merged] [data-cf-env] [data-option-display] { display: none !important; }
-${R} [data-app-composer][data-cf-merged] [data-cf-env] { padding: 0 0.375rem; height: 2rem; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] [data-cf-env] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] [data-cf-env] > * { justify-content: center; padding: 0 !important; margin: 0 !important; }
 /* Permission: an icon per mode instead of the label and chevron; Full Access in amber. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] > * { display: none !important; }
@@ -235,7 +237,8 @@ ${R} [data-cf-tone="warn"] { color: var(--cf-warn-ink); }
 /* Context ring: the percentage only when it's nearly full. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
-${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] { gap: 0.375rem !important; padding-inline: 0.5rem !important; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { width: 2rem; height: 2rem; margin: 0 !important; padding: 0 !important; justify-content: center; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] { width: auto; gap: 0.375rem !important; padding-inline: 0.5rem !important; }
 /* "New thread here", added to the + menu after it opened: one line like its neighbours. */
 ${R} [data-cf-new-thread] { white-space: nowrap; }
 ${R} [role="menu"]:has(> [data-cf-new-thread]) { width: max-content !important; max-width: none !important; }
