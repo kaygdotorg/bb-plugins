@@ -38,6 +38,16 @@ export function mountComposer(): () => void {
   const voice = createVoicePill();
   // The last model seen, so the collapsed line can show its icon before the picker exists.
   let lastModel: { icon: string; label: string } = { icon: "", label: "Model" };
+  /** The form's height as of the last pass, and whether it was collapsed: the start of the focus morph. */
+  let lastForm: { el: HTMLElement | null; h: number; collapsed: boolean } = { el: null, h: 0, collapsed: false };
+  let flippedAt = -Infinity;
+  let morphing: { form: HTMLElement; until: number } | null = null;
+  /** The form's size, seen after layout and before paint (a ResizeObserver): bb lays out the new rows a frame
+   *  after it flips the flag, so the pass alone would let one full-height frame show before the morph. */
+  const formSize = new ResizeObserver((entries) => {
+    for (const e of entries) morphHeight(e.target as HTMLElement, lastForm.collapsed);
+  });
+  let sizedForm: HTMLElement | null = null;
   try { lastModel = { ...lastModel, ...JSON.parse(localStorage.getItem(MODEL_CACHE) ?? "{}") }; } catch { /* none yet */ }
 
   let composer: HTMLElement | null = null;
@@ -120,6 +130,8 @@ export function mountComposer(): () => void {
 
     // ── Writes.
     composer.toggleAttribute("data-cf-collapsed", collapsed);
+    if (sizedForm !== form) { formSize.disconnect(); formSize.observe(form); sizedForm = form; }
+    morphHeight(form, collapsed);
     // Collapsed composers render neither the footer nor the model button.
     if (footer) labelControls(footer);
     if (model) {
@@ -174,6 +186,33 @@ export function mountComposer(): () => void {
     } else {
       modelChip.remove();
     }
+  }
+
+  /**
+   * The phone composer's focus morph, height half (the width half is CSS, pills-composer.ts): bb switches the
+   * one-line composer to its two-row form at once (its grid-rows transition can't run between a fixed row
+   * and an auto one), so the form's height is animated from the last pass's to the new one, with the same
+   * 350ms iOS ease-out as the width, like ChatGPT's composer riding up with the keyboard. The pass runs in
+   * the frame bb changed the DOM (a rAF from the observer), before it is painted, so there is no flash.
+   * Not for the keyboard (input-mode), nor with reduced motion; desktop has no collapsed state.
+   */
+  function morphHeight(form: HTMLElement, collapsed: boolean) {
+    const now = performance.now();
+    // While our morph runs, the measured height is the animated one: leave lastForm at the target.
+    if (morphing && morphing.form === form && now < morphing.until) {
+      if (collapsed !== lastForm.collapsed) { lastForm.collapsed = collapsed; flippedAt = now; }
+      return;
+    }
+    const h = form.getBoundingClientRect().height;
+    const was = lastForm;
+    if (was.el === form && collapsed !== was.collapsed) flippedAt = now;
+    lastForm = { el: form, h, collapsed };
+    // bb flips the flag a frame before it lays out the new rows: animate any real height change that
+    // follows a flip closely, whichever pass sees it.
+    if (was.el !== form || now - flippedAt > 400 || Math.abs(was.h - h) < 4) return;
+    if (document.documentElement.getAttribute("data-cf-input") === "keys" || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    morphing = { form, until: now + 360 };
+    form.animate({ height: [`${was.h}px`, `${h}px`] }, { duration: 350, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
   }
 
   /** Icons need words for the tooltip; bb's own labels supply them. */
@@ -242,6 +281,7 @@ export function mountComposer(): () => void {
   schedule();
   return () => {
     disposed = true;
+    formSize.disconnect();
     cancelAnimationFrame(frame);
     frame = 0;
     window.clearInterval(timer);

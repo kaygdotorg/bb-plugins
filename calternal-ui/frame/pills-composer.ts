@@ -101,14 +101,31 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     --cf-ci: ${s(18)};
     --cf-cinset: ${s(8)};
   }
+  /* One radius for both states: at 52pt tall, 26pt IS the capsule, so the corners never jump mid-morph. */
   ${C} form[data-promptbox] { border-radius: ${s(26)} !important; }
-  ${C}[data-cf-collapsed] form[data-promptbox] { border-radius: 999px !important; }
   ${C} [contenteditable="true"] { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
   ${R}.dark ${C.slice(R.length + 1)} form[data-promptbox]::before { background: rgb(120 120 128 / 0.32); }
   ${R}.dark ${C.slice(R.length + 1)} form[data-promptbox] { border-color: rgb(255 255 255 / 0.08) !important; }
   /* The model pill matches the circles' height; the composer sits on the chat text's 16pt margin. */
   ${PILL}[aria-label^="Provider, model"] { height: var(--cf-cp); }
-  ${C} [data-composer-box] { padding-inline: ${s(8)}; }
+  /* ── The focus morph, like ChatGPT's iOS composer (measured from kayg's 60fps recording, 2026-11-15):
+     unfocused it is a narrower capsule (38pt from the screen edges); focused it widens to 12pt from the edges
+     and grows to its two rows while it rides up with the keyboard, all in one ~350ms iOS-style ease-out, no
+     step in between. Width: the box's side padding (one small element's layout per frame). Height: bb's
+     own grid-rows transition, given the same duration and curve. Keyboard actions never animate
+     (input-mode.ts zeroes transitions). */
+  ${C} [data-composer-box] {
+    padding-inline: ${s(4)};
+    transition: padding-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  ${C}[data-cf-collapsed] [data-composer-box] { padding-inline: ${s(30)}; }
+  ${C} [data-promptbox-layout] {
+    transition-duration: 350ms !important;
+    transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    ${C} [data-composer-box], ${C} [data-promptbox-layout] { transition: none !important; }
+  }
   /* The keyboard-down button copies the mic's classes (touch.ts), filled colour included: it is a quiet pill. */
   ${ROW} [data-cf-kb] { background-color: var(--cf-pill-quiet) !important; color: var(--foreground) !important; }
   ${ROW} > [data-promptbox-standard-actions][data-promptbox-expanded-only] { min-width: 0; }
