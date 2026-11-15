@@ -30,7 +30,7 @@
  */
 import { R } from "./selectors";
 import { GLASS_LAYER, s } from "./pills";
-import { clipMorph, stopMorph } from "./clip-morph";
+import { buttonSwell, clipMorph, stopMorph } from "./clip-morph";
 
 const ROW = `${R} main header [data-testid="app-page-header-content-row"]`;
 /** The pill: the row's left cell's only child (bb: title wrapper + the ⋯ span). */
@@ -45,7 +45,7 @@ const DOUBLE_MS = 400;
 const GUARD_MS = 450;
 /** Emil Kowalski's strong ease-out. */
 const OPEN_MS = 200;
-const CLOSE_MS = 150;
+const CLOSE_MS = 260; // Radix keeps the closing menu mounted this long (cf-hold): the morph's close is 250ms (clip-morph.ts)
 
 const wide = () => matchMedia("(min-width: 768px)").matches;
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -273,9 +273,9 @@ export function mountTitlePill(): () => void {
       return;
     }
     // Main-thread clip (clip-morph.ts explains the compositor flicker this avoids).
-    void clipMorph(menu, pillEl, opening, opening
-      ? { ms: OPEN_MS, fadeDelay: 40, fadeMs: 140, fadeEase: "out" }
-      : { ms: CLOSE_MS, fadeDelay: 0, fadeMs: 70, fadeEase: "linear" });
+    // iOS's own button → menu morph (clip-morph.ts). Closing, the pill comes back before the glass has fully
+    // shrunk into it, with a gentle swell (a wide pill: from 90%, not the ⋯ circle's 50%).
+    void clipMorph(menu, pillEl, opening, opening ? {} : { onReturn: () => { pillEl.removeAttribute("data-cf-open"); buttonSwell(pillEl, 0.9); } });
   }
 
   /** Watches only the body's direct children (portals): a menu of ⋯ arriving, or its wrapper leaving. */

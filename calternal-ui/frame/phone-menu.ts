@@ -20,7 +20,7 @@
  * keyboard, the menu is anchored without any motion; reduced motion swaps the morph for a short fade.
  */
 import { R } from "./selectors";
-import { clipMorph, stopMorph } from "./clip-morph";
+import { buttonSwell, clipMorph, stopMorph } from "./clip-morph";
 
 const ACTIONS_SEL = `main header button[aria-label="Thread actions"]`;
 const TOOLBAR_SEL = `main header div:has(> [data-thread-header-pane-actions])`;
@@ -301,7 +301,7 @@ export function mountPhoneMenu(): () => void {
     g.style.setProperty("height", `${snap.rect.height}px`, "important");
     document.body.append(g);
     ghost = g;
-    const done = run(g, button, false);
+    const done = run(g, button, false, () => { button.removeAttribute("data-cf-am-open"); buttonSwell(button); });
     void done.then(() => {
       if (ghost === g) { g.remove(); ghost = null; }
       if (!live) button.removeAttribute("data-cf-am-open");
@@ -309,15 +309,14 @@ export function mountPhoneMenu(): () => void {
   }
 
   /** One direction of the morph: a clip from the pill's rect and radius to the menu's own, and back. */
-  function run(menu: HTMLElement, pill: HTMLElement, opening: boolean): Promise<unknown> {
+  function run(menu: HTMLElement, pill: HTMLElement, opening: boolean, onReturn?: () => void): Promise<unknown> {
     if (still()) {
       const a = menu.animate({ opacity: opening ? [0, 1] : [1, 0] }, { duration: opening ? 120 : 90, easing: "linear", fill: "both" });
       return a.finished.then(() => { if (opening) a.cancel(); }, () => {});
     }
     // Main-thread clip (clip-morph.ts explains the compositor flicker this avoids).
-    return clipMorph(menu, pill, opening, opening
-      ? { ms: OPEN_MS, fadeDelay: 50, fadeMs: 150, fadeEase: "out" }
-      : { ms: CLOSE_MS, fadeDelay: 0, fadeMs: 80, fadeEase: "linear" });
+    // iOS's own button → menu morph (clip-morph.ts): a spring open, a capsule shrink back, the button returns.
+    return clipMorph(menu, pill, opening, { onReturn });
   }
 
   document.addEventListener("pointerdown", onPointerDown, true);
