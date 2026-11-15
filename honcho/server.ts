@@ -25,6 +25,9 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   // 1. The only bb.settings.define call, and the shared deps built on it.
   const settings = defineSettings(bb);
   const view = settingsView(settings);
+  // configure() and the env resolvers are synchronous readers of the view:
+  // load the stored values before either can be called (get() is load-safe).
+  await view.ready;
   const deps = createDeps(bb, { settings });
   // The one host client, over the merged contract host.ts implements.
   const host = createHostClient(bb);

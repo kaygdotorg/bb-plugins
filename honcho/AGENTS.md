@@ -36,7 +36,7 @@ Slices (`lib/<slice>/`):
 
 ## Wiring order (server.ts)
 
-1. `defineSettings(bb)` (the only `settings.define`), `settingsView`, `createDeps(bb, { settings })`, and `createHostClient(bb)`.
+1. `defineSettings(bb)` (the only `settings.define`), `settingsView`, then `await view.ready` so configure and the env resolvers never read before the first settings load (until then the view serves the descriptor defaults: codex gets no bb tools). Then `createDeps(bb, { settings })` and `createHostClient(bb)`.
 2. Capture: `createCaptureService(bb, { ...deps, settings: view.capture })`.
 3. Recall: `createRecallService` (with `view.recall` and the shared host client), then `registerTools`, `registerConfigure` and `registerDispatchPrefetch`.
 4. Harness: `createHarnessService`, then `registerProviderEnv` **once**. bb allows one env resolver per provider per plugin, so this resolver owns `BB_HONCHO`, `HONCHO_CONFIG_*`, `BB_HONCHO_RECALL_DIR` and `BB_HONCHO_HOOK_BUDGET_MS`. Recall contributes no env.

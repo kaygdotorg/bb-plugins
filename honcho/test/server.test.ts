@@ -119,7 +119,7 @@ describe("plugin factory", () => {
     const h = await load({ hookBudgetMs: 650 });
     const ctx = { threadId: "thr_1", projectId: "p", hostId: "host_a" };
     const env = async (provider: string) => Object.fromEntries((await h.behavior.resolveProviderEnv(provider, ctx)).map(e => [e.name, e.value]));
-    await vi.waitFor(async () => expect((await env("claude-code")).BB_HONCHO_HOOK_BUDGET_MS).toBe("650"));
+    // The factory loaded the settings before registering: no wait for the first read.
     expect(await env("claude-code")).toEqual({
       BB_HONCHO: "1", BB_HONCHO_RECALL_DIR: "/data/recall", BB_HONCHO_HOOK_BUDGET_MS: "650",
       HONCHO_CONFIG_PATH: "/data/claude/none.json", HONCHO_API_KEY: "",
@@ -145,6 +145,10 @@ describe("plugin factory", () => {
     expect(config.tools.map(t => t.name).sort()).toEqual([...HONCHO_TOOL_NAMES].sort());
     const codex = await h.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({ provider: { id: "codex" } }));
     expect(codex.tools).toEqual([]);
+    // A stored opt-in applies from the first configure after load.
+    const optedIn = await load({ codexUseBbTools: true });
+    const codexOn = await optedIn.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({ provider: { id: "codex" } }));
+    expect(codexOn.tools.map(t => t.name).sort()).toEqual([...HONCHO_TOOL_NAMES].sort());
     expect(h.inspection.logEntries.filter(e => e.level === "warn" || e.level === "error")).toEqual([]);
   });
 
