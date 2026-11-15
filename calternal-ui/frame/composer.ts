@@ -297,9 +297,11 @@ export function mountComposer(): () => void {
    * (CSS, [data-cf-opening]) and the height grows toward the expanded height last seen; when bb's rows
    * arrive, morphHeight carries on from there. If no focus follows (the touch was a scroll), it eases back.
    */
-  function beginOpen(e: TouchEvent) {
-    if (!phone.matches || !animates() || e.touches.length !== 1) return;
+  function beginOpen(e: TouchEvent | FocusEvent) {
+    if (!phone.matches || !animates()) return;
+    if ("touches" in e && e.touches.length !== 1) return;
     const target = e.target as Element;
+    if (!("touches" in e) && !target.closest?.('[contenteditable="true"]')) return;
     const host = target.closest<HTMLElement>("[data-app-composer][data-cf-collapsed]");
     if (!host || target.closest("button, a, [role=button]")) return;
     const form = host.querySelector<HTMLElement>("form[data-promptbox]");
@@ -320,7 +322,7 @@ export function mountComposer(): () => void {
     };
     // The touch became a scroll (it moved): ease back. Otherwise wait for bb's rows (on an iPhone they come
     // once the keyboard has settled; focus itself can land late), with a safety net if they never do.
-    const x0 = e.touches[0].clientX, y0 = e.touches[0].clientY;
+    const x0 = "touches" in e ? e.touches[0].clientX : 0, y0 = "touches" in e ? e.touches[0].clientY : 0;
     const onMove = (m: TouchEvent) => {
       const p = m.touches[0];
       if (p && Math.hypot(p.clientX - x0, p.clientY - y0) > 10) { stop(); back(); }
@@ -329,7 +331,7 @@ export function mountComposer(): () => void {
       document.removeEventListener("touchmove", onMove, true);
       document.removeEventListener("touchend", stop, true);
     };
-    document.addEventListener("touchmove", onMove, { capture: true, passive: true });
+    if ("touches" in e) document.addEventListener("touchmove", onMove, { capture: true, passive: true });
     document.addEventListener("touchend", stop, true);
     window.setTimeout(() => { stop(); back(); }, 2000);
   }
@@ -442,7 +444,10 @@ export function mountComposer(): () => void {
   const timer = window.setInterval(schedule, 1500); // the composer is re-created on navigation
   window.addEventListener("resize", schedule, { passive: true });
   document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
-  document.addEventListener("touchstart", beginOpen, { capture: true, passive: true });
+  // The open starts with the focus, ~50ms in, so it overlaps the keyboard's rise as ChatGPT's does (63–163ms
+  // after the keyboard starts); started at the touch it was over before the keyboard had moved.
+  const onFocusIn = (e: FocusEvent) => window.setTimeout(() => beginOpen(e), 50);
+  document.addEventListener("focusin", onFocusIn, true);
   document.addEventListener("focusout", beginClose, true);
   schedule();
   return () => {
@@ -453,7 +458,7 @@ export function mountComposer(): () => void {
     window.clearInterval(timer);
     window.removeEventListener("resize", schedule);
     document.removeEventListener("pointerdown", onPointerDown, { capture: true });
-    document.removeEventListener("touchstart", beginOpen, { capture: true });
+    document.removeEventListener("focusin", onFocusIn, true);
     document.removeEventListener("focusout", beginClose, true);
     closing?.anim.cancel();
     opening?.anim.cancel();

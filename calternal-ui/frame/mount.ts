@@ -21,6 +21,7 @@ import { mountFooterUsage } from "./footer-usage";
 import { mountPerfProbe } from "./perf-probe";
 import { mountMarks } from "./marks";
 import { mountMsgTimes } from "./msg-times";
+import { mountKeyboardFollow } from "./keyboard-follow";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -51,6 +52,7 @@ export function mountFrame(): () => void {
   const unmountPhoneMenu = mountPhoneMenu();
   const unmountSidebarTop = mountSidebarTop();
   const unmountMsgTimes = mountMsgTimes();
+  const unmountKeyboardFollow = mountKeyboardFollow();
   const unmountFooterUsage = mountFooterUsage();
   const unmountPerfProbe = mountPerfProbe(); // opt-in: ?cf-perf
 
@@ -62,6 +64,7 @@ export function mountFrame(): () => void {
     unmountPhoneMenu();
     unmountSidebarTop();
     unmountMsgTimes();
+    unmountKeyboardFollow();
     unmountFooterUsage();
     unmountPerfProbe();
     unmountComposer();
