@@ -8,6 +8,7 @@ import { ROOT_ATTR } from "./selectors";
 import { applyCachedWallpaper, clearWallpaper } from "./wallpaper";
 import { applyCachedPrefs, clearPrefs } from "./prefs";
 import { applyCachedAccent, clearAccent } from "./accent";
+import { mountTouch } from "./touch";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -26,8 +27,10 @@ export function mountFrame(): () => void {
   applyCachedWallpaper();
   applyCachedPrefs();
   applyCachedAccent();
+  const unmountTouch = mountTouch();
 
   return () => {
+    unmountTouch();
     style.remove();
     backdrop.remove();
     root.removeAttribute(ROOT_ATTR);
