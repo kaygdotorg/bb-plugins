@@ -46,7 +46,10 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - A thread row is `[data-sidebar-rename-row][role="button"]`; the section wrapper reuses the attribute without the role.
   - Rows are marked `data-no-sidebar-swipe` on `pointerdown` in the capture phase. bb decides its drawer swipe there, before `touchstart`.
   - Never dispatch Escape: it closes bb's drawer.
-- **Keyboard-down button:** shown in `[data-promptbox-submit-group]` only while an editor in the composer has focus and the visible area is more than 150px shorter than the window (`html[data-cf-keyboard]`).
+- **Keyboard-down button:** shown while the composer's editor has focus on a touch device (`html[data-cf-keyboard]`). It sits right after bb's mic ("Start voice input") and copies its classes. bb refocuses the editor on any press inside the composer, so the button swallows every event of the press and then blurs. While typing, attachment thumbnails shrink and the editor is capped at 28% of `--cf-vvh` (the visual viewport height).
+- **Message swipes are iMessage-like:** left to right replies (1:1 to the threshold, then resistance, with a growing reply arrow). Right to left has no action yet.
+- **Pull to search** starts from the top of the sidebar, from the chat's title bar (any scroll position), or in a chat scrolled to the very top. bb anchors long threads and loads older messages, so "the top" is rare there.
+- **The sliding phone pane uses `--cf-device-radius`** (the screen's corner), like Claude's iOS app, plus `corner-shape: squircle` where supported.
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
 - **The usage bars are not a child of bb's footer icon row.** bb counts that row's children to decide which icons overflow into "…". The bars are positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
