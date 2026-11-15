@@ -42,8 +42,17 @@ export function mountInputMode(): () => void {
   };
   root.setAttribute(ATTR, mode);
 
-  // Modifier presses alone (⌘ to see shortcut hints) don't switch modes.
-  const onKey = (e: KeyboardEvent) => { if (!["Meta", "Control", "Alt", "Shift"].includes(e.key)) set("keys"); };
+  // Modifier presses alone (⌘ to see shortcut hints) don't switch modes, and neither does typing in a
+  // text field (letters, Enter, Backspace, arrows moving the caret): there's no motion to suppress, and
+  // the switch restyles every element (the \`*\` rule above), which made the first keystroke after a
+  // click into the composer lag. Tab, Escape and shortcuts (with ⌘/Ctrl/Alt) still switch.
+  const onKey = (e: KeyboardEvent) => {
+    if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) return;
+    const t = e.target as HTMLElement | null;
+    const typing = !!t && (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement);
+    if (typing && !(e.metaKey || e.ctrlKey || e.altKey) && e.key !== "Tab" && e.key !== "Escape") return;
+    set("keys");
+  };
   const onPointer = () => set("pointer");
 
   document.addEventListener("keydown", onKey, { capture: true, passive: true });
