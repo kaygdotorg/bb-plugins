@@ -17,6 +17,8 @@ import { PILL_SIDEBAR_CSS } from "./pills-sidebar";
 import { PILL_COMPOSER_CSS } from "./pills-composer";
 import { PILL_PHONE_CSS } from "./pills-phone";
 import { TITLE_PILL_CSS } from "./title-pill";
+import { PILL_SETTINGS_CSS } from "./pills-settings";
+import { PHONE_MENU_CSS } from "./phone-menu";
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
 
 export const CSS = `
@@ -830,6 +832,8 @@ ${PILL_SIDEBAR_CSS}
 ${PILL_COMPOSER_CSS}
 ${PILL_PHONE_CSS}
 ${TITLE_PILL_CSS}
+${PILL_SETTINGS_CSS}
+${PHONE_MENU_CSS}
 `;
 
 /**

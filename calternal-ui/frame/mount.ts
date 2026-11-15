@@ -15,6 +15,7 @@ import { mountTitlePill } from "./title-pill";
 import { installClock } from "./clock";
 import { mountBrand } from "./brand";
 import { mountInputMode } from "./input-mode";
+import { mountPhoneMenu } from "./phone-menu";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -41,11 +42,13 @@ export function mountFrame(): () => void {
   const unmountTitlePill = mountTitlePill();
   const unmountBrand = mountBrand();
   const unmountInputMode = mountInputMode();
+  const unmountPhoneMenu = mountPhoneMenu();
 
   return () => {
     uninstallClock();
     unmountBrand();
     unmountInputMode();
+    unmountPhoneMenu();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();
