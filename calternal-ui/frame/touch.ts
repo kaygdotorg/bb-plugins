@@ -98,6 +98,15 @@ function openSearch() {
  */
 const TOGGLE_OVERLAY = '[data-testid="app-sidebar-trigger-overlay"]';
 
+/** bb's right panel: a fixed layer at the right edge (z 45) that slides in with its own translate. */
+const RIGHT_PANEL = '[data-testid^="secondary-panel"]';
+
+/** bb's right-panel button (hidden in the phone header): show or hide the panel. */
+function pressRightPanel(show: boolean) {
+  [...document.querySelectorAll<HTMLButtonElement>("main header [data-thread-header-pane-actions] button")]
+    .find((b) => (show ? /^Show right panel/i : /^Hide right panel/i).test(b.getAttribute("aria-label") ?? ""))?.click();
+}
+
 function sideSwipes(): () => void {
   const EDGE = 24, DECIDE = 10, FLICK = 0.3, PAST = 0.4;
   const phone = matchMedia("(max-width: 767px)");
@@ -107,6 +116,7 @@ function sideSwipes(): () => void {
   let x0 = 0, y0 = 0, dx = 0, width = 0;
   let state: "idle" | "maybe" | "drag" | "no" = "idle";
   let samples: { t: number; x: number }[] = [];
+  let panelWatch: MutationObserver | null = null;
 
   const scrollsSideways = (el: Element | null, stop: Element) => {
     for (let e = el; e && e !== stop; e = e.parentElement) {
@@ -156,6 +166,26 @@ function sideSwipes(): () => void {
       if (mode === "close-left" && dx > 0) { state = "no"; return; }
       width = mode === "open-right" ? innerWidth : drawerWidth();
       state = "drag";
+      if (mode === "open-right") {
+        // The left sidebar always lies under the pane, and bb's right panel exists only once opened: open it
+        // now (the pane stays under the finger, held by its inline translate) and hide the sidebar, so the
+        // drag reveals the panel, not the drawer (kayg: "right to left also shows the left sidebar").
+        document.documentElement.setAttribute("data-cf-dragging-right", "");
+        // bb's panel is a layer ON TOP at the right edge, not under the pane: it must follow the finger in
+        // from the edge too. It mounts when opened; place it in the same microtask it appears (before paint).
+        const offset = () => `${(innerWidth + position()).toFixed(1)}px 0`;
+        panelWatch?.disconnect();
+        panelWatch = new MutationObserver(() => {
+          const panel = document.querySelector<HTMLElement>(RIGHT_PANEL);
+          if (!panel) return;
+          panel.style.transition = "none";
+          panel.style.translate = offset();
+          panelWatch?.disconnect();
+          panelWatch = null;
+        });
+        panelWatch.observe(document.body, { childList: true, subtree: true });
+        pressRightPanel(true);
+      }
       pane.setAttribute("data-cf-dragging", "");
       pane.style.transition = "none";
       // bb's sidebar button is a fixed overlay outside the pane: it rides with the pane (else it sat on top of
@@ -165,6 +195,10 @@ function sideSwipes(): () => void {
     }
     const at = `${position().toFixed(1)}px 0`;
     pane.style.translate = at;
+    if (mode === "open-right") {
+      const panel = document.querySelector<HTMLElement>(RIGHT_PANEL);
+      if (panel) { panel.style.transition = "none"; panel.style.translate = `${(innerWidth + position()).toFixed(1)}px 0`; }
+    }
     const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);
     if (toggle) toggle.style.translate = at;
   };
@@ -182,10 +216,25 @@ function sideSwipes(): () => void {
         window.setTimeout(() => toggle.style.removeProperty("transition"), 260);
       }
     };
+    if (m === "open-right") {
+      // The panel was opened at the start of the drag: keep it, or close it again (the pane slides back).
+      // Either way the panel lets go of the finger and takes bb's own slide from where it is.
+      panelWatch?.disconnect(); panelWatch = null;
+      const panel = document.querySelector<HTMLElement>(RIGHT_PANEL);
+      if (!open) pressRightPanel(false);
+      if (panel) {
+        panel.style.transition = "translate 220ms cubic-bezier(0.32, 0.72, 0, 1)";
+        panel.style.translate = open ? "0px 0" : `${innerWidth}px 0`;
+        window.setTimeout(() => { panel.style.removeProperty("translate"); panel.style.removeProperty("transition"); }, 260);
+      }
+      release();
+      window.setTimeout(() => document.documentElement.removeAttribute("data-cf-dragging-right"), open ? 0 : 260);
+      return;
+    }
     const wasOpen = m === "close-left";
     if (open === wasOpen) { release(); return; } // spring back: bb's transition runs from here to its state
     // Change state with bb's own button; hold the pane where the finger left it until bb's attribute flips.
-    const attr = m === "open-right" ? "data-panel-shelf" : "data-sidebar-shelf";
+    const attr = "data-sidebar-shelf";
     const before = main.getAttribute(attr);
     const watch = new MutationObserver(() => {
       if (main.getAttribute(attr) === before) return;
@@ -197,12 +246,7 @@ function sideSwipes(): () => void {
     const timer = window.setTimeout(() => { watch.disconnect(); release(); }, 600);
     main.style.translate = `${from.toFixed(1)}px 0`;
     if (toggle) toggle.style.translate = `${from.toFixed(1)}px 0`;
-    if (m === "open-right") {
-      [...document.querySelectorAll<HTMLButtonElement>("main header [data-thread-header-pane-actions] button")]
-        .find((b) => /^Show right panel/i.test(b.getAttribute("aria-label") ?? ""))?.click();
-    } else {
-      document.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click();
-    }
+    document.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click();
   };
 
   const onEnd = () => {
@@ -226,6 +270,7 @@ function sideSwipes(): () => void {
     settle(main, pos, open, m);
   };
   const onCancel = () => {
+    if (pane && state === "drag" && mode === "open-right") { pressRightPanel(false); document.documentElement.removeAttribute("data-cf-dragging-right"); }
     if (pane && state === "drag") {
       pane.style.removeProperty("translate"); pane.style.removeProperty("transition"); pane.removeAttribute("data-cf-dragging");
       const toggle = document.querySelector<HTMLElement>(TOGGLE_OVERLAY);

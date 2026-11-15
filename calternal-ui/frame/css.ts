@@ -752,6 +752,8 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
   /* At rest the pane is a full-screen sheet. When it slides aside for the drawer or the
      right panel, it becomes the floating card: rounded, with the card's edge and shadow. */
+  /* A right-to-left drag reveals the right panel, never the left drawer that lies under the pane (touch.ts). */
+  ${R}[data-cf-dragging-right] ${SIDEBAR} { visibility: hidden; }
   ${MAIN}:is([data-sidebar-shelf]:not([data-sidebar-shelf="closed"]), [data-panel-shelf]:not([data-panel-shelf="closed"]), [data-cf-dragging]) {
     /* Like Claude's iOS app: the pane takes the screen's own corner radius, so it reads as
        the display itself sliding aside. Squircle corners where supported (Chromium). */
