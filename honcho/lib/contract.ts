@@ -143,6 +143,21 @@ export interface ConnectionView {
   warnings: string[];
 }
 
+
+// ---------- "from honcho" blocks in chats (Q45-Q48, 2026-11-15) ----------
+
+/** One injection that really reached the agent: a per-turn hook hit the hook reported as served, or
+ * the memory injected at a session (re)build. Misses, skips and paused threads never produce one. */
+export interface MemoryInjection {
+  kind: "turn" | "session";
+  /** epoch ms: when the hook served it (turn) or the session was built (session) */
+  at: number;
+  scope: string | null;
+  items: Array<{ content: string; date: string | null; sourceThreadId: string | null; sourceTitle: string | null }>;
+  /** session only: the peer card / directives / scope summary lines that went in */
+  card?: string[];
+}
+
 // ---------- RPC surface used by the frontend (method name -> [params, result]) ----------
 
 export interface RpcMethods {
@@ -170,6 +185,8 @@ export interface RpcMethods {
   "backfill.start": [{ projectId?: string; since?: string }, { ok: true }];
   "backfill.progress": [{}, Awaited<ReturnType<BackfillService["progress"]>>];
   "backfill.stop": [{}, { ok: true }];
+  /** injections for one thread, newest last, at most the last 200 */
+  "recall.injections": [{ threadId: string; since?: number }, MemoryInjection[]];
   /** Read-only: chat titles and project names for ids the page would otherwise show raw. null = unknown. */
   "labels.get": [{ threadIds?: string[]; projectIds?: string[] }, { threads: Record<string, string | null>; projects: Record<string, string | null> }];
 }

@@ -100,6 +100,13 @@ Out of v1: the "remember this" message action, the full conclusions review panel
   - Pi, ACP and sandboxes without a bb host daemon get session-start recall only.
 - Injected memory is framed as background about kayg, not instructions. Conclusions an agent saves are marked as agent-written.
 
+### "from honcho" blocks (Q45-Q48, agreed 2026-11-15)
+
+- A block shows only when memory actually reached the agent. That means a per-turn hit that the hook confirms by writing a "served" note (hash and time only, no prompt text), and the one-time injection at a session (re)build (peer card, directives, scope summary). Misses, skips and paused threads show nothing.
+- It's a quiet chip above the user's message (`experimental_messageMetadata`, placement above): `from honcho · 3 memories · scope bb-plugins`. It's collapsed by default. When expanded, it shows the redacted excerpts with their date and source chat, plus "open memory".
+- Every injection is shown, with no "importance" filter.
+- The agent's own honcho_* tool calls stay as bb's tool rows, with no extra block.
+
 ## Tools (H7)
 
 Native bb tools via `bb.agents.registerTool`, the same for every provider except codex on machines that weren't handed over:
