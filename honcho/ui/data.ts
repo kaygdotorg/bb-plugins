@@ -19,12 +19,14 @@ interface Options {
   pollMs?: number;
   /** Skip fetching (a hidden tab, a missing id). */
   enabled?: boolean;
+  /** Refetch on the plugin's realtime signals (default). Off for a value only this page changes. */
+  live?: boolean;
 }
 
 /** One rpc read that follows the plugin's realtime signals, reconnects and a slow poll. */
 export function useRemote<K extends keyof RpcMethods>(method: K, input: RpcMethods[K][0], options: Options = {}): Remote<RpcMethods[K][1]> {
   const rpc = useMemoryRpc();
-  const { pollMs = 30_000, enabled = true } = options;
+  const { pollMs = 30_000, enabled = true, live = true } = options;
   const [data, setData] = useState<RpcMethods[K][1] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(enabled);
@@ -34,20 +36,33 @@ export function useRemote<K extends keyof RpcMethods>(method: K, input: RpcMetho
   const alive = useRef(true);
   const seq = useRef(0);
 
+  const inflight = useRef(false);
+  const again = useRef(false);
+
+  // One request at a time. A signal that lands mid-request asks for one more run afterwards, so a
+  // burst of activity signals never stacks up requests. An unchanged answer keeps the old object,
+  // so nothing below re-renders for it.
   const refetch = useCallback(async () => {
     if (!enabled) return;
-    const mine = ++seq.current;
+    if (inflight.current) { again.current = true; return; }
+    inflight.current = true;
     try {
-      const value = await (rpc.call as (m: string, i: unknown) => Promise<RpcMethods[K][1]>)(method, inputRef.current);
-      if (!alive.current || mine !== seq.current) return;
-      setData(value);
-      setError(null);
-    } catch (e) {
-      if (!alive.current || mine !== seq.current) return;
-      setError(e instanceof Error ? e.message : "request failed");
-    } finally {
-      if (alive.current && mine === seq.current) setLoading(false);
-    }
+      do {
+        again.current = false;
+        const mine = ++seq.current;
+        try {
+          const value = await (rpc.call as (m: string, i: unknown) => Promise<RpcMethods[K][1]>)(method, inputRef.current);
+          if (!alive.current || mine !== seq.current) continue;
+          setData((old) => (old !== null && JSON.stringify(old) === JSON.stringify(value) ? old : value));
+          setError(null);
+        } catch (e) {
+          if (!alive.current || mine !== seq.current) continue;
+          setError(e instanceof Error ? e.message : "request failed");
+        } finally {
+          if (alive.current && mine === seq.current) setLoading(false);
+        }
+      } while (again.current && alive.current);
+    } finally { inflight.current = false; }
   }, [rpc, method, enabled]);
 
   useEffect(() => {
@@ -63,8 +78,8 @@ export function useRemote<K extends keyof RpcMethods>(method: K, input: RpcMetho
     return () => window.clearInterval(timer);
   }, [refetch, key, pollMs, enabled]);
 
-  useRealtime("changed", () => void refetch());
-  useRealtime("activity", () => void refetch());
+  useRealtime("changed", () => { if (live) void refetch(); });
+  useRealtime("activity", () => { if (live) void refetch(); });
   const connection = useRealtimeConnectionState();
   const seen = useRef(connection);
   useEffect(() => {
@@ -96,4 +111,16 @@ export function useNow(everyMs = 5000): number {
     return () => window.clearInterval(timer);
   }, [everyMs]);
   return now;
+}
+
+/** Chat titles and project names for raw ids, fetched once per set of ids. Unknown ids stay absent. */
+export function useLabels(threadIds: readonly string[], projectIds: readonly string[] = []) {
+  const threads = [...new Set(threadIds)].sort();
+  const projects = [...new Set(projectIds)].sort();
+  const enabled = threads.length + projects.length > 0;
+  const labels = useRemote("labels.get", { threadIds: threads, projectIds: projects }, { enabled, pollMs: 0, live: false });
+  return {
+    thread: (id: string): string | null => labels.data?.threads[id] ?? null,
+    project: (id: string): string | null => labels.data?.projects[id] ?? null,
+  };
 }

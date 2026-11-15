@@ -170,4 +170,6 @@ export interface RpcMethods {
   "backfill.start": [{ projectId?: string; since?: string }, { ok: true }];
   "backfill.progress": [{}, Awaited<ReturnType<BackfillService["progress"]>>];
   "backfill.stop": [{}, { ok: true }];
+  /** Read-only: chat titles and project names for ids the page would otherwise show raw. null = unknown. */
+  "labels.get": [{ threadIds?: string[]; projectIds?: string[] }, { threads: Record<string, string | null>; projects: Record<string, string | null> }];
 }

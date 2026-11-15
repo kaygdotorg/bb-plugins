@@ -63,6 +63,7 @@ export const rpcInputs = {
   "backfill.start": z.object({ projectId: text(200).optional(), since: z.string().max(100).optional() }),
   "backfill.progress": empty,
   "backfill.stop": empty,
+  "labels.get": z.object({ threadIds: z.array(text(200)).max(200).optional(), projectIds: z.array(text(200)).max(200).optional() }),
 } satisfies Record<keyof RpcMethods, z.ZodType>;
 
 /** Validates one method's input; failures become a clean refusal that never echoes the value. */
@@ -102,6 +103,7 @@ export const rpcContract = defineRpcContract({
   "backfill.start": method("backfill.start"),
   "backfill.progress": method("backfill.progress"),
   "backfill.stop": method("backfill.stop"),
+  "labels.get": method("labels.get"),
 });
 
 // ---------- peers ----------
@@ -312,6 +314,17 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
     "backfill.start": async (input) => { await backfill.start(input); changed("backfill"); return ok; },
     "backfill.progress": () => backfill.progress(),
     "backfill.stop": async () => { await backfill.stop(); changed("backfill"); return ok; },
+    "labels.get": async ({ threadIds = [], projectIds = [] }) => {
+      const pick = async (ids: string[], read: (id: string) => Promise<string | null | undefined>) => {
+        const out: Record<string, string | null> = {};
+        await Promise.all([...new Set(ids)].map(async (id) => { out[id] = (await read(id).catch(() => null))?.trim() || null; }));
+        return out;
+      };
+      return {
+        threads: await pick(threadIds, async (threadId) => (await bb.sdk.threads.get({ threadId }))?.title),
+        projects: await pick(projectIds, async (projectId) => (await bb.sdk.projects.get({ projectId }))?.name),
+      };
+    },
   } satisfies { [K in keyof RpcMethods]: (input: RpcMethods[K][0]) => RpcMethods[K][1] | Promise<RpcMethods[K][1]> };
   const validated = Object.fromEntries(Object.entries(handlers).map(([name, fn]) => [
     name, async (input: unknown) => (fn as (i: unknown) => unknown)(parseInput(name as keyof RpcMethods, input)),

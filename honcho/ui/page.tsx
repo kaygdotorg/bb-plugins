@@ -10,8 +10,8 @@ import { MEMORY_PATH } from "./thread";
 
 export const TABS = [
   { id: "activity", label: "activity", component: ActivityTab },
-  { id: "conclusions", label: "conclusions", component: ConclusionsTab },
-  { id: "peers", label: "peers", component: PeersTab },
+  { id: "conclusions", label: "what it learned", component: ConclusionsTab },
+  { id: "peers", label: "assistants", component: PeersTab },
   { id: "privacy", label: "privacy", component: PrivacyTab },
   { id: "connection", label: "connection", component: ConnectionTab },
 ] as const;

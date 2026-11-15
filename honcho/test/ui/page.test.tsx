@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { experimental_PluginRpcRefusal } from "@get-bb/plugin-sdk";
 import type { HarnessState } from "../../lib/contract";
 
 afterEach(cleanup);
@@ -31,15 +32,16 @@ describe("activity", () => {
     expect(await empty.findByText("nothing yet")).toBeTruthy();
     empty.lifecycle.unmount();
     const slot = await page("activity", {
+      "labels.get": () => ({ threads: { t9: "Fix the login bug" }, projects: {} }),
       "activity.list": () => [
         { id: 2, at: Date.now(), kind: "upload", threadId: "t9", summary: "uploaded a batch", messages: 4, redactions: 2, reasoning: true },
         { id: 1, at: Date.now(), kind: "failure", summary: "upload failed", error: "offline" },
       ],
     });
     expect(await slot.findByText("uploaded a batch")).toBeTruthy();
-    expect(slot.getByText("4 messages · 2 redacted")).toBeTruthy();
-    expect(slot.getByText("reasoning")).toBeTruthy();
-    fireEvent.click(slot.getByLabelText("open thread"));
+    expect(slot.getByText("4 messages · 2 hidden")).toBeTruthy();
+    expect(slot.getByText("thinking included")).toBeTruthy();
+    fireEvent.click(await slot.findByLabelText("open chat Fix the login bug"));
     expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({ method: "toThread", threadId: "t9" });
   });
 
@@ -53,8 +55,8 @@ describe("conclusions", () => {
   const c = (id: string, extra = {}) => ({ id, content: `fact ${id}`, observer_id: "a", observed_id: "b", created_at: "2026-01-01T00:00:00Z", agentWritten: false, confirmed: false, ...extra });
   it("searches, confirms and deletes after a second click", async () => {
     const slot = await page("conclusions", { "conclusions.list": () => [c("1", { agentWritten: true })], "conclusions.confirm": () => ({ ok: true }), "conclusions.delete": () => ({ ok: true }) });
-    expect(await slot.findByText("agent-written")).toBeTruthy();
-    fireEvent.change(slot.getByLabelText("search conclusions"), { target: { value: "vitest" } });
+    expect(await slot.findByText("written by an agent")).toBeTruthy();
+    fireEvent.change(slot.getByLabelText("search what memory has learned"), { target: { value: "vitest" } });
     fireEvent.submit(slot.getByRole("search"));
     await waitFor(() => expect(calls(slot, "conclusions.list").some((x) => (x.input as any).query === "vitest")).toBe(true));
     fireEvent.click(slot.getByText("confirm"));
@@ -69,9 +71,9 @@ describe("conclusions", () => {
 describe("peers", () => {
   it("renames and explains what a rename does", async () => {
     const slot = await page("peers", { "peers.list": () => [{ providerId: "codex", peer: "codex", firstSeen: null }], "peers.rename": () => ({ ok: true }) });
-    expect(await slot.findByText(/starts a new peer from now on/)).toBeTruthy();
+    expect(await slot.findByText(/starts a new name from now on/)).toBeTruthy();
     fireEvent.click(await slot.findByText("rename"));
-    fireEvent.change(slot.getByLabelText("peer for codex"), { target: { value: "codex_two" } });
+    fireEvent.change(slot.getByLabelText("name for codex"), { target: { value: "codex_two" } });
     fireEvent.click(slot.getByText("save"));
     await waitFor(() => expect(calls(slot, "peers.rename")[0]!.input).toEqual({ providerId: "codex", peer: "codex_two" }));
   });
@@ -84,10 +86,10 @@ describe("privacy", () => {
       "pause.list": () => [], "privacy.get": () => settings,
       "privacy.test": ({ text }: { text: string }) => ({ text: text.replace("hunter2", "[REDACTED]"), count: 1 }),
     });
-    fireEvent.change(await slot.findByLabelText("text to test"), { target: { value: "pw hunter2" } });
-    fireEvent.click(slot.getByText("test"));
-    expect((await slot.findByLabelText("redacted output")).textContent).toBe("pw [REDACTED]");
-    expect(slot.getByText("1 redacted")).toBeTruthy();
+    fireEvent.change(await slot.findByLabelText("text to try"), { target: { value: "pw hunter2" } });
+    fireEvent.click(slot.getByText("try it"));
+    expect((await slot.findByLabelText("text after hiding")).textContent).toBe("pw [REDACTED]");
+    expect(slot.getByText("1 would be hidden")).toBeTruthy();
     expect(calls(slot, "privacy.test")[0]!.input).toEqual({ text: "pw hunter2" });
   });
 
@@ -96,16 +98,16 @@ describe("privacy", () => {
       "pause.list": () => [{ kind: "project", id: "proj_1", since: Date.now() }], "pause.set": () => ({ ok: true }),
       "privacy.get": () => settings, "privacy.set": () => settings,
     });
-    fireEvent.click(await slot.findByText("unpause"));
+    fireEvent.click(await slot.findByText("resume"));
     await waitFor(() => expect(calls(slot, "pause.set")[0]!.input).toEqual({ kind: "project", id: "proj_1", paused: false }));
-    expect(slot.getByText("deletes the transcript; the peer card may still reflect it until it regenerates.")).toBeTruthy();
-    fireEvent.click(slot.getByRole("switch", { name: "delete its transcript from honcho" }));
+    expect(slot.getByText(/removes the saved conversation/)).toBeTruthy();
+    fireEvent.click(slot.getByRole("switch", { name: "also delete its saved copy from memory" }));
     await waitFor(() => expect(calls(slot, "privacy.set")[0]!.input).toEqual({ deleteOnDelete: false }));
   });
 
   it("saves rules one entry per line", async () => {
     const slot = await page("privacy", { "pause.list": () => [], "privacy.get": () => settings, "privacy.set": () => settings });
-    fireEvent.change(await slot.findByLabelText("deny paths"), { target: { value: "/work/a/**\n\n/work/b/**" } });
+    fireEvent.change(await slot.findByLabelText("skip these folders"), { target: { value: "/work/a/**\n\n/work/b/**" } });
     fireEvent.click(slot.getByText("save"));
     await waitFor(() => expect(calls(slot, "privacy.set")[0]!.input).toMatchObject({ denyPaths: ["/work/a/**", "/work/b/**"] }));
   });
@@ -116,7 +118,7 @@ describe("privacy edits", () => {
   it("keeps typed text across refetches that return an unchanged value, and adopts a changed stored value when clean", async () => {
     let stored: { denyRemotes: string[]; denyPaths: string[]; patterns: string[]; deleteOnDelete: boolean; purgeConclusionsOnDelete: boolean } = { ...settings, denyRemotes: [], denyPaths: [], patterns: [] };
     const slot = await page("privacy", { "pause.list": () => [], "privacy.get": () => JSON.parse(JSON.stringify(stored)), "privacy.set": () => stored });
-    const box = await slot.findByLabelText("deny paths") as HTMLTextAreaElement;
+    const box = await slot.findByLabelText("skip these folders") as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "/work/typing" } });
     await slot.emitRealtime("changed", { what: "peers" });
     await waitFor(() => expect(calls(slot, "privacy.get").length).toBeGreaterThan(1));
@@ -144,7 +146,7 @@ describe("connection", () => {
   it("shows the connection without a key and tests it", async () => {
     const slot = await page("connection", { ...base, "connection.test": () => ({ ok: true, latencyMs: 42 }) });
     expect(await slot.findByText("https://honcho.example.org")).toBeTruthy();
-    expect(slot.getByText(/workspace or admin/)).toBeTruthy();
+    expect(slot.getByText(/full access/)).toBeTruthy();
     expect(slot.getByText(/overrides the Honcho file setting/)).toBeTruthy();
     fireEvent.click(slot.getByText("test connection"));
     expect(await slot.findByText("connected · 42 ms")).toBeTruthy();
@@ -157,14 +159,14 @@ describe("connection", () => {
       ...base, "harness.state": () => current,
       "harness.connect": () => (current = installed), "harness.handOver": () => (current = installed), "harness.undo": () => current,
     });
-    fireEvent.click(await slot.findByText("connect harnesses", { selector: "button" }));
+    fireEvent.click(await slot.findByText("turn on", { selector: "button" }));
     await waitFor(() => expect(calls(slot, "harness.connect")).toHaveLength(1));
-    fireEvent.click(slot.getByText("hand over to bb", { selector: "button" }));
+    fireEvent.click(slot.getByText("turn them off", { selector: "button" }));
     await waitFor(() => expect(calls(slot, "harness.handOver")).toHaveLength(1));
     expect(calls(slot, "harness.undo")).toHaveLength(0);
-    fireEvent.click(await slot.findByLabelText("undo hand over"));
+    fireEvent.click(await slot.findByLabelText("undo turning off the old plugins"));
     await waitFor(() => expect(calls(slot, "harness.undo")).toHaveLength(1));
-    fireEvent.click(await slot.findByLabelText("undo connect"));
+    fireEvent.click(await slot.findByLabelText("undo turning on memory"));
     await waitFor(() => expect(calls(slot, "harness.undo")).toHaveLength(2));
     expect(calls(slot, "harness.undo").map((c) => c.input)).toEqual([{ step: "handOver" }, { step: "connect" }]);
   });
@@ -177,12 +179,12 @@ describe("connection", () => {
       "backfill.dryRun": () => ({ threads: 3, messages: 20, tokens: 900, skippedAlreadyInHoncho: 1, reasoningMessages: 2 }),
       "backfill.start": () => { running = true; return { ok: true }; }, "backfill.stop": () => ({ ok: true }),
     });
-    const start = await slot.findByText("start", { selector: "button" });
+    const start = await slot.findByText("import", { selector: "button" });
     expect((start as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(slot.getByText("dry run"));
-    const summary = await slot.findByLabelText("dry run");
+    fireEvent.click(slot.getByText("check first"));
+    const summary = await slot.findByLabelText("what an import would do");
     expect(within(summary).getByText("20")).toBeTruthy();
-    fireEvent.click(slot.getByText("start", { selector: "button" }));
+    fireEvent.click(slot.getByText("import", { selector: "button" }));
     await waitFor(() => expect(calls(slot, "backfill.start")).toHaveLength(1));
     expect(await slot.findByRole("progressbar")).toBeTruthy();
     expect(await slot.findByText("stop")).toBeTruthy();
@@ -207,5 +209,115 @@ describe("badge", () => {
     expect((await badge({ authFailing: true }))()).toMatchObject({ tone: "critical" });
     expect((await badge({ tripwire: "claude-honcho session found" }))()).toMatchObject({ tone: "critical" });
     expect((await badge({ queued: 3, oldestPendingAt: Date.now() - 11 * 60_000 }))()).toMatchObject({ tone: "warning", count: 3 });
+  });
+});
+
+describe("privacy typing, saving and errors", () => {
+  const settings = { denyRemotes: [], denyPaths: [], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: true };
+  const base = { "pause.list": () => [], "privacy.get": () => settings };
+
+  it("typing makes no rpc call; only save does, and the test box only runs on its button", async () => {
+    const slot = await page("privacy", { ...base, "privacy.set": () => ({ ...settings, patterns: ["a+"] }), "privacy.test": () => ({ text: "x", count: 0 }) });
+    const rules = await slot.findByLabelText("hide text matching");
+    const tryBox = slot.getByLabelText("text to try");
+    await waitFor(() => expect(calls(slot, "privacy.get").length).toBeGreaterThan(0));
+    const before = slot.inspection.rpcCalls.length;
+    for (let i = 1; i <= 60; i++) {
+      fireEvent.change(rules, { target: { value: "a".repeat(i) } });
+      fireEvent.change(tryBox, { target: { value: "b".repeat(i) } });
+    }
+    expect(slot.inspection.rpcCalls.length).toBe(before);
+    expect(calls(slot, "privacy.set")).toHaveLength(0);
+    expect(calls(slot, "privacy.test")).toHaveLength(0);
+    fireEvent.click(slot.getByText("save"));
+    await waitFor(() => expect(calls(slot, "privacy.set")).toHaveLength(1));
+    expect(calls(slot, "privacy.test")).toHaveLength(0);
+  });
+
+  it("says unsaved while dirty, then saved, and never unsaved again after a successful save", async () => {
+    let stored = { ...settings };
+    const slot = await page("privacy", {
+      "pause.list": () => [], "privacy.get": () => stored,
+      // the server tidies: trims and drops duplicates
+      "privacy.set": (input: any) => (stored = { ...stored, ...input, denyPaths: [...new Set<string>(input.denyPaths)] }),
+    });
+    const box = await slot.findByLabelText("skip these folders") as HTMLTextAreaElement;
+    expect(slot.queryByText("unsaved changes")).toBeNull();
+    fireEvent.change(box, { target: { value: "/a/**\n/a/**\n\n" } });
+    expect(slot.getByText("unsaved changes")).toBeTruthy();
+    fireEvent.click(slot.getByText("save"));
+    expect(await slot.findByText("saved")).toBeTruthy();
+    await slot.emitRealtime("changed", { what: "privacy" });
+    await waitFor(() => expect(calls(slot, "privacy.get").length).toBeGreaterThan(1));
+    expect(slot.queryByText("unsaved changes")).toBeNull();
+    expect((slot.getByText("save") as HTMLButtonElement).disabled).toBe(true);
+    expect(box.value).toBe("/a/**");
+    // editing again flips it back
+    fireEvent.change(box, { target: { value: "/b/**" } });
+    expect(slot.getByText("unsaved changes")).toBeTruthy();
+  });
+
+  it("shows a server error next to its line and keeps the text", async () => {
+    const slot = await page("privacy", {
+      ...base,
+      "privacy.set": () => { throw new experimental_PluginRpcRefusal({ code: "invalid", message: "Not saved.", issues: [{ message: "this is not a valid pattern", path: ["patterns", 1] }] }); },
+    });
+    const box = await slot.findByLabelText("hide text matching") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "ok+\n\nbad[(" } });
+    fireEvent.click(slot.getByText("save"));
+    const problem = await slot.findByText(/this is not a valid pattern/);
+    expect(problem.closest("li")!.textContent).toContain("line 3");
+    expect(problem.closest("li")!.textContent).toContain("bad[(");
+    expect(box.value).toBe("ok+\n\nbad[(");
+    expect(box.getAttribute("aria-invalid")).toBe("true");
+    expect(slot.getByText("one entry needs fixing")).toBeTruthy();
+    // fixing the line clears its problem
+    fireEvent.change(box, { target: { value: "ok+\n\nfine" } });
+    expect(slot.queryByText(/this is not a valid pattern/)).toBeNull();
+  });
+});
+
+describe("chat titles instead of ids", () => {
+  it("shows the title of a paused chat and of a project, and links the chat", async () => {
+    const slot = await page("privacy", {
+      "pause.list": () => [{ kind: "thread", id: "thr_abc", since: Date.now() }, { kind: "project", id: "proj_1", since: Date.now() }],
+      "privacy.get": () => ({ denyRemotes: [], denyPaths: [], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: true }),
+      "labels.get": () => ({ threads: { thr_abc: "Plan the migration" }, projects: { proj_1: "bb plugins" } }),
+    });
+    fireEvent.click(await slot.findByText("Plan the migration"));
+    expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({ method: "toThread", threadId: "thr_abc" });
+    expect(await slot.findByText("bb plugins")).toBeTruthy();
+    expect(slot.queryByText("thr_abc")).toBeNull();
+  });
+
+  it("never shows a raw id when the title is unknown", async () => {
+    const slot = await page("activity", { "activity.list": () => [{ id: 1, at: Date.now(), kind: "upload", threadId: "thr_zzz", summary: "saved" }], "labels.get": () => ({ threads: { thr_zzz: null }, projects: {} }) });
+    expect(await slot.findByText("untitled chat")).toBeTruthy();
+    expect(slot.container.textContent).not.toContain("thr_zzz");
+  });
+});
+
+describe("conclusions: plain words", () => {
+  const c = (id: string, extra = {}) => ({ id, content: `fact ${id}`, observer_id: "a", observed_id: "b", created_at: "2026-01-01T00:00:00Z", agentWritten: false, confirmed: false, ...extra });
+  it("labels by origin, explains confirm, and falls back to agentWritten", async () => {
+    const slot = await page("conclusions", { "conclusions.list": () => [c("1", { origin: "learned" }), c("2", { agentWritten: true }), c("3", { origin: "confirmed", confirmed: true })] });
+    expect(await slot.findByText("learned")).toBeTruthy();
+    expect(slot.getByText("written by an agent")).toBeTruthy();
+    expect(slot.getByText("confirmed")).toBeTruthy();
+    expect(slot.getByText(/confirm means "this is right"/)).toBeTruthy();
+    expect(slot.getAllByText("confirm")).toHaveLength(2);
+  });
+});
+
+describe("import numbers say what will happen", () => {
+  it("labels each dry-run figure", async () => {
+    const slot = await page("connection", {
+      "connection.get": () => ({ preset: "cloud", baseUrl: "https://x", workspace: "w", peerName: "p", keySource: "none", keyLevel: "unknown", warnings: [] }),
+      health: () => health, "harness.state": () => harness(), "backfill.progress": () => ({ running: false, done: 0, total: 0 }),
+      "backfill.dryRun": () => ({ threads: 3, messages: 20, tokens: 900, skippedAlreadyInHoncho: 1, reasoningMessages: 2 }),
+    });
+    fireEvent.click(await slot.findByText("check first"));
+    const list = await slot.findByLabelText("what an import would do");
+    for (const label of ["chats it will save", "messages it will save", "already saved, skipped"]) expect(within(list).getByText(label)).toBeTruthy();
   });
 });

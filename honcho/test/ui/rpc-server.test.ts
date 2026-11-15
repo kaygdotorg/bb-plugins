@@ -202,3 +202,18 @@ describe("rpc server", () => {
     expect(await call("peers.list")).not.toContainEqual(expect.objectContaining({ peer: "p" }));
   });
 });
+
+describe("labels.get", () => {
+  it("returns chat titles and project names, null for unknown or untitled", async () => {
+    const { bb, call } = fakeBb();
+    (bb as unknown as { sdk: unknown }).sdk = {
+      threads: { get: async ({ threadId }: { threadId: string }) => { if (threadId === "gone") throw new Error("404"); return { title: threadId === "t1" ? " Fix login " : null }; } },
+      projects: { get: async ({ projectId }: { projectId: string }) => ({ name: `name of ${projectId}` }) },
+    };
+    registerRpc(bb, fakeServices().services);
+    expect(await call("labels.get", { threadIds: ["t1", "t2", "gone", "t1"], projectIds: ["p1"] })).toEqual({
+      threads: { t1: "Fix login", t2: null, gone: null }, projects: { p1: "name of p1" },
+    });
+    expect(await call("labels.get", {})).toEqual({ threads: {}, projects: {} });
+  });
+});

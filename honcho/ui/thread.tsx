@@ -2,7 +2,7 @@ import type { ExperimentalThreadContextCardProps, ExperimentalThreadContextSegme
 import { experimental_Icon as Icon, experimental_ThreadContextCardRow as CardRow, experimental_useThreadContextKind, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { ConclusionView } from "../lib/contract";
 import { useMemoryRpc, useNow, useRemote } from "./data";
-import { statusLine } from "./format";
+import { ORIGIN_WORDS, STATUS_LOADING, originOf, statusLine } from "./format";
 import { Badge } from "./primitives";
 
 export const MEMORY_PATH = "memory";
@@ -17,35 +17,35 @@ function useThreadMemory(threadId: string) {
     await rpc.call("pause.set", { kind: "thread", id: threadId, paused: status.state !== "paused" });
     await remote.refetch();
   };
-  const line = status ? statusLine(status, status.queued, now) : remote.error ? "memory · offline" : null;
+  // Never null: the control stays on screen while the first answer is slow or missing.
+  const line = status ? statusLine(status, status.queued, now) : remote.error ? "memory · offline" : STATUS_LOADING;
   const clickable = status !== null && status.state !== "not-captured";
   const title = status
     ? status.state === "not-captured"
-      ? status.reason ?? "this thread isn't being captured"
+      ? status.reason ?? "memory isn't saving this chat"
       : status.state === "paused"
-        ? "click to resume saving this thread"
-        : `click to pause memory for this thread${status.reason ? `. ${status.reason}` : ""}`
-    : remote.error ?? undefined;
+        ? "memory is paused for this chat. click to start saving it again"
+        : `click to stop saving this chat to memory${status.reason ? `. ${status.reason}` : ""}`
+    : remote.error ?? "checking whether memory is saving this chat";
   return { line, clickable, title, toggle, status };
 }
 
 /** The card row. The same status shows as a context segment when the pane has no card. */
 export function ThreadStatusRow({ threadId }: ExperimentalThreadContextCardProps) {
   const m = useThreadMemory(threadId);
-  if (m.line === null) return null;
   return <CardRow icon="Brain" label={m.line} title={m.title} onClick={m.clickable ? () => void m.toggle() : undefined} />;
 }
 
 export function ThreadStatusSegment({ threadId }: ExperimentalThreadContextSegmentProps) {
   const m = useThreadMemory(threadId);
-  if (m.line === null) return null;
   return (
     <button
       type="button"
       title={m.title}
+      aria-label={`${m.line}. ${m.title}`}
       disabled={!m.clickable}
       onClick={() => void m.toggle()}
-      className="flex h-6 items-center gap-1.5 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+      className="flex h-6 shrink-0 items-center gap-1.5 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
       <Icon name="Brain" aria-hidden="true" className="size-3.5" />
       <span>{m.line}</span>
@@ -59,10 +59,11 @@ export function useSegmentVisible(): boolean {
 }
 
 function Line({ c }: { c: ConclusionView }) {
+  const origin = originOf(c);
   return (
     <li className="flex items-start gap-1.5">
       <span className="line-clamp-2 min-w-0 flex-1 text-xs leading-snug" title={c.content}>{c.content}</span>
-      {c.agentWritten && !c.confirmed ? <Badge tone="warn" title="saved by an agent, not reviewed">agent</Badge> : null}
+      {origin === "confirmed" ? null : <Badge tone={origin === "agent" ? "warn" : "neutral"} title={ORIGIN_WORDS[origin].hint}>{ORIGIN_WORDS[origin].label}</Badge>}
     </li>
   );
 }
@@ -85,16 +86,16 @@ export function ThreadMemorySection({ threadId }: ExperimentalThreadContextCardP
   );
   if (ctx.data === null) {
     if (ctx.loading) return <p role="status" className="text-2xs text-muted-foreground">loading memory…</p>;
-    return <div className="space-y-1"><p className="text-2xs text-muted-foreground">memory is offline.</p>{open}</div>;
+    return <div className="space-y-1"><p className="text-2xs text-muted-foreground">memory can't be reached right now.</p>{open}</div>;
   }
   const { top, fromThread, stale, scope } = ctx.data;
   const offline = stale || ctx.error !== null;
   return (
     <div className="space-y-2">
-      {offline ? <p className="text-2xs text-warning" title="honcho is unreachable; this is the last memory we had">stale · showing the last known memory</p> : null}
-      <Group title={scope ? `about ${scope}` : "what honcho knows"} items={top} />
-      <Group title="from this thread" items={fromThread} />
-      {top.length === 0 && fromThread.length === 0 ? <p className="text-xs text-muted-foreground">nothing learned here yet.</p> : null}
+      {offline ? <p className="text-2xs text-warning" title="memory can't be reached, so this is what it had last time">out of date · showing what memory last knew</p> : null}
+      <Group title={scope ? `what memory has learned about ${scope}` : "what memory has learned"} items={top} />
+      <Group title="from this chat" items={fromThread} />
+      {top.length === 0 && fromThread.length === 0 ? <p className="text-xs text-muted-foreground">memory hasn't learned anything here yet.</p> : null}
       {open}
     </div>
   );
