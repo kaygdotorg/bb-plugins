@@ -10,11 +10,30 @@ describe("content-free outbox", () => {
     const { db, outbox } = setup(); outbox.advance("thread", 5);
     migrateOutbox(db); const reopened = new Outbox(db);
     expect(reopened.cursor("thread")).toBe(5);
-    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
   });
   it("rejects future schema versions", () => {
-    const { db } = setup(); db.prepare("INSERT INTO honcho_migrations VALUES (3,0)").run();
+    const { db } = setup(); db.prepare("INSERT INTO honcho_migrations VALUES (4,0)").run();
     expect(() => migrateOutbox(db)).toThrow("Unsupported");
+  });
+  it("clears retry state without moving the cursor", () => {
+    const { outbox } = setup(); outbox.advance("t", 4); outbox.fail("t", "offline", 0);
+    expect(outbox.retry("t")).toBeDefined();
+    outbox.clearRetry("t");
+    expect(outbox.retry("t")).toBeUndefined(); expect(outbox.cursor("t")).toBe(4);
+  });
+  it("records the first start time once", () => {
+    const { outbox } = setup();
+    expect(outbox.recordFirstStart(100)).toBe(100); expect(outbox.recordFirstStart(200)).toBe(100);
+    expect(outbox.meta("first_started_at")).toBe("100");
+  });
+  it("migrates v2 pause ranges: project pauses get since_at from their start", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE honcho_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
+    for (let i = 0; i < 2; i++) { db.exec(OUTBOX_MIGRATIONS[i]); db.prepare("INSERT INTO honcho_migrations VALUES (?,0)").run(i + 1); }
+    db.exec("INSERT INTO pause_ranges VALUES ('project','p',500,NULL),('thread','t',3,NULL)");
+    const outbox = new Outbox(db);
+    expect(outbox.pauses().map(r => [r.id, r.sinceAt])).toEqual([["p", 500], ["t", null]]);
   });
   it("advances cursors monotonically and rejects invalid sequences", () => {
     const { outbox } = setup(); expect(outbox.cursor("thread")).toBe(0);
@@ -50,14 +69,14 @@ describe("content-free outbox", () => {
   });
   it("stores thread pauses as seq ranges checked at send time", () => {
     const { outbox } = setup();
-    outbox.setPaused("thread", "t", true, 10);
+    outbox.setPaused("thread", "t", true, 10, 1234);
     expect(outbox.isPausedNow("thread", "t")).toBe(true);
     expect([10, 11, 500].map(n => outbox.isPaused("t", n))).toEqual([false, true, true]);
     // Unpausing inside the grace window never uploads what was typed while paused.
     outbox.setPaused("thread", "t", false, 14);
     expect([10, 11, 14, 15].map(n => outbox.isPaused("t", n))).toEqual([false, true, true, false]);
     expect(outbox.isPausedNow("thread", "t")).toBe(false);
-    expect(outbox.pauses()).toEqual([{ kind: "thread", id: "t", from: 11, to: 14 }]);
+    expect(outbox.pauses()).toEqual([{ kind: "thread", id: "t", from: 11, to: 14, sinceAt: 1234 }]);
     // A second pause adds a separate range; pausing twice does not.
     outbox.setPaused("thread", "t", true, 20); outbox.setPaused("thread", "t", true, 25);
     expect(outbox.pauses().map(r => [r.from, r.to])).toEqual([[11, 14], [21, null]]);
@@ -123,7 +142,7 @@ describe("content-free outbox", () => {
   it("contains no message/content columns", () => {
     const { db } = setup();
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
-    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "honcho_migrations", "in_flight", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
+    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "honcho_migrations", "in_flight", "meta", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
     for (const { name } of tables) {
       const columns = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>;
       expect(columns.some(c => /content|body|message|payload/.test(c.name))).toBe(false);

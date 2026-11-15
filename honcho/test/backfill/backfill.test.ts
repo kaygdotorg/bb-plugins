@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { claudeSessionName, codexChatInstanceName, codexPerDirectoryName, TimeIndex } from "../../lib/backfill";
+import { backfillCursorEnd, isBackfilled, isCaptured } from "../../lib/capture/switchover";
 import { RateLimiter } from "../../lib/backfill/rate";
 import type { HonchoPort } from "../../lib/backfill";
 import { createBackfillService } from "../../lib/backfill";
@@ -120,9 +121,26 @@ describe("switch-over marker", () => {
     await env.service.start(); await env.service.whenIdle();
     const seqs = env.mock.messages.map(m => m.metadata.bb_seq as number);
     expect(seqs.length).toBe(4); // turns 0 and 1 (seq 1,3 and 4,6)
-    expect(Math.max(...seqs)).toBeLessThan(7);
+    expect(Math.max(...seqs)).toBeLessThanOrEqual(7);
     await env.service.start(); await env.service.whenIdle();
     expect(env.mock.messages).toHaveLength(4);
+  });
+});
+
+describe("switch-over marker is inclusive for backfill", () => {
+  it("backfills the event at the marker seq itself (marker = last turn/completed before the env event)", async () => {
+    env = await setup([thread({ id: "thr_inc" }, 3)]); // seqs 1..9; turn n = request, accepted, answer
+    env.outbox.markSwitchOver("thr_inc", 6);          // the answer at seq 6 is the last event of the old session
+    await env.service.start(); await env.service.whenIdle();
+    expect(env.mock.messages.map(m => m.metadata.bb_seq as number)).toEqual([1, 3, 4, 6]);
+    expect(env.db.prepare("SELECT after_seq FROM backfill_threads WHERE thread='thr_inc'").get()).toEqual({ after_seq: backfillCursorEnd(6) });
+  });
+  it("no seq is both captured and backfilled, and none is skipped", () => {
+    for (let marker = 0; marker <= 20; marker++) for (let seq = 1; seq <= 21; seq++) {
+      expect(isCaptured(seq, marker) !== isBackfilled(seq, marker)).toBe(true);
+    }
+    // And backfill really stops where capture starts: the cursor backfill ends on is capture's cursor start.
+    expect(backfillCursorEnd(6)).toBe(6);
   });
 });
 

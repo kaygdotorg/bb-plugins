@@ -1,19 +1,22 @@
 import { homedir } from "node:os";
 
-/** Glob to regex. Deliberately broad (deny lists should over-match): `*` and
- * `**` both cross `/`, `?` is one char, and a pattern also matches anything
- * below it (`/work/client` denies `/work/client/app`). A leading `~` is the
- * bb server's home dir. Matching is case-insensitive for remotes. */
+/** Glob to regex. `*` matches within one path segment (never `/`), `**` crosses `/`,
+ * `?` is one non-`/` char, and a pattern also matches anything below it
+ * (`/work/client` denies `/work/client/app`). A trailing `/**` is therefore the
+ * same as no suffix. A leading `~` is the bb server's home dir. Matching is
+ * case-insensitive for remotes. */
 export function globMatcher(glob: string, opts: { caseInsensitive?: boolean } = {}): RegExp | null {
   let source = glob.trim();
   if (!source) return null;
   if (source === "~" || source.startsWith("~/")) source = homedir() + source.slice(1);
-  source = source.replace(/\/+$/, "");
+  source = source.replace(/(?:\/\*\*)?\/*$/, "");
   let re = "";
   for (let i = 0; i < source.length; i++) {
     const c = source[i];
-    if (c === "*") { while (source[i + 1] === "*") i++; re += ".*"; }
-    else if (c === "?") re += ".";
+    if (c === "*") {
+      if (source[i + 1] === "*") { while (source[i + 1] === "*") i++; re += ".*"; } else re += "[^/]*";
+    }
+    else if (c === "?") re += "[^/]";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
   return new RegExp(`^${re}(?:/.*)?$`, opts.caseInsensitive ? "i" : "");
