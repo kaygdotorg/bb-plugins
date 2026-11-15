@@ -22,6 +22,7 @@
  *   [data-cf-title-wrap]                    the div inside the title pill that holds .bb-thread-title
  *   [data-cf-scroll-header]                 a header followed by the page's scroll viewport (it floats over it)
  *   html[data-cf-shelf-open]                phones: a side shelf (the thread drawer or a panel) is open
+ *   [data-cf-attach-strip]                  the composer's attachment grid (bb's flex-wrap of tiles): one scrolling row (css.ts)
  */
 const HEADER_ROW = 'main header [data-testid="app-page-header-content-row"]';
 
@@ -62,6 +63,12 @@ const MARKS: Mark[] = [
       }
       return out;
     },
+  },
+  {
+    attr: "data-cf-attach-strip",
+    find: () => [...document.querySelectorAll("[data-app-composer] [data-promptbox-expanded-only] button[aria-label] > img")]
+      .map((img) => img.closest(".flex-wrap"))
+      .filter((e, i, all): e is Element => !!e && all.indexOf(e) === i),
   },
   {
     attr: "data-cf-shelf-open",

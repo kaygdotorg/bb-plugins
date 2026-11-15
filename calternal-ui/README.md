@@ -22,6 +22,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 - **One tidy row:** model, context, permission and environment.
 - **Phones:** it shrinks to a single line until you start typing.
 - **Voice input:** shows as a coloured pill with a timer.
+- **Attachments:** one row you can swipe sideways, softly faded at the edges.
 
 **Small things that add up**
 - **Warm tooltips:** they appear after a short pause. After that, the next one shows instantly.

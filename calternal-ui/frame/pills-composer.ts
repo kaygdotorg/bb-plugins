@@ -17,8 +17,7 @@ const C = `${R} [data-app-composer]`;
 const ROW = `${C} [data-promptbox-action-row]`;
 /** Every button of the row except bb's filled send. */
 const FILLED = ["button[data-promptbox-submit-action]", 'button[aria-label="Send voice input"]', "[data-promptbox-send-menu] > button"];
-/** Not the phone's attachment chip (attachments.ts): it is a pill with words and thumbnails, styled below. */
-const PILL = `${ROW} button${FILLED.map((x) => `:not(${x.replace(/^button/, "")})`).join("")}:not([data-cf-attach-chip])`;
+const PILL = `${ROW} button${FILLED.map((x) => `:not(${x.replace(/^button/, "")})`).join("")}`;
 /** The model pill while the toolbar sits after it: its end margin is the toolbar's room (composer.ts --cf-foot-room). */
 const MODEL_MERGED = `${PILL.replace(C, `${C}[data-cf-merged]`)}[aria-label^="Provider, model"]`;
 /** One selector (wrapped in :is), so a suffix like :active applies to every filled button, not only the last of the list. */
@@ -96,19 +95,6 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
   ${ROW} > [data-promptbox-standard-actions][data-promptbox-expanded-only] { min-width: 0; }
   ${PILL}[aria-label^="Provider, model"] { flex: 0 1 auto; min-width: var(--cf-cp); overflow: hidden; }
   ${ROW} button[aria-label^="Provider, model"] .truncate { min-width: 0; }
-  /* The attachment chip (attachments.ts): a quiet pill as tall as its neighbours, thumbnails and a count. */
-  ${ROW} [data-cf-attach-chip] {
-    flex: none;
-    height: var(--cf-cp);
-    padding: 0 var(--cf-text-pad) 0 ${s(8)};
-    border: 0;
-    background: var(--cf-pill-quiet);
-    font-size: ${s(13)};
-    transition: scale 150ms var(--cf-ease-out), background-color 150ms ease;
-  }
-  ${ROW} [data-cf-attach-chip] img { width: ${s(26)}; height: ${s(26)}; border-radius: ${s(7)}; }
-  ${ROW} [data-cf-attach-chip] img + img { margin-left: ${s(-14)}; }
-  ${ROW} [data-cf-attach-chip]:active { scale: 0.97; background-color: var(--cf-pill-hover); }
   ${R} [data-app-composer]:not([data-cf-keyboard]) [data-promptbox-action-row] button[aria-label^="Provider, model"] :is(.truncate, [data-promptbox-hide-compact]) { display: none; }
   ${R} [data-app-composer][data-cf-keyboard] [data-follow-up-composer-footer] { display: none !important; }
 }

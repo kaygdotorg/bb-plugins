@@ -154,6 +154,25 @@ ${R}::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, tr
   ${R} ::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
 }
 ${R} .ProseMirror-hideselection ::selection { background-color: transparent; }
+
+/* Composer attachments: one horizontally scrolling row, never a second row (kayg). bb's grid (a flex-wrap of
+   tiles, stamped by marks.ts) stops wrapping and scrolls. It reaches out into the composer's 12px side padding
+   and fades only there, so at rest no tile is faded; tiles fade as they scroll past an edge. */
+${R} [data-cf-attach-strip] {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 0.75rem;
+  scrollbar-width: none;
+  margin-inline: -0.75rem;
+  padding-inline: 0.75rem;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
+}
+${R} [data-cf-attach-strip]::-webkit-scrollbar { display: none; }
+${R} [data-cf-attach-strip] > * { flex: none; scroll-snap-align: start; }
 ${R} { accent-color: var(--cf-accent); caret-color: var(--cf-accent); }
 
 ${R} :is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) {
@@ -801,45 +820,9 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${R} [data-cf-pull][data-state="ready"] { color: var(--cf-accent); }
   ${R} [data-cf-pull][data-state="ready"]::after { content: "Release to search"; }
   /* While typing (keyboard up), the composer stays small enough to keep the chat in view:
-     attachments are a chip (attachments.ts), and the text area is capped to a share of the visible height
+     attachments are one scrolling row (below), and the text area is capped to a share of the visible height
      (--cf-vvh is the visual viewport height, set by frame/touch.ts). */
   ${R} [data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
-  /* Composer attachments on phones (frame/attachments.ts): bb's grid collapses into a chip
-     in the button row; open, the grid becomes one horizontal swipeable strip. */
-  ${R} [data-app-composer][data-cf-attach="collapsed"] [data-cf-attach-strip] { display: none !important; }
-  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] {
-    flex-wrap: nowrap !important;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-    padding-bottom: 0.125rem;
-  }
-  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] > * { flex: none; scroll-snap-align: start; }
-  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] img { height: 2.75rem; width: 4rem; }
-  ${R} [data-cf-attach-chip] {
-    margin-inline: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 1.75rem;
-    padding: 0 0.5rem 0 0.25rem;
-    border-radius: 999px;
-    border: 1px solid var(--cf-edge);
-    background: color-mix(in oklab, var(--foreground) 6%, transparent);
-    font-size: 0.75rem;
-    font-variant-numeric: tabular-nums;
-    color: var(--muted-foreground);
-  }
-  ${R} [data-cf-attach-chip] img {
-    height: 1.25rem;
-    width: 1.25rem;
-    border-radius: 0.3rem;
-    object-fit: cover;
-    box-shadow: 0 0 0 1.5px var(--cf-bg);
-  }
-  ${R} [data-cf-attach-chip] img + img { margin-left: -0.6rem; }
-  ${R} [data-cf-attach-chip][aria-expanded="true"] { color: var(--cf-accent); border-color: color-mix(in oklab, var(--cf-accent) 45%, transparent); }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
     ${R} [data-cf-nav] > button { height: 2.25rem; } /* text size: text-sm, like bb's thread rows */

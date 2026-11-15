@@ -99,7 +99,7 @@ export function mountComposer(): () => void {
     // this pass runs on every frame of a resize (the sidebar slide resizes the composer): with the
     // reads interleaved it cost ~9ms a call (desktop trace, 2026-11-15).
     const modelBox = model?.getBoundingClientRect();
-    let geo: { x: number; y: number; free: number | null; need: number; shown: boolean; chipRoom: number; gap: number } | null = null;
+    let geo: { x: number; y: number; free: number | null; need: number; shown: boolean; gap: number } | null = null;
     if (footer && !collapsed && modelBox && modelBox.width > 0) {
       const base = followUp.getBoundingClientRect();
       // The footer is a toolbar capsule (pills-composer.ts): it starts one pill gap after the
@@ -108,18 +108,12 @@ export function mountComposer(): () => void {
       const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
       // Never over the right-hand buttons (the mic): cap the width to the free space.
       const right = row.lastElementChild?.getBoundingClientRect();
-      // Everything in the row gets its own space. The phone's attachment chip (attachments.ts)
-      // sits after the toolbar (the model pill's end margin makes the toolbar's room); when the
-      // toolbar does not fit whole beside it, the toolbar steps aside (as it does while the
-      // keyboard is up) instead of being clipped or drawn over the chip.
-      const chip = row.querySelector<HTMLElement>("[data-cf-attach-chip]");
       geo = {
         x: modelBox.right + gap - base.left,
         y: modelBox.top + modelBox.height / 2 - base.top,
         free: right ? Math.max(0, right.left - modelBox.right - 2 * gap) : null,
         need: footer.scrollWidth, // its natural width (it clips to --cf-foot-w)
         shown: getComputedStyle(footer).display !== "none",
-        chipRoom: chip && chip.offsetWidth > 0 ? chip.offsetWidth + gap : 0,
         gap,
       };
     }
@@ -154,7 +148,7 @@ export function mountComposer(): () => void {
       const free = geo.free ?? Infinity;
       if (geo.free !== null) setVar(followUp, "--cf-foot-w", px(geo.free));
       const shown = geo.shown && geo.need > 0;
-      const fits = geo.need <= free - geo.chipRoom + 0.5;
+      const fits = geo.need <= free + 0.5;
       composer.toggleAttribute("data-cf-foot-off", shown && !fits);
       setVar(followUp, "--cf-foot-room", px(shown && fits ? geo.need + geo.gap : 0));
       composer.toggleAttribute("data-cf-merged", true);
