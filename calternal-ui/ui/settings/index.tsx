@@ -1,4 +1,4 @@
-// The Calternal Frame settings screen: loads the state once and composes the sections in order.
+// The Calternal UI settings screen: loads the state once and composes the sections in order.
 import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { FrameState, rpcContract } from "../../shared/contract";

@@ -9,7 +9,7 @@ export function loadGoogleFontPreview(family: string) {
   const link = document.createElement("link");
   link.id = id;
   link.rel = "stylesheet";
-  link.dataset.bbPlugin = "calternal-frame";
+  link.dataset.bbPlugin = "calternal-ui";
   link.href = `https://fonts.googleapis.com/css2?family=${name}:wght@400;500;600;700&display=swap`;
   // Static families without all four weights refuse the range: fall back to the default.
   link.onerror = () => { link.onerror = null; link.href = `https://fonts.googleapis.com/css2?family=${name}&display=swap`; };

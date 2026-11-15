@@ -1,13 +1,13 @@
 /** Fired after the settings screen saves, so the overlay re-reads the server and re-applies. */
-export const CHANGED_EVENT = "calternal-frame:changed";
+export const CHANGED_EVENT = "calternal-ui:changed";
 
 /** localStorage keys: the last applied values, so a reload paints right away. */
 export const CACHE = {
-  wallpaper: "calternal-frame:wallpaper",
-  tone: "calternal-frame:tone",
-  accent: "calternal-frame:accent",
-  prefs: "calternal-frame:prefs",
-  faces: "calternal-frame:font-faces",
+  wallpaper: "calternal-ui:wallpaper",
+  tone: "calternal-ui:tone",
+  accent: "calternal-ui:accent",
+  prefs: "calternal-ui:prefs",
+  faces: "calternal-ui:font-faces",
 } as const;
 
 /** localStorage that never throws (quota, privacy mode): caching is only an optimisation. */

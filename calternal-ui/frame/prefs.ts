@@ -48,7 +48,7 @@ function styleElement(id: string): HTMLStyleElement {
   if (!style) {
     style = document.createElement("style");
     style.id = id;
-    style.dataset.bbPlugin = "calternal-frame";
+    style.dataset.bbPlugin = "calternal-ui";
     document.head.appendChild(style);
   }
   return style;
@@ -91,5 +91,5 @@ export function clearPrefs() {
   root().removeProperty("--cf-ui-scale");
   document.getElementById("cf-fonts")?.remove();
   document.getElementById("cf-fontfaces")?.remove();
-  document.querySelectorAll('link[data-bb-plugin="calternal-frame"]').forEach((l) => l.remove());
+  document.querySelectorAll('link[data-bb-plugin="calternal-ui"]').forEach((l) => l.remove());
 }

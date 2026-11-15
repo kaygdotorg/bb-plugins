@@ -9,7 +9,7 @@
  * bb's own selectors this relies on (bb 0.49): `[data-testid="app-layout-root"]`
  * (sidebar wrapper; `[data-framed]` in the desktop app), `[data-sidebar=…]`,
  * `main[data-sidebar="inset"]`, and react-resizable-panels' `[data-panel-group]`
- * / `[data-panel]` inside it. Everything is gated on `html[data-calternal-frame]`
+ * / `[data-panel]` inside it. Everything is gated on `html[data-calternal-ui]`
  * so removing that attribute restores bb exactly.
  */
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";

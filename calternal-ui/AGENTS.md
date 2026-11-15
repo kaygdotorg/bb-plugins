@@ -1,6 +1,6 @@
-# calternal-frame: notes for agents
+# calternal-ui: notes for agents
 
-Read this before changing anything. Keep it short; update it in the same commit as the code.
+Formerly `calternal-frame` (renamed 2026-11-15; the `cf` prefix on attributes and CSS variables is from that name). Read this before changing anything. Keep it short; update it in the same commit as the code.
 
 ## What it is
 
@@ -96,7 +96,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 ## Work loop
 
 ```sh
-npx tsc --noEmit -p . && bb plugin build && bb plugin reload calternal-frame
+npx tsc --noEmit -p . && bb plugin build && bb plugin reload calternal-ui
 ```
 
 Verify visually: `bb browser-automation open --backend local --headless` opens `http://127.0.0.1:38886`. On hd01, Chrome runs from `~/.local/share/bb-chrome` and needs no root. Use `p.shot()`; puppeteer `clip` screenshots re-lay out the page and lie. Test blur with sharp text behind the element.

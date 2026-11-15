@@ -14,7 +14,7 @@ import { mountComposer } from "./composer";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
-  style.dataset.bbPlugin = "calternal-frame";
+  style.dataset.bbPlugin = "calternal-ui";
   style.textContent = CSS;
   document.head.appendChild(style);
 

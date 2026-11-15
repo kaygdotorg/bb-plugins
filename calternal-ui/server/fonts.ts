@@ -79,7 +79,7 @@ export function createFonts(store: Store, log: BbPluginApi["log"]) {
         await install(family);
         parts.push(store.get(`font:${family}`) ?? "");
       } catch (error) {
-        log.warn(`calternal-frame: font ${family}: ${error instanceof Error ? error.message : String(error)}`);
+        log.warn(`calternal-ui: font ${family}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     const css = parts.join("\n");

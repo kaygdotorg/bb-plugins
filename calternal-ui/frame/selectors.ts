@@ -3,7 +3,7 @@
  * these, and everything is gated on the root attribute, so removing that attribute
  * restores bb exactly. If bb renames a data attribute, this is the file to fix.
  */
-export const ROOT_ATTR = "data-calternal-frame";
+export const ROOT_ATTR = "data-calternal-ui";
 
 export const R = `html[${ROOT_ATTR}]`;
 export const SHELL = `${R} [data-testid="app-layout-root"]`;

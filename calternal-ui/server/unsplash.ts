@@ -14,7 +14,7 @@ type RawPhoto = {
 };
 
 const API = "https://api.unsplash.com";
-const UTM = "utm_source=bb_calternal_frame&utm_medium=referral";
+const UTM = "utm_source=bb_calternal_ui&utm_medium=referral";
 const withUtm = (url: string) => `${url}${url.includes("?") ? "&" : "?"}${UTM}`;
 
 export function createUnsplash(accessKey: () => string) {

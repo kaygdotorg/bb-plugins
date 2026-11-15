@@ -1,4 +1,4 @@
-# Calternal Frame
+# Calternal UI
 
 A bb plugin that gives bb calternal's frame:
 
@@ -8,7 +8,7 @@ A bb plugin that gives bb calternal's frame:
 - **Fonts:** any Google Font, stored locally.
 - **Composer:** one compact bottom row of icons (model, context, permission, environment); one line on phones until you type.
 
-Everything is configured under **Settings → Plugins → Calternal Frame**.
+Everything is configured under **Settings → Plugins → Calternal UI**.
 
 ## Install
 
