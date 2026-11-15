@@ -40,6 +40,9 @@ export async function configSignature(path = defaultConfigPath()): Promise<strin
 export async function listConfigKeys(path = defaultConfigPath()): Promise<string[]> {
   return configKeys(await readConfigFile(path));
 }
+function sameOrigin(a: string, b: string): boolean | undefined {
+  try { return new URL(a).origin === new URL(b).origin; } catch { return undefined; }
+}
 /** No memoization: key rotations and edits take effect on the next call.
  * undefined means inherit; an explicit empty key supports unauthenticated hosts. */
 export async function readConfig(overrides: ConfigOverrides = {}, path = defaultConfigPath()): Promise<ConfigResult> {
@@ -60,6 +63,11 @@ export async function readConfig(overrides: ConfigOverrides = {}, path = default
     }
   }
   config.baseUrl = config.baseUrl.replace(/\/+$/, "").replace(/\/v3$/, "");
+  // A key belongs to the host it came from: never carry the file's key to another host.
+  if (overrides.apiKey === undefined && config.apiKey && sameOrigin(config.baseUrl, inherited.baseUrl) === false) {
+    config.apiKey = "";
+    warnings.push("The Honcho file key was not sent to the bb base URL, which is a different host.");
+  }
   try {
     const url = new URL(config.baseUrl);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error();

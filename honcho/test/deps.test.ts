@@ -116,4 +116,20 @@ describe("createDeps", () => {
     const { deps } = await setup({}); expect(deps.activity).toBeInstanceOf(RingActivityLog);
     deps.activity.record({ kind: "harness", summary: "x" }); expect(deps.activity.list()).toHaveLength(1);
   });
+
+  it("never sends the file key to a different bb base URL unless the bb key is set", async () => {
+    const { deps, harness } = await setup({ baseUrl: "http://file.test", apiKey: "synthetic-file-key" });
+    await harness.setSettings({ baseUrl: "http://other.test" });
+    expect((await deps.config()).config).toMatchObject({ baseUrl: "http://other.test", apiKey: "" });
+    await harness.setSettings({ apiKey: "synthetic-bb-key" });
+    expect((await deps.config()).config.apiKey).toBe("synthetic-bb-key");
+  });
+  it("does not cache a load that was in flight during a settings change", async () => {
+    const { deps, harness } = await setup({ baseUrl: "http://file.test", workspace: "old" });
+    const inFlight = deps.config();
+    await harness.setSettings({ workspace: "new" });
+    await inFlight;
+    expect((await deps.config()).config.workspace).toBe("new");
+    expect((await deps.config()).config.workspace).toBe("new");
+  });
 });

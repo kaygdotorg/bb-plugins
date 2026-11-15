@@ -55,11 +55,12 @@ export class HonchoClient {
     this.transport = options.fetch ?? fetch;
   }
   private workspacePath(path = ""): string { return `/workspaces/${id(this.options.workspace)}${path}`; }
-  private async request<T>(path: string, body?: unknown, method = "POST", pagination: Pagination = {}): Promise<T> {
+  private async request<T>(path: string, body?: unknown, method = "POST", pagination: Pagination = {}, retry = true): Promise<T> {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(pagination)) if (value !== undefined) params.set(key, String(value));
     const url = `${this.base}/v3${path}${params.size ? `?${params}` : ""}`;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    const attempts = retry ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         const response = await this.transport(url, {
           method, headers: {
@@ -74,7 +75,7 @@ export class HonchoClient {
           const retryAfter = response.headers.get("retry-after") ?? undefined;
           // Do not consume or retain server error text.
           await response.body?.cancel();
-          if (status >= 500 && attempt === 0) continue;
+          if (status >= 500 && attempt < attempts - 1) continue;
           throw new HonchoError(status === 401 || status === 403 ? "auth"
             : status === 429 ? "rate-limited" : status === 400 || status === 422 ? "validation"
               : status >= 500 ? "server" : "http", status, /^\d+$/.test(retryAfter ?? "") ? retryAfter : undefined);
@@ -85,7 +86,7 @@ export class HonchoClient {
         catch { throw new HonchoError("validation", response.status); }
       } catch (error) {
         if (error instanceof HonchoError) throw error;
-        if (attempt === 1) throw new HonchoError("offline");
+        if (attempt >= attempts - 1) throw new HonchoError("offline");
       }
     }
     throw new HonchoError("offline");
@@ -107,23 +108,23 @@ export class HonchoClient {
   }
   createMessages(session: string, messages: readonly MessageDraft[]): Promise<Message[]> {
     if (messages.length < 1 || messages.length > 100 || messages.some(m => m.content.length > 25_000)) throw new HonchoError("validation");
-    return this.request(this.workspacePath(`/sessions/${id(session)}/messages`), { messages });
+    // Never retried here: a 5xx after commit would duplicate messages, and Honcho cannot delete them.
+    return this.request(this.workspacePath(`/sessions/${id(session)}/messages`), { messages }, "POST", {}, false);
   }
   /** `metadata` is matched against message metadata; values may carry operators, e.g. seqRange(5, 9). */
   listMessages(session: string, metadata: Metadata = {}, pagination?: Pagination): Promise<Page<Message>> {
     return this.request(this.workspacePath(`/sessions/${id(session)}/messages/list`), { filters: { metadata } }, "POST", pagination);
   }
-  /** Follows cursors until the end or `max` items (default 1000). */
+  /** Follows v3 pages (page/size until page >= pages) up to `max` items (default 1000). */
   async listAllMessages(session: string, metadata: Metadata = {}, max = 1000): Promise<Message[]> {
     const all: Message[] = [];
-    let cursor = "";
-    while (all.length < max) {
-      const page = await this.listMessages(session, metadata, { size: Math.min(100, max - all.length), cursor });
-      all.push(...page.items);
-      if (!page.next_page || page.items.length === 0) break;
-      cursor = page.next_page;
+    const size = Math.min(100, Math.max(1, max));
+    for (let page = 1; all.length < max; page++) {
+      const result = await this.listMessages(session, metadata, { page, size });
+      all.push(...result.items);
+      if (result.items.length === 0 || page >= (result.pages ?? page)) break;
     }
-    return all;
+    return all.slice(0, max);
   }
   updateMessageMetadata(session: string, message: string, metadata: Metadata): Promise<Message> {
     // Honcho replaces metadata; callers merge the existing fields before marking superseded.
@@ -160,7 +161,8 @@ export class HonchoClient {
   }
   createConclusions(conclusions: readonly ConclusionDraft[]): Promise<Conclusion[]> {
     if (conclusions.length < 1 || conclusions.length > 100) throw new HonchoError("validation");
-    return this.request(this.workspacePath("/conclusions"), { conclusions });
+    // Never retried here: the caller's recovery path owns it.
+    return this.request(this.workspacePath("/conclusions"), { conclusions }, "POST", {}, false);
   }
   deleteConclusion(conclusion: string): Promise<void> {
     return this.request(this.workspacePath(`/conclusions/${id(conclusion)}`), undefined, "DELETE");

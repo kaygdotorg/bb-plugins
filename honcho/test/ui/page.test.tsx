@@ -111,6 +111,30 @@ describe("privacy", () => {
   });
 });
 
+describe("privacy edits", () => {
+  const settings = { denyRemotes: [], denyPaths: [], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: true };
+  it("keeps typed text across refetches that return an unchanged value, and adopts a changed stored value when clean", async () => {
+    let stored: { denyRemotes: string[]; denyPaths: string[]; patterns: string[]; deleteOnDelete: boolean; purgeConclusionsOnDelete: boolean } = { ...settings, denyRemotes: [], denyPaths: [], patterns: [] };
+    const slot = await page("privacy", { "pause.list": () => [], "privacy.get": () => JSON.parse(JSON.stringify(stored)), "privacy.set": () => stored });
+    const box = await slot.findByLabelText("deny paths") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "/work/typing" } });
+    await slot.emitRealtime("changed", { what: "peers" });
+    await waitFor(() => expect(calls(slot, "privacy.get").length).toBeGreaterThan(1));
+    expect(box.value).toBe("/work/typing");
+    // A different stored value never overwrites a dirty field.
+    stored = { ...settings, denyPaths: ["/elsewhere"] };
+    const before = calls(slot, "privacy.get").length;
+    await slot.emitRealtime("changed", { what: "privacy" });
+    await waitFor(() => expect(calls(slot, "privacy.get").length).toBeGreaterThan(before));
+    expect(box.value).toBe("/work/typing");
+    // Clean fields follow the stored value.
+    fireEvent.change(box, { target: { value: "/elsewhere" } });
+    stored = { ...settings, denyPaths: ["/later"] };
+    await slot.emitRealtime("changed", { what: "privacy" });
+    await waitFor(() => expect(box.value).toBe("/later"));
+  });
+});
+
 describe("connection", () => {
   const conn = { preset: "self-hosted", baseUrl: "https://honcho.example.org", workspace: "hermes", peerName: "hermy", keySource: "config-file", keyLevel: "workspace-or-admin", warnings: ["bb workspace overrides the Honcho file setting."] };
   const base = {
