@@ -6,7 +6,8 @@ A bb plugin that gives bb calternal's frame:
 - **Chat card:** a floating, tinted glass card with a frosted composer.
 - **Accent:** one accent colour across bb.
 - **Fonts:** any Google Font, stored locally.
-- **Usage bars:** small pooled Claude/Codex usage bars in the sidebar footer.
+- **Usage:** pooled Claude/Codex usage as coloured percentages in the sidebar footer.
+- **Composer:** one compact bottom row of icons (model, context, permission, environment); one line on phones until you type.
 
 Everything is configured under **Settings → Plugins → Calternal Frame**.
 
@@ -21,6 +22,6 @@ bb plugin install . --yes
 ## Optional
 
 - **Unsplash wallpaper search:** paste a free access key from [unsplash.com/developers](https://unsplash.com/developers) into the plugin's settings.
-- **Usage bars:** need the CLIProxyAPI Usage plugin, configured with your CLIProxyAPI instance.
+- **Usage:** needs the CLIProxyAPI Usage plugin, configured with your CLIProxyAPI instance.
 
 See [AGENTS.md](AGENTS.md) for how it works and the rules to keep.

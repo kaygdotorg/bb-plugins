@@ -10,6 +10,7 @@ import { applyCachedPrefs, clearPrefs } from "./prefs";
 import { applyCachedAccent, clearAccent } from "./accent";
 import { mountTouch } from "./touch";
 import { mountTooltips } from "./tooltip";
+import { mountComposer } from "./composer";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -30,8 +31,10 @@ export function mountFrame(): () => void {
   applyCachedAccent();
   const unmountTouch = mountTouch();
   const unmountTooltips = mountTooltips();
+  const unmountComposer = mountComposer();
 
   return () => {
+    unmountComposer();
     unmountTouch();
     unmountTooltips();
     style.remove();

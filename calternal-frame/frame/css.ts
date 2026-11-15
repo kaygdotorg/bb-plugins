@@ -163,6 +163,73 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   pointer-events: none;
 }
 
+/* Composer (frame/composer.ts): bb's row under the composer is pinned into its bottom row,
+   right after the model button, as icons; collapsed composers show one line only. */
+${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
+  position: absolute;
+  left: var(--cf-foot-x);
+  top: var(--cf-foot-y);
+  height: var(--cf-foot-h);
+  margin: 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  width: auto !important;
+  max-width: var(--cf-foot-w, none);
+  overflow: hidden;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] > div { display: contents; }
+${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] :is([data-promptbox-hide-branch-compact], button[aria-label="New thread in this environment"]) { display: none !important; }
+/* Order: context ring, permission, environment. */
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { order: 1; }
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { order: 2; }
+${R} [data-app-composer][data-cf-merged] :is([data-cf-env], button[aria-label^="Thread details"]) { order: 3; }
+/* Phones show "Thread details: <branch>" instead of the environment: the branch icon only. */
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] > span { display: none !important; }
+/* Environment: the folder icon only; the name and branch live in its tooltip. */
+${R} [data-app-composer][data-cf-merged] [data-cf-env] [data-option-display] { display: none !important; }
+${R} [data-app-composer][data-cf-merged] [data-cf-env] { padding: 0 0.375rem; height: 2rem; color: var(--muted-foreground); }
+/* Permission: an icon per mode instead of the label and chevron; Full Access in amber. */
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] > * { display: none !important; }
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"]::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+${R} [data-app-composer][data-cf-merged] button[data-cf-perm="edit"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.2 6.8a1 1 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.2 6.8a1 1 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z'/%3E%3C/svg%3E"); }
+${R} [data-app-composer][data-cf-merged] button[data-cf-perm="plan"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
+${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); }
+${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: var(--warning, oklch(0.75 0.15 70)); }
+/* Context ring: the percentage only when it's nearly full. */
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] { gap: 0.375rem !important; padding-inline: 0.5rem !important; }
+/* "New thread here", added to the + menu after it opened: one line like its neighbours. */
+${R} [data-cf-new-thread] { white-space: nowrap; }
+${R} [role="menu"]:has(> [data-cf-new-thread]) { width: max-content !important; max-width: none !important; }
+/* Collapsed: one line, no row under it. */
+${R} [data-app-composer][data-cf-collapsed] [data-follow-up-composer-footer] { display: none !important; }
+${R} [data-cf-model-chip] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+}
+${R} [data-cf-model-chip] > * { width: 1rem; height: 1rem; }
+
 /* Keyboard-down button in the composer's submit group (frame/touch.ts): only while the keyboard is up. */
 ${R} [data-cf-kb] { display: none; }
 ${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }

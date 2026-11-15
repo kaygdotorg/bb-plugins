@@ -11,7 +11,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
-- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage bars, and compact navigation.
+- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage as coloured percentages in the sidebar footer, a denser composer, and compact navigation.
 
 ## Map
 
@@ -21,7 +21,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
 | `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `usage` |
-| `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color` |
+| `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color`; behaviour: `composer`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
 | `ui/` | React: `overlay` (sync + footer portal), `usage-bars`, `nav`, `settings/` |
 
 ## Rules learned the hard way
@@ -47,6 +47,12 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - Labels come from `aria-label`/`title`, with `aria-keyshortcuts` as a shortcut chip. Only controls whose *rendered* text doesn't already say it get one: bb's icon buttons carry 1px screen-reader labels, which don't count.
   - bb's own tooltips are hidden, and native `title`s are moved to `data-cf-title`.
   - Only the trigger's own blur or scroll closes it: bb shifts focus and a live thread scrolls constantly. Mouse and keyboard only; touch never shows them.
+- **Composer (`frame/composer.ts`):** one bottom row, `[+] [model] [context ring] [permission] [environment] ··· [mic] [send]`.
+  - bb's row under the composer is *positioned* into the free space after the model button (`--cf-foot-x/y/h/w`, one `ResizeObserver`), never moved. Its wrappers are `display: contents`, so `order` applies to their children.
+  - Labels become icons with tooltips (`data-cf-title`): a folder for the environment ("Personal workspace · main"; phones show "Thread details: <branch>" instead, as a branch icon), one icon per permission mode (Full Access in amber), and the context % only from 80%.
+  - "New thread here" is appended to the + menu when it opens; bb's own button stays the action.
+  - Phones, collapsed: bb renders neither the footer nor the model button. The model icon (bb's `[data-provider-logo]` span, not an svg) is cached in localStorage and shown before the mic; tapping it expands the composer, then opens the picker.
+- **Tooltips skip triggers whose menu is open** (`aria-expanded="true"` or `data-state="open"`).
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
 - **Swipe actions (`frame/swipe.ts`)** run bb's own actions:
@@ -66,7 +72,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **The sliding phone pane uses `--cf-device-radius`** (the screen's corner), like Claude's iOS app, plus `corner-shape: squircle` where supported.
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
-- **The usage bars are not a child of bb's footer icon row.** bb counts that row's children to decide which icons overflow into "…". The bars are positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
+- **Usage is an icon plus a coloured percentage per provider (amber from 75%, red from 90%), not bars:** the footer is too narrow. It is not a child of bb's footer icon row: bb counts that row's children to decide which icons overflow into "…". It is positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
 - **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
 - **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.
