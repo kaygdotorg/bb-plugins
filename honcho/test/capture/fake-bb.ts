@@ -73,6 +73,32 @@ export function fakeBb(clock: FakeClock) {
   const envResolved = (threadId: string, names: string[]) => append(threadId, "provider.env-resolved", {
     providerThreadId: "prov_fixture", entries: names.map(name => ({ name, source: "shell", value: { masked: true } })) }).seq;
   const identity = (threadId: string, providerThreadId: string) => append(threadId, "thread/identity", { providerThreadId }).seq;
+  /** A prompt bb hasn't accepted yet: client/turn/requested only. */
+  const request = (threadId: string, text: string) => {
+    const requestId = `creq_${++ids}`;
+    const { seq } = append(threadId, "client/turn/requested", { requestId, initiator: "user", source: "tell", senderThreadId: null, systemMessageKind: "unlabeled",
+      input: [{ type: "text", text, mentions: [] }], execution: { model: "fixture-model" } });
+    return { seq, requestId };
+  };
+  const accept = (threadId: string, requestId: string) => append(threadId, "turn/input/accepted", { clientRequestId: requestId, providerThreadId: "prov_fixture" }).seq;
+  /** The event shapes bb logs (types and order only, as seen in real threads):
+   * - new thread: client/turn/requested, client/thread/start, thread/identity, provider.env-resolved, turn/started
+   * - relaunch:   client/turn/requested, thread/identity, provider.env-resolved, turn/started (codex: on many turns)
+   * - steer into a running turn (no new process): client/turn/requested, turn/input/accepted, provider.env-resolved */
+  const build = (threadId: string, text: string, opts: { newThread?: boolean; env?: string[] } = {}) => {
+    const { requestId } = request(threadId, text);
+    if (opts.newThread) append(threadId, "client/thread/start", {});
+    identity(threadId, "prov_fixture");
+    const env = envResolved(threadId, opts.env ?? ["PATH", "BB_HONCHO", "BB_HONCHO_RECALL_DIR"]);
+    append(threadId, "turn/started", { providerThreadId: "prov_fixture" });
+    accept(threadId, requestId);
+    return env;
+  };
+  const steer = (threadId: string, text: string, env = ["PATH", "BB_HONCHO", "BB_HONCHO_RECALL_DIR"]) => {
+    const { requestId } = request(threadId, text);
+    accept(threadId, requestId);
+    return envResolved(threadId, env);
+  };
   /** bb's edit: delete [cutoff, oldMax], then append the operation event. */
   const edit = (threadId: string, cutoff: number) => {
     const log = logs.get(threadId)!;
@@ -132,7 +158,7 @@ export function fakeBb(clock: FakeClock) {
   } as unknown as CaptureBb;
 
   return {
-    bb, db, kv, threads, logs, listCalls, addThread, append, prompt, agent, turnDone, envResolved, identity, edit,
+    bb, db, kv, threads, logs, listCalls, addThread, append, prompt, agent, turnDone, envResolved, identity, edit, request, accept, build, steer,
     async emit(name: string, payload: unknown) { for (const fn of handlers.get(name) ?? []) await fn(payload); },
     deleteThread(id: string) { threads.get(id)!.deletedAt = clock.now(); },
   };

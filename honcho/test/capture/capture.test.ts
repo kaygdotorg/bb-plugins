@@ -432,8 +432,7 @@ describe("switch-over gate", () => {
     expect(sent()).toHaveLength(0);
     expect(await svc.threadStatus("thr_a")).toMatchObject({ state: "not-captured", reason: expect.stringContaining("harness") });
 
-    fake.prompt("thr_a", "first bb-captured prompt");
-    fake.envResolved("thr_a", ["PATH", "BB_HONCHO", "BB_HONCHO_RECALL_DIR"]);
+    fake.build("thr_a", "first bb-captured prompt");
     fake.agent("thr_a", "new session reply");
     fake.turnDone("thr_a");
     await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });

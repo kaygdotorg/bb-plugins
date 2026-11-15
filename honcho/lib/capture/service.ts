@@ -8,10 +8,10 @@ import type { PluginThreadEventPayloads } from "@get-bb/plugin-sdk";
 import type { CaptureService, PrivacySettings, ThreadMemoryStatus } from "../contract.js";
 import { HonchoError, seqRange, type Conclusion, type HonchoClient, type MessageDraft, type PeerConfig } from "../honcho-client.js";
 import { sessionMetadata } from "../mapping.js";
-import type { InFlight, RetryError } from "../outbox.js";
+import { GATE_VERSION, type InFlight, type RetryError, type SwitchOverMarker } from "../outbox.js";
 import { readPrivacy, recordProviderSeen, resolvePeer } from "../rpc-server.js";
 import { isEditMessage, providerThreadIdOf, transformEvents, type CaptureEvent, type TransformContext, type TransformResult } from "../transform.js";
-import { sessionHasMessagesSince, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
+import { sessionNewestMessageAt, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
 import { captureCursorStart, gateAlwaysOpen } from "./switchover.js";
 export { gateAlwaysOpen } from "./switchover.js";
 import { FactsUnavailable, scopeKey, threadFacts, type ThreadRef } from "./scope.js";
@@ -23,7 +23,9 @@ type EventType = CaptureEvent["type"];
 /** Only the types capture looks at; bb never returns deltas, usage or diffs here. */
 const READ_TYPES = ["client/turn/requested", "turn/input/accepted", "client/turn/rejected", "item/completed", "turn/completed",
   "system/operation", "thread/identity", "provider.env-resolved"] as const satisfies readonly EventType[];
-const GATE_TYPES = ["provider.env-resolved", "turn/completed", "thread/identity"] as const satisfies readonly EventType[];
+/** What the gate needs to tell a session build from a steer: see gate(). */
+const GATE_TYPES = ["client/turn/requested", "client/thread/start", "thread/identity", "turn/input/accepted", "provider.env-resolved",
+  "turn/completed"] as const satisfies readonly EventType[];
 const PAGE = 100; // bb rejects thread event pages above 100
 const BATCH = 100;
 /** Purge-on-delete scans at most this many pages of 100 derived conclusions: Honcho can't filter by source id. */
@@ -39,6 +41,10 @@ const LEASE_RETRY_MS = 5_000;
 const THREAD_IDS_PER_LIST = 200;
 export const SWITCHOVER_ENV = "BB_HONCHO";
 export const NOT_SWITCHED_OVER = "harness capture still active until the session rebuilds";
+export const PROBATION = "checking the old honcho plugin is quiet";
+const harnessSeen = (at: number) => `the old honcho plugin wrote at ${new Date(at).toISOString()} after the session rebuilt; capture waits for the next rebuild`;
+/** The thread a tripwire message names (see checkTripwire). */
+const tripwireThread = (message: string | null) => message?.match(/capturing thread (\S+)$/)?.[1];
 
 const KV = {
   tripwireChecked: (t: string) => `capture:tripwire-checked:${t}`,
@@ -62,6 +68,9 @@ interface ThreadState {
   peers: Set<string>;
   gateScanSeq: number;
   lastTurnCompleted: number;
+  /** The gate scan's current span: since the newest client/turn/requested, was a session built
+   * (client/thread/start, thread/identity) and was the input accepted into a running turn? */
+  span: { requested: boolean; built: boolean; accepted: boolean };
   editsDone: Set<number>;
   /** Newest seq bb reported for the thread (experimental_thread.events), or read from its log. */
   seenSeq: number;
@@ -156,7 +165,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     let st = states.get(id);
     if (!st) {
       st = { id, again: false, lastUploadAt: null, queued: 0, oldestPendingAt: null, blocked: null, sessionReady: false,
-        peers: new Set(), gateScanSeq: 0, lastTurnCompleted: 0, editsDone: new Set(), seenSeq: 0 };
+        peers: new Set(), gateScanSeq: 0, lastTurnCompleted: 0, span: { requested: false, built: false, accepted: false }, editsDone: new Set(), seenSeq: 0 };
       states.set(id, st);
     }
     return st;
@@ -246,9 +255,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   /** Returns the switch-over marker (capture covers seq > marker), or undefined while the harness still captures. */
   async function gate(st: ThreadState, thread: Thread): Promise<number | undefined> {
-    const known = outbox.switchOver(thread.id);
-    if (known !== undefined) return known;
-    if (gateAlwaysOpen(thread.providerId) || !(await requiresSwitchover())) {
+    const known = outbox.switchOverMarker(thread.id);
+    if (known && known.gateVersion >= GATE_VERSION) return known.startSeq;
+    const open = gateAlwaysOpen(thread.providerId) || !(await requiresSwitchover());
+    if (known) return reevaluate(st, thread, known, open);
+    if (open) {
       // Nothing to hand over, but a thread that predates the plugin must not be captured from seq 0:
       // that would be an implicit backfill, and backfill is opt-in. Its marker is its max seq now.
       let marker = 0;
@@ -259,26 +270,98 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       outbox.markSwitchOver(thread.id, marker);
       return outbox.switchOver(thread.id)!;
     }
-    const events = await readEvents(thread.id, st.gateScanSeq, GATE_TYPES);
+    const build = await findBuild(st, thread.id);
+    if (!build) { st.blocked = blockedReason(thread.id); return undefined; }
+    outbox.markSwitchOver(thread.id, build.marker, { builtSeq: build.seq, builtAt: build.at, probation: true });
+    deps.activity.record({ kind: "harness", threadId: thread.id,
+      summary: `session rebuilt with the harness capture off at seq ${build.seq}; capture will cover seq ${build.marker + 1} on, once the old honcho plugin is seen quiet` });
+    return build.marker;
+  }
+  const blockedReason = (threadId: string) => { const at = outbox.harnessSeenAt(threadId); return at === undefined ? NOT_SWITCHED_OVER : harnessSeen(at); };
+
+  /** Scans the gate events from where the last scan stopped for the first BB_HONCHO env event that
+   * belongs to a real session build: bb logs provider.env-resolved both when it builds a provider
+   * session and when a message steers into a running turn (no new process, so the harness keeps
+   * its old env). It is a build when, since the newest client/turn/requested, bb logged
+   * client/thread/start or thread/identity and no turn/input/accepted came first. A build at or
+   * before a time the harness was seen writing after an earlier build doesn't count. */
+  async function findBuild(st: ThreadState, threadId: string): Promise<{ marker: number; seq: number; at: number } | undefined> {
+    const seenAt = outbox.harnessSeenAt(threadId) ?? -Infinity;
+    const events = await readEvents(threadId, st.gateScanSeq, GATE_TYPES);
     for (const e of events) {
+      st.gateScanSeq = e.seq;
       // provider.env-resolved carries a providerThreadId too, so this can't be an else-if chain.
       const providerThread = providerThreadIdOf(e);
-      if (providerThread) outbox.addProviderThread(thread.id, providerThread);
-      if (e.type === "turn/completed") st.lastTurnCompleted = e.seq;
-      else if (e.type === "provider.env-resolved") {
-        const entries = Array.isArray(data(e).entries) ? data(e).entries as Array<{ name?: unknown }> : [];
-        if (entries.some(entry => entry?.name === SWITCHOVER_ENV)) {
+      if (providerThread) outbox.addProviderThread(threadId, providerThread);
+      const span = st.span;
+      switch (e.type) {
+        case "turn/completed": st.lastTurnCompleted = e.seq; break;
+        case "client/turn/requested": st.span = { requested: true, built: false, accepted: false }; break;
+        case "client/thread/start": case "thread/identity": if (span.requested) span.built = true; break;
+        case "turn/input/accepted": if (span.requested) span.accepted = true; break;
+        case "provider.env-resolved": {
+          const entries = Array.isArray(data(e).entries) ? data(e).entries as Array<{ name?: unknown }> : [];
+          if (!entries.some(entry => entry?.name === SWITCHOVER_ENV)) break;
+          if (!span.requested || !span.built || span.accepted || e.createdAt <= seenAt) break;
           // The prompt that triggered this session build is logged before the
           // build, so the marker sits after the previous session's last turn.
-          outbox.markSwitchOver(thread.id, st.lastTurnCompleted);
-          deps.activity.record({ kind: "harness", threadId: thread.id, summary: `capture switched over to bb after seq ${st.lastTurnCompleted}` });
-          return st.lastTurnCompleted;
+          return { marker: st.lastTurnCompleted, seq: e.seq, at: e.createdAt };
         }
       }
-      st.gateScanSeq = e.seq;
     }
-    st.blocked = NOT_SWITCHED_OVER;
     return undefined;
+  }
+
+  /** A marker an older gate rule made (gate_version 1 trusted steers too): rescan the thread with
+   * the current rule, moving the marker forward or dropping it. Cursors stay: what was uploaded
+   * can't be taken back. A tripwire hit for the thread that the new marker explains is cleared. */
+  async function reevaluate(st: ThreadState, thread: Thread, old: SwitchOverMarker, open: boolean): Promise<number | undefined> {
+    const id = thread.id;
+    if (open) { outbox.replaceSwitchOver(id, old.startSeq); return old.startSeq; }
+    Object.assign(st, { gateScanSeq: 0, lastTurnCompleted: 0, span: { requested: false, built: false, accepted: false } });
+    const build = await findBuild(st, id);
+    if (build) {
+      outbox.replaceSwitchOver(id, build.marker, { builtSeq: build.seq, builtAt: build.at, probation: true });
+      deps.activity.record({ kind: "harness", threadId: id, summary: build.marker === old.startSeq
+        ? `re-checked the switch-over with the stricter gate: still after seq ${old.startSeq}; checking the old honcho plugin is quiet`
+        : `re-checked the switch-over with the stricter gate: moved from after seq ${old.startSeq} to after seq ${build.marker} (session rebuilt at seq ${build.seq}); checking the old honcho plugin is quiet` });
+      if (build.marker !== old.startSeq) await clearTripwireFor(id);
+      return build.marker;
+    }
+    outbox.dropSwitchOver(id);
+    deps.activity.record({ kind: "harness", threadId: id,
+      summary: `re-checked the switch-over with the stricter gate: no session rebuild since seq ${old.startSeq} turned the harness capture off; capture waits for one` });
+    await clearTripwireFor(id);
+    st.blocked = blockedReason(id);
+    return undefined;
+  }
+
+  /** Probation: a switched-over thread's uploads wait until the first turn after the session build
+   * completed, the grace window passed, and no harness-named session got a message after the build.
+   * Returns true once passed. A hit drops the marker and records when the harness wrote. */
+  async function probation(st: ThreadState, thread: Thread, marker: SwitchOverMarker): Promise<boolean> {
+    const id = thread.id;
+    st.blocked = PROBATION;
+    const builtSeq = marker.builtSeq ?? marker.startSeq;
+    const done = (await bb.sdk.threads.events.list({ threadId: id, afterSeq: String(builtSeq), order: "asc", limit: "1", types: ["turn/completed"] }))[0];
+    if (!done) return false; // the turn's own events reschedule the thread
+    const due = done.createdAt + grace;
+    if (clock.now() < due) { schedule(id, due - clock.now() + 1); return false; }
+    const since = marker.builtAt ?? await switchedAt(id, marker.startSeq);
+    const hit = await harnessWrite(thread, since);
+    if (hit) {
+      outbox.dropSwitchOver(id, hit.at);
+      await bb.storage.kv.delete(KV.tripwireChecked(id));
+      await raiseTripwire(thread, hit.name, `probation failed: harness session "${hit.name}" wrote at ${new Date(hit.at).toISOString()}, after the session rebuilt at seq ${builtSeq}; nothing was uploaded, and capture waits for a newer rebuild`);
+      st.blocked = harnessSeen(hit.at);
+      return false;
+    }
+    outbox.passProbation(id);
+    await bb.storage.kv.set(KV.tripwireChecked(id), true);
+    deps.activity.record({ kind: "harness", threadId: id, summary: `the old honcho plugin stayed quiet through the first turn after the session rebuilt; capture starts after seq ${marker.startSeq}` });
+    await clearTripwireFor(id);
+    st.blocked = null;
+    return true;
   }
 
   /** Forks and side chats start with the source's copied completed turns. bb
@@ -461,6 +544,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       if (events.length && !outbox.inFlight(id).length) settle(id, events[events.length - 1].seq);
       return;
     }
+    const switched = outbox.switchOverMarker(id);
+    if (switched?.probation && !(await probation(st, thread, switched))) return;
     st.blocked = null;
     await forkBoundary(thread);
     if (outbox.cursor(id) < captureCursorStart(startSeq) && !outbox.inFlight(id).length) outbox.advance(id, captureCursorStart(startSeq));
@@ -539,13 +624,16 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   // ---------- tripwire ----------
 
-  /** After a captured thread's first turn: did a harness integration also write a session for it?
-   * Only harness messages written after this thread's switch-over count: a session the harness
-   * filled before bb took over is expected, not a double capture. */
-  async function checkTripwire(thread: Thread, marker: number): Promise<void> {
-    if (await bb.storage.kv.get(KV.tripwireChecked(thread.id))) return;
-    const first = await bb.sdk.threads.events.list({ threadId: thread.id, afterSeq: String(marker), order: "asc", limit: "1" });
-    const switchedAt = first[0]?.createdAt ?? clock.now();
+  /** The createdAt of the first event after the marker: when the thread switched over, for markers
+   * that don't record their session build. */
+  async function switchedAt(threadId: string, marker: number): Promise<number> {
+    const first = await bb.sdk.threads.events.list({ threadId, afterSeq: String(marker), order: "asc", limit: "1" });
+    return first[0]?.createdAt ?? clock.now();
+  }
+
+  /** Did a harness integration write a session for this thread at or after `since`? Returns the
+   * first harness session found and when its newest message was created. */
+  async function harnessWrite(thread: Thread, since: number): Promise<{ name: string; at: number } | null> {
     const env = await facts.env(thread);
     const names = new Set<string>();
     for (const providerThreadId of outbox.providerThreads(thread.id)) {
@@ -555,13 +643,38 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     names.delete(thread.id);
     const client = await deps.client();
     for (const name of names) {
-      if (!(await sessionHasMessagesSince(client, name, switchedAt))) continue;
-      tripwire = `harness session "${name}" is still capturing thread ${thread.id}`;
-      await bb.storage.kv.set(KV.tripwire, tripwire);
-      deps.activity.record({ kind: "harness", threadId: thread.id, summary: `tripwire: ${tripwire}`, error: "tripwire" });
-      bb.log.warn(`honcho capture: tripwire hit for ${thread.id}`);
-      break;
+      const at = await sessionNewestMessageAt(client, name);
+      if (at !== null && at >= since) return { name, at };
     }
+    return null;
+  }
+
+  async function raiseTripwire(thread: Thread, name: string, summary: string): Promise<void> {
+    tripwire = `harness session "${name}" is still capturing thread ${thread.id}`;
+    await bb.storage.kv.set(KV.tripwire, tripwire);
+    deps.activity.record({ kind: "harness", threadId: thread.id, summary: `tripwire: ${summary}`, error: "tripwire" });
+    bb.log.warn(`honcho capture: tripwire hit for ${thread.id}`);
+  }
+
+  /** Clears the tripwire badge when it names this thread: a re-evaluation explained it, or the
+   * thread has since passed its probation. */
+  async function clearTripwireFor(threadId: string): Promise<void> {
+    const stored = (await bb.storage.kv.get<string>(KV.tripwire)) ?? tripwire;
+    if (tripwireThread(stored) !== threadId) return;
+    tripwire = null;
+    await bb.storage.kv.delete(KV.tripwire);
+    await bb.storage.kv.delete(KV.tripwireChecked(threadId));
+    deps.activity.record({ kind: "harness", threadId, summary: "cleared the tripwire for this thread: it predates the stricter switch-over check, or the old honcho plugin has since been seen quiet" });
+  }
+
+  /** After a captured thread's first turn: did a harness integration also write a session for it?
+   * Only harness messages written after this thread's switch-over count: a session the harness
+   * filled before bb took over is expected, not a double capture. Threads on probation are checked
+   * there instead; this covers markers without one (capture not requiring the switch-over). */
+  async function checkTripwire(thread: Thread, marker: number): Promise<void> {
+    if (await bb.storage.kv.get(KV.tripwireChecked(thread.id))) return;
+    const hit = await harnessWrite(thread, await switchedAt(thread.id, marker));
+    if (hit) await raiseTripwire(thread, hit.name, `harness session "${hit.name}" is still capturing thread ${thread.id}`);
     await bb.storage.kv.set(KV.tripwireChecked(thread.id), true);
   }
 
@@ -679,6 +792,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     for (const key of await bb.storage.kv.list(KV.pendingDeletePrefix)) void onDeleted(key.slice(KV.pendingDeletePrefix.length)).catch(() => undefined);
     await reconcileDeleted(signal).catch(error => bb.log.warn(`honcho capture: deletion check failed: ${(error as Error).name}`));
     for (const marker of outbox.inFlight()) schedule(marker.thread, 0);
+    // Markers an older gate rule made are re-evaluated first thing (archived threads too).
+    for (const id of outbox.staleSwitchOvers()) schedule(id, 0);
     // Startup reconcile: catch up on everything missed while the plugin was down.
     for (let offset = 0; !disposed && !signal?.aborted;) {
       const page = await bb.sdk.threads.list({ archived: false, includeHidden: true, limit: 100, offset });
@@ -734,9 +849,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       const scope = (await bb.storage.kv.get<string>(scopeKey(threadId))) ?? null;
       const base = { threadId, lastUploadAt: st?.lastUploadAt ?? null, queued: st?.queued ?? 0, scope };
       if (st?.blocked) return { ...base, state: "not-captured", reason: st.blocked };
-      if (outbox.switchOver(threadId) === undefined && thread && !gateAlwaysOpen(thread.providerId) && await requiresSwitchover()) {
-        return { ...base, state: "not-captured", reason: NOT_SWITCHED_OVER };
+      const marker = outbox.switchOverMarker(threadId);
+      if (marker === undefined && thread && !gateAlwaysOpen(thread.providerId) && await requiresSwitchover()) {
+        return { ...base, state: "not-captured", reason: blockedReason(threadId) };
       }
+      if (marker?.probation) return { ...base, state: "not-captured", reason: PROBATION };
       if (outbox.isPausedNow("thread", threadId) || (thread && outbox.isPausedNow("project", thread.projectId))) return { ...base, state: "paused" };
       if (outbox.retry(threadId)) return { ...base, state: "offline" };
       if ((st?.queued ?? 0) > 0 || outbox.inFlight(threadId).length) return { ...base, state: "saving" };

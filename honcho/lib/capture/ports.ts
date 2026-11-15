@@ -94,13 +94,19 @@ export async function sessionHasMessages(client: HonchoClient, session: string):
   catch (error) { if (notFound(error)) return false; throw error; }
 }
 
-/** Tripwire probe: does a harness-named session hold a message created at or after `since` (epoch ms)?
- * Reads the newest message only. */
-export async function sessionHasMessagesSince(client: HonchoClient, session: string, since: number): Promise<boolean> {
+/** Tripwire probe: when the newest message of a harness-named session was created (epoch ms),
+ * or null when the session is missing or empty. Reads the newest message only. */
+export async function sessionNewestMessageAt(client: HonchoClient, session: string): Promise<number | null> {
   try {
     const newest = (await client.listMessages(session, {}, { page: 1, size: 1, reverse: true })).items[0];
-    return newest !== undefined && Date.parse(newest.created_at) >= since;
-  } catch (error) { if (notFound(error)) return false; throw error; }
+    return newest === undefined ? null : Date.parse(newest.created_at);
+  } catch (error) { if (notFound(error)) return null; throw error; }
+}
+
+/** Tripwire probe: does a harness-named session hold a message created at or after `since` (epoch ms)? */
+export async function sessionHasMessagesSince(client: HonchoClient, session: string, since: number): Promise<boolean> {
+  const at = await sessionNewestMessageAt(client, session);
+  return at !== null && at >= since;
 }
 
 export async function allConclusions(client: HonchoClient, filters: ConclusionFilters = {}, max = 100_000): Promise<Conclusion[]> {
