@@ -75,6 +75,8 @@ async function load(settings: Record<string, string | number | boolean> = {}) {
     sdk: {
       threads: { list: async () => [] },
       hosts: { list: async () => [makeHostResponse({ id: "host_a" })] },
+      providers: { list: async () => [] },
+      subscribe: () => () => undefined,
     },
     experimental_callHostRpc: ({ method }) => {
       if (!(method in HOST_RESULTS)) throw new Error(`unexpected host call ${method}`);

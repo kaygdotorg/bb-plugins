@@ -17,13 +17,12 @@ export interface ProviderEnvDeps {
   call?: HarnessCaller;
   /** The shared `hookBudgetMs` setting, read on every resolve so a change applies to the next harness start. */
   hookBudgetMs?: number | (() => number);
-  /** ACP provider ids (`acp-<agentId>`); bb needs exact ids, it has no wildcard. */
-  acpProviderIds?: readonly string[];
   /** Test seam for the cache clock. */
   now?: () => number;
 }
 
 const entry = (name: string, value: string, reason: string): ExperimentalPluginProviderEnvEntry => ({ name, value, reason });
+const gateEntry = entry("BB_HONCHO", "1", "Turns on the bb honcho hook inside bb-run harnesses");
 
 export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">, deps: ProviderEnvDeps = {}): void {
   const now = deps.now ?? Date.now;
@@ -73,9 +72,8 @@ export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">
     }
   }
 
-  const gate = entry("BB_HONCHO", "1", "Turns on the bb honcho hook inside bb-run harnesses");
   const hookEnv = (p: EnvPaths) => [
-    gate,
+    gateEntry,
     entry("BB_HONCHO_RECALL_DIR", p.recallDir, "Where the bb honcho hook reads per-turn recall"),
     entry("BB_HONCHO_HOOK_BUDGET_MS", budget(), "How long the bb honcho hook waits for recall"),
   ];
@@ -96,7 +94,36 @@ export function registerProviderEnv(bb: Pick<BbPluginApi, "providers" | "hosts">
     if (!p) return [];
     return [...hookEnv(p), entry("HONCHO_CONFIG_DIR", p.codexConfigDir, "Points codex-honcho at a bb-owned config with enabled:false")];
   });
-  for (const providerId of ["pi", ...(deps.acpProviderIds ?? [])]) {
-    bb.providers.experimental_contributeEnv(providerId, () => [gate]);
+  bb.providers.experimental_contributeEnv("pi", () => [gateEntry]);
+}
+
+/**
+ * bb matches env resolvers by exact provider id, so every `acp-*` provider needs
+ * its own BB_HONCHO=1 resolver. Checked at start and on each
+ * provider-registrations-changed event; each id is registered once for the life
+ * of the plugin. A failed provider list is retried at the next event.
+ */
+export function registerAcpProviderEnv(bb: Pick<BbPluginApi, "providers" | "sdk" | "onDispose">): void {
+  const registered = new Set<string>();
+  let stopped = false;
+  async function check(): Promise<void> {
+    let providers: Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["list"]>>;
+    try {
+      providers = await bb.sdk.providers.list();
+    } catch {
+      return;
+    }
+    if (stopped) return;
+    for (const { id } of providers) {
+      if (!id.startsWith("acp-") || registered.has(id)) continue;
+      registered.add(id);
+      bb.providers.experimental_contributeEnv(id, () => [gateEntry]);
+    }
   }
+  const unsubscribe = bb.sdk.subscribe({
+    event: "system:changed",
+    callback: (event) => { if (event.changes.includes("provider-registrations-changed")) void check(); },
+  });
+  bb.onDispose(() => { stopped = true; unsubscribe(); });
+  void check();
 }
