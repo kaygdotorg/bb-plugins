@@ -30,14 +30,18 @@ function conclusionFilters(filters: ConclusionFilters = {}): Metadata {
   const { observer, observed, ...rest } = filters;
   return { ...(observer === undefined ? {} : { observer_id: observer }), ...(observed === undefined ? {} : { observed_id: observed }), ...rest };
 }
-export type HonchoErrorKind = "auth" | "offline" | "rate-limited" | "validation" | "server" | "http";
+export type HonchoErrorKind = "auth" | "offline" | "timeout" | "rate-limited" | "validation" | "server" | "http";
 export class HonchoError extends Error {
-  constructor(public readonly kind: HonchoErrorKind, public readonly status?: number, public readonly retryAfter?: string) {
+  constructor(public readonly kind: HonchoErrorKind, public readonly status?: number, public readonly retryAfter?: string, public readonly timeoutMs?: number) {
     super(`Honcho ${kind}${status === undefined ? "" : ` (HTTP ${status})`}.`);
     this.name = "HonchoError";
   }
 }
 export interface ClientOptions { baseUrl: string; apiKey?: string; workspace: string; fetch?: typeof fetch }
+/** Short calls (search, list, representation, writes). */
+export const DEFAULT_TIMEOUT_MS = 8_000;
+/** A peer or workspace chat reasons over memory; the self-hosted server takes about 10 s. */
+export const CHAT_TIMEOUT_MS = 60_000;
 export type KeyCapability = "workspace-or-admin" | "restricted";
 const id = encodeURIComponent;
 
@@ -55,7 +59,7 @@ export class HonchoClient {
     this.transport = options.fetch ?? fetch;
   }
   private workspacePath(path = ""): string { return `/workspaces/${id(this.options.workspace)}${path}`; }
-  private async request<T>(path: string, body?: unknown, method = "POST", pagination: Pagination = {}, retry = true): Promise<T> {
+  private async request<T>(path: string, body?: unknown, method = "POST", pagination: Pagination = {}, retry = true, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(pagination)) if (value !== undefined) params.set(key, String(value));
     const url = `${this.base}/v3${path}${params.size ? `?${params}` : ""}`;
@@ -68,7 +72,7 @@ export class HonchoClient {
             ...(body === undefined ? {} : { "content-type": "application/json" }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-          signal: AbortSignal.timeout(8_000), redirect: "error",
+          signal: AbortSignal.timeout(timeoutMs), redirect: "error",
         });
         if (!response.ok) {
           const status = response.status;
@@ -86,6 +90,8 @@ export class HonchoClient {
         catch { throw new HonchoError("validation", response.status); }
       } catch (error) {
         if (error instanceof HonchoError) throw error;
+        // A slow answer is not an outage, and a retry would only double the wait.
+        if ((error as { name?: string } | null)?.name === "TimeoutError") throw new HonchoError("timeout", undefined, undefined, timeoutMs);
         if (attempt >= attempts - 1) throw new HonchoError("offline");
       }
     }
@@ -145,11 +151,11 @@ export class HonchoClient {
   }
   peerChat(peer: string, options: PeerChatOptions): Promise<ChatResult> {
     if (options.scope !== undefined && (options.session_id !== undefined || options.filters !== undefined)) throw new HonchoError("validation");
-    return this.request(this.workspacePath(`/peers/${id(peer)}/chat`), { reasoning_level: "low", ...options, stream: false });
+    return this.request(this.workspacePath(`/peers/${id(peer)}/chat`), { reasoning_level: "low", ...options, stream: false }, "POST", {}, true, CHAT_TIMEOUT_MS);
   }
   workspaceChat(options: ChatOptions): Promise<ChatResult> {
     if (options.scope !== undefined && options.session_id !== undefined) throw new HonchoError("validation");
-    return this.request(this.workspacePath("/chat"), { reasoning_level: "low", ...options, stream: false });
+    return this.request(this.workspacePath("/chat"), { reasoning_level: "low", ...options, stream: false }, "POST", {}, true, CHAT_TIMEOUT_MS);
   }
   listConclusions(filters: ConclusionFilters = {}, pagination?: Pagination): Promise<Page<Conclusion>> {
     return this.request(this.workspacePath("/conclusions/list"), { filters: conclusionFilters(filters) }, "POST", pagination);
@@ -164,8 +170,15 @@ export class HonchoClient {
     // Never retried here: the caller's recovery path owns it.
     return this.request(this.workspacePath("/conclusions"), { conclusions }, "POST", {}, false);
   }
-  deleteConclusion(conclusion: string): Promise<void> {
-    return this.request(this.workspacePath(`/conclusions/${id(conclusion)}`), undefined, "DELETE");
+  /** A 404 means the conclusion is already gone, which is what the caller wanted. */
+  async deleteConclusion(conclusion: string): Promise<"deleted" | "gone"> {
+    try {
+      await this.request(this.workspacePath(`/conclusions/${id(conclusion)}`), undefined, "DELETE");
+      return "deleted";
+    } catch (error) {
+      if (error instanceof HonchoError && error.status === 404) return "gone";
+      throw error;
+    }
   }
   async addSessionToScope(scope: string, session: string): Promise<void> {
     if (!/^[a-zA-Z0-9_-]+$/.test(scope)) throw new HonchoError("validation");

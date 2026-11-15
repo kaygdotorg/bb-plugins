@@ -10,6 +10,9 @@ export function isSideChat(ctx: Pick<PluginAgentConfigurationContext, "origin">)
   return ctx.origin.kind === "fork" && ctx.origin.pluginId === SIDE_CHAT_PLUGIN_ID;
 }
 
+/** Inside bb the claude-honcho plugin is off, but global instructions may still name its tools. */
+export const TOOLS_NOTE = `Inside bb, Honcho memory is these tools: ${HONCHO_TOOL_NAMES.join(", ")}. The mcp__plugin_honcho_honcho__* tools are switched off here, so don't use them.`;
+
 /** Tools for this resolution: none for codex unless `codexUseBbTools` (codex keeps its own honcho MCP). */
 export function selectTools(providerId: string, codexUseBbTools: boolean): string[] {
   return providerId === "codex" && !codexUseBbTools ? [] : [...HONCHO_TOOL_NAMES];
@@ -24,6 +27,10 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
   bb.agents.configure((ctx): PluginAgentConfiguration => {
     const tools = selectTools(ctx.provider.id, settings.codexUseBbTools());
     let instructions: string | undefined;
+    const withNote = (memory?: string): PluginAgentConfiguration => {
+      const text = tools.length ? (memory ? `${TOOLS_NOTE}\n\n${memory}` : TOOLS_NOTE) : memory;
+      return text ? { tools, skills: [], instructions: text } : { tools, skills: [] };
+    };
     try {
       const sideChat = isSideChat(ctx);
       const parentThreadId = ctx.thread.parentThreadId ?? ctx.thread.sourceThreadId;
@@ -35,12 +42,12 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
       // Paused or deny-listed threads get no memory; an unknown deny answer fails closed.
       const contextThreadId = ScopeResolver.contextThread(input);
       const blocked = shared.gate.blockedNow({ id: ctx.thread.id, projectId: ctx.project.id, environmentId: ctx.environment.id ?? null, contextThreadId });
-      if (blocked !== false) return { tools, skills: [] };
+      if (blocked !== false) return withNote();
       const { scope, provisional } = shared.scopes.sync(input);
       if (provisional) void shared.scopes.resolve(input).then(s => { if (cache.want(s)) cache.request(true); }, () => undefined);
       if (cache.want(scope)) cache.request(true);
       const snap = cache.snapshot();
-      if (snap.lastSuccess === null) { cache.request(true); return { tools, skills: [] }; }
+      if (snap.lastSuccess === null) { cache.request(true); return withNote(); }
       const entry = snap.scopes.get(scope);
       const marks = shared.store.agentWrittenInScope(scope);
       const byId = new Map(snap.recent.map(c => [c.id, c]));
@@ -56,6 +63,6 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
       bb.log.warn(`honcho configure: ${error instanceof Error ? error.name : "error"}`);
       instructions = undefined;
     }
-    return instructions ? { tools, skills: [], instructions } : { tools, skills: [] };
+    return withNote(instructions);
   });
 }

@@ -47,6 +47,7 @@ function defineSettings(bb: BbPluginApi): RecallSettings {
 export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRuntime {
   const shared = recallShared(bb, deps, deps.recall);
   const cache = new MemoryCache(shared, Date.now, m => bb.log.warn(m));
+  shared.invalidateMemory = () => cache.invalidate().catch(() => undefined);
   const settings = deps.recall?.settings ?? defineSettings(bb);
 
   bb.events.on("thread.active", ({ thread }) => {
@@ -98,7 +99,7 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
       await client.deleteConclusion(id);
       shared.store.forget(id);
       deps.activity.record({ kind: "delete", summary: "deleted 1 conclusion" });
-      cache.request(true);
+      await shared.invalidateMemory();
     },
     conclusionsForThread: threadId => shared.store.conclusionsForThread(threadId),
     async confirmConclusion(id) {

@@ -37,6 +37,7 @@ export class MemoryCache {
   private lastFailed = false;
   private inFlight: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private generation = 0;
 
   constructor(private readonly shared: RecallShared, private readonly now: () => number = Date.now, private readonly log?: (m: string) => void) {}
 
@@ -68,11 +69,24 @@ export class MemoryCache {
   cancel(): void { if (this.timer) clearTimeout(this.timer); this.timer = null; }
 
   refresh(): Promise<void> {
-    if (!this.inFlight) this.inFlight = this.run().finally(() => { this.inFlight = null; });
+    if (!this.inFlight) {
+      const run: Promise<void> = this.run().finally(() => { if (this.inFlight === run) this.inFlight = null; });
+      this.inFlight = run;
+    }
     return this.inFlight;
   }
 
+  /** After a delete: drop everything derived from Honcho so no session build re-asserts a deleted fact
+   * (until the refresh lands, injection has no memory), discard any refresh already in flight, and refetch. */
+  invalidate(): Promise<void> {
+    this.generation++;
+    this.card = null; this.recent = []; this.scopes.clear(); this.lastSuccess = null;
+    this.inFlight = null;
+    return this.refresh();
+  }
+
   private async run(): Promise<void> {
+    const generation = this.generation;
     try {
       const { client, peer } = await this.shared.client();
       const ports = this.shared.ports;
@@ -99,6 +113,7 @@ export class MemoryCache {
           throw error;
         }
       }
+      if (generation !== this.generation) return; // invalidated while fetching: this data may predate the delete
       this.peer = peer;
       this.card = card;
       this.recent = recent;

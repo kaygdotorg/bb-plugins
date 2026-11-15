@@ -238,7 +238,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function failed(st: ThreadState, error: unknown): void {
     if (disposed || deleted.has(st.id) || error instanceof Stopped) return;
     if (error instanceof LeaseBusy) { schedule(st.id, LEASE_RETRY_MS); return; }
-    const kind: RetryError = error instanceof HonchoError ? error.kind : "offline";
+    const kind: RetryError = error instanceof HonchoError ? (error.kind === "timeout" ? "offline" : error.kind) : "offline";
     if (kind === "auth") authFailing = true;
     const now = clock.now();
     const retry = outbox.fail(st.id, kind, now);

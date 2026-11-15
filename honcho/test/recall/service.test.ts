@@ -41,10 +41,10 @@ describe("RecallService", () => {
     seedConclusion(s.mock, { id: "con_b", content: "beta fact" });
     expect((await s.recall.conclusions({})).map(c => c.id)).toEqual(["con_b", "con_a"]);
     expect((await s.recall.conclusions({ query: "alpha" })).map(c => c.id)).toEqual(["con_a"]);
-    // An explicit conclusion with no local mark came from an agent (e.g. the claude-honcho CLI).
-    expect((await s.recall.conclusions({ query: "alpha" }))[0]).toMatchObject({ agentWritten: true, confirmed: false });
+    // An explicit conclusion with no local mark was derived from the user's own messages: learned, not agent-written.
+    expect((await s.recall.conclusions({ query: "alpha" }))[0]).toMatchObject({ origin: "learned", agentWritten: false, confirmed: false });
     await s.recall.confirmConclusion("con_a");
-    expect((await s.recall.conclusions({ query: "alpha" }))[0]).toMatchObject({ confirmed: true });
+    expect((await s.recall.conclusions({ query: "alpha" }))[0]).toMatchObject({ origin: "confirmed", confirmed: true });
     await s.recall.deleteConclusion("con_b");
     expect(s.mock.conclusions.map(c => c.id)).toEqual(["con_a"]);
     expect(s.activity.list({ kinds: ["delete"] })).toHaveLength(1);

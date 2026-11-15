@@ -152,6 +152,24 @@ describe("v3 REST client", () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     await client.searchWorkspace({ query: "q" }); expect(timeout).toHaveBeenCalledWith(8000);
   });
+  it("gives chat 60 s and reports a timeout as its own kind, never offline, without retrying", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await client.peerChat("peer", { query: "q" }); expect(timeout).toHaveBeenLastCalledWith(60_000);
+    await client.workspaceChat({ query: "q" }); expect(timeout).toHaveBeenLastCalledWith(60_000);
+    await client.searchPeer("peer", { query: "q" }); expect(timeout).toHaveBeenLastCalledWith(8000);
+    await client.listConclusions(); expect(timeout).toHaveBeenLastCalledWith(8000);
+    await client.peerRepresentation("peer"); expect(timeout).toHaveBeenLastCalledWith(8000);
+    const slow = vi.fn<typeof fetch>().mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+    const c = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test", fetch: slow });
+    await expect(c.peerChat("peer", { query: "q" })).rejects.toMatchObject({ kind: "timeout", timeoutMs: 60_000 });
+    expect(slow).toHaveBeenCalledTimes(1);
+  });
+  it("treats a 404 on conclusion delete as already gone", async () => {
+    mock.fault(404);
+    expect(await client.deleteConclusion("con_missing")).toBe("gone");
+    mock.fault(500); mock.fault(500);
+    await expect(client.deleteConclusion("con_x")).rejects.toMatchObject({ kind: "server" });
+  });
   it("disables redirects, encodes IDs, and handles invalid response JSON safely", async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("[]"));
     const local = new HonchoClient({ baseUrl: `${mock.baseUrl}/v3/`, workspace: "space / name", fetch: transport });

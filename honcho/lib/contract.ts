@@ -67,7 +67,13 @@ export interface CaptureService {
 
 // ---------- recall + conclusions ----------
 
+/** Who a conclusion comes from: "agent" (saved by honcho_conclude), "learned" (Honcho derived it from the user's
+ * own messages) or "confirmed" (the user confirmed it). */
+export type ConclusionOrigin = "agent" | "learned" | "confirmed";
+
 export interface ConclusionView extends Conclusion {
+  origin: ConclusionOrigin;
+  /** Kept for compatibility: true only for origin "agent" (confirmed ones are "confirmed"). */
   agentWritten: boolean;
   confirmed: boolean;
 }

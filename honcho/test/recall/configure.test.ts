@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import { HONCHO_TOOL_NAMES } from "../../lib/tools";
+import { TOOLS_NOTE } from "../../lib/recall/configure";
 import { setup, seedConclusion, type SetupOptions } from "./harness";
 
 const testing = { createFakePluginHost, experimental_createHostEntryHarness };
@@ -20,10 +21,18 @@ const resolve = (s: Setup, c = ctx()) => s.harness.behavior.resolveAgentConfigur
 const toolNames = (r: Awaited<ReturnType<typeof resolve>>) => r.tools.map(t => t.name).sort();
 
 describe("configure", () => {
+  it("tells agents inside bb that Honcho memory is the honcho_* tools, not the claude-honcho plugin", async () => {
+    const s = await make();
+    const { instructions } = await resolve(s);
+    for (const name of HONCHO_TOOL_NAMES) expect(instructions).toContain(name);
+    expect(instructions).toContain("mcp__plugin_honcho_honcho__*");
+    expect(instructions).toContain("switched off");
+  });
+
   it("injects nothing before the first refresh, but selects tools", async () => {
     const s = await make();
     const result = await resolve(s);
-    expect(result.instructions).toBeNull();
+    expect(result.instructions).toBe(TOOLS_NOTE);
     expect(toolNames(result)).toEqual([...HONCHO_TOOL_NAMES].sort());
   });
 
@@ -95,7 +104,7 @@ describe("configure", () => {
     const s = await make();
     s.internals.shared.scopes.sync = () => { throw new Error("boom"); };
     const result = await resolve(s);
-    expect(result.instructions).toBeNull();
+    expect(result.instructions).toBe(TOOLS_NOTE);
     expect(toolNames(result)).toHaveLength(4);
   });
 
@@ -108,20 +117,20 @@ describe("configure", () => {
     expect((await resolve(s)).instructions).toContain("Name: Sam");
     s.deps.outbox.setPaused("thread", "thr_main", true, 0);
     const paused = await resolve(s);
-    expect(paused.instructions).toBeNull();
+    expect(paused.instructions).toBe(TOOLS_NOTE);
     expect(toolNames(paused)).toEqual([...HONCHO_TOOL_NAMES].sort()); // tools stay; only injection is skipped
     s.deps.outbox.setPaused("thread", "thr_main", false, 0);
     s.deps.outbox.setPaused("project", ctx().project.id, true, Date.now());
-    expect((await resolve(s)).instructions).toBeNull();
+    expect((await resolve(s)).instructions).toBe(TOOLS_NOTE);
     s.deps.outbox.setPaused("project", ctx().project.id, false, Date.now());
     s.deps.outbox.setPaused("thread", "thr_parent", true, 0);
     const side = ctx({ thread: { id: "thr_side", parentThreadId: "thr_parent", sourceThreadId: "thr_parent" }, origin: { kind: "fork", pluginId: "side-chat" } });
-    expect((await resolve(s, side)).instructions).toBeNull();
+    expect((await resolve(s, side)).instructions).toBe(TOOLS_NOTE);
     s.deps.outbox.setPaused("thread", "thr_parent", false, 0);
     denied.add("thr_main");
     s.internals.shared.gate["denied"].clear();
     await s.internals.shared.gate.checkDenied({ id: "thr_main", projectId: ctx().project.id, environmentId: ctx().environment.id });
-    expect((await resolve(s)).instructions).toBeNull();
+    expect((await resolve(s)).instructions).toBe(TOOLS_NOTE);
   });
 
   it("fails closed while the deny answer is unknown and deny lists are set", async () => {
@@ -130,7 +139,7 @@ describe("configure", () => {
     await s.bb.storage.kv.set("ui.privacy", { denyRemotes: ["*secret*"], denyPaths: [], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: false });
     await s.internals.shared.gate.redactor(); // reloads the privacy snapshot
     await s.internals.cache.refresh();
-    expect((await resolve(s)).instructions).toBeNull();
+    expect((await resolve(s)).instructions).toBe(TOOLS_NOTE);
     release(false);
     await new Promise(r => setImmediate(r));
     expect((await resolve(s)).instructions).toContain("Name: Sam");

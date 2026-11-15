@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
+import { HonchoError } from "../../lib/honcho-client";
 import { HONCHO_TOOL_NAMES } from "../../lib/tools";
 import { setup, seedConclusion, seedMessage, type SetupOptions } from "../recall/harness";
 
@@ -60,11 +61,70 @@ describe("honcho tools", () => {
     expect(created).toMatchObject({ observer_id: "hermy", observed_id: "hermy", session_id: "thr_main" });
     const listed = text(await call(s, "honcho_conclusions", { action: "list" }));
     expect(listed).toContain(`${created.id} [agent-written, explicit] prefers zsh`);
-    expect(listed).toContain("con_d [deductive] likes tea");
+    expect(listed).toContain("con_d [learned from the user, deductive] likes tea");
     expect(text(await call(s, "honcho_conclusions", { action: "query", query: "tea" }))).toContain("likes tea");
     expect(isError(await call(s, "honcho_conclusions", { action: "query" }))).toBe(true);
     expect(text(await call(s, "honcho_conclusions", { action: "delete", id: created.id }))).toContain("Deleted");
     expect(s.mock.conclusions.some(c => c.id === created.id)).toBe(false);
+  });
+
+  it("a chat timeout says Honcho was slow, not offline", async () => {
+    const s = await make();
+    const slow = new HonchoError("timeout", undefined, undefined, 60_000);
+    s.client.peerChat = async () => { throw slow; };
+    const r = await call(s, "honcho_chat", { query: "x" });
+    expect(isError(r)).toBe(true);
+    expect(text(r)).toContain("Honcho took too long to answer (60 s); try again or use honcho_search");
+    expect(text(r)).not.toContain("offline");
+    expect(s.activity.list({ kinds: ["tool"] }).map(e => e.error)).toEqual(["timeout"]);
+  });
+
+  it("deleting a conclusion that is already gone reports success", async () => {
+    const s = await make();
+    s.mock.fault(404);
+    const r = await call(s, "honcho_conclusions", { action: "delete", id: "con_gone" });
+    expect(isError(r)).toBe(false);
+    expect(text(r)).toContain("already gone");
+  });
+
+  it("forget removes every copy of a subject, including the deriver's own, and refreshes recall memory", async () => {
+    const cards: string[][] = [["Has a cat TESTER-Biscuit"], []];
+    const s = await make({ ports: { peerCard: async () => cards.shift() ?? [] } });
+    await call(s, "honcho_conclude", { content: "user's cat is TESTER-Biscuit" });
+    seedConclusion(s.mock, { id: "con_derived", content: "The user's cat is called TESTER-Biscuit", level: "explicit" });
+    seedConclusion(s.mock, { id: "con_tea", content: "likes tea" });
+    await s.internals.cache.refresh();
+    expect(s.internals.cache.snapshot().card).toEqual(["Has a cat TESTER-Biscuit"]);
+    const r = await call(s, "honcho_conclusions", { action: "forget", query: "cat" });
+    expect(isError(r)).toBe(false);
+    expect(text(r)).toContain("Forgot 2 conclusions");
+    expect(text(r)).toContain("con_derived");
+    expect(s.mock.conclusions.map(c => c.id)).toEqual(["con_tea"]);
+    const snap = s.internals.cache.snapshot();
+    expect(snap.card).toEqual([]);
+    expect(snap.recent.map(c => c.id)).toEqual(["con_tea"]);
+    const query = s.mock.requests.find(q => q.path.endsWith("/conclusions/query"))!;
+    expect(query.body.top_k).toBeGreaterThan(1);
+    expect(query.body.distance).toBeGreaterThan(0);
+    expect(text(await call(s, "honcho_conclusions", { action: "forget", query: "dog" }))).toContain("nothing was forgotten");
+    expect(isError(await call(s, "honcho_conclusions", { action: "forget" }))).toBe(true);
+  });
+
+  it("labels the deriver's own explicit conclusions learned, and only honcho_conclude's as agent-written", async () => {
+    const s = await make();
+    seedConclusion(s.mock, { id: "con_x", content: "likes tea", level: "explicit" });
+    await call(s, "honcho_conclude", { content: "prefers zsh" });
+    const listed = text(await call(s, "honcho_conclusions", { action: "list" }));
+    expect(listed).toContain("con_x [learned from the user, explicit] likes tea");
+    expect(listed).toMatch(/\[agent-written, explicit\] prefers zsh/);
+  });
+
+  it("describes whose memory it is and tells agents to summarise and to use forget", async () => {
+    const s = await make();
+    const d = (n: string) => s.harness.registrations.agentTools.find(t => t.name === n)!.description;
+    for (const n of ["honcho_search", "honcho_chat"]) { expect(d(n)).toContain("bb owner"); expect(d(n)).toMatch(/[Ss]ummarise/); }
+    expect(d("honcho_search")).toContain("raw search hits");
+    expect(d("honcho_conclusions")).toContain("`forget`");
   });
 
   it("returns a clear message instead of throwing when Honcho is offline or rejects the key", async () => {

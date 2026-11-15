@@ -1,5 +1,5 @@
 import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
-import type { Deps, ConclusionView } from "../contract.js";
+import type { Deps, ConclusionOrigin, ConclusionView } from "../contract.js";
 import { HonchoError, type Conclusion, type HonchoClient } from "../honcho-client.js";
 import { scopeSlug } from "../mapping.js";
 import { createScopeResolver, type ThreadRef } from "../capture/scope.js";
@@ -103,12 +103,13 @@ export class KeyLevelProbe {
   }
 }
 
-/** Explicit conclusions without a local mark come from an agent (claude-honcho's
- * tools); bb's own imports are marked confirmed when created. */
+/** Only conclusions our honcho_conclude created carry a local agent mark. An unmarked conclusion
+ * (including the deriver's own explicit ones) was learned from the user's messages. */
 export function toView(conclusion: Conclusion, mark: ConclusionMark | null | undefined): ConclusionView {
   const confirmed = mark?.confirmed ?? false;
-  const agentWritten = mark ? mark.agentWritten : conclusion.level === "explicit";
-  return { ...conclusion, agentWritten, confirmed };
+  const agentWritten = mark?.agentWritten ?? false;
+  const origin: ConclusionOrigin = confirmed ? "confirmed" : agentWritten ? "agent" : "learned";
+  return { ...conclusion, origin, agentWritten, confirmed };
 }
 
 export function describeError(error: unknown): string {
@@ -118,6 +119,10 @@ export function describeError(error: unknown): string {
       case "auth": return error.status === 403
         ? "The Honcho key is not allowed to do this (HTTP 403)."
         : "Honcho rejected the API key (auth failure). Fix the key in ~/.honcho/config.json or the plugin's connection settings.";
+      case "timeout": {
+        const seconds = error.timeoutMs ? Math.round(error.timeoutMs / 1000) : null;
+        return `Honcho took too long to answer${seconds ? ` (${seconds} s)` : ""}; try again or use honcho_search.`;
+      }
       case "rate-limited": return "Honcho is rate-limiting requests; try again shortly.";
       case "validation": return "Honcho rejected the request as invalid.";
       default: return `Honcho request failed (${error.kind}${error.status ? ` ${error.status}` : ""}).`;
@@ -134,6 +139,8 @@ export interface RecallShared {
   host: ExperimentalHostClient<RecallHostContract> | null;
   ports: RecallPorts;
   peerName: string | null;
+  /** Drops the cached peer card and scope summaries and refreshes them. Set by the recall service; a no-op before. */
+  invalidateMemory: () => Promise<void>;
   client(): Promise<{ client: HonchoClient; peer: string }>;
 }
 
@@ -153,7 +160,7 @@ export function recallShared(bb: BbPluginApi, deps: Deps, ports: RecallPorts = {
     // Without a resolver from server.ts (unit tests), capture's resolver over this bb.
     scopes: new ScopeResolver(portsRef, thread => (portsRef.resolveScope ?? (fallback ??= createScopeResolver(bb)))(thread)),
     gate: new PrivacyGate(bb, deps, portsRef),
-    host, ports: portsRef, peerName: null,
+    host, ports: portsRef, peerName: null, invalidateMemory: async () => undefined,
     async client() {
       const [client, config] = await Promise.all([deps.client(), deps.config()]);
       state.peerName = config.config.peerName;
