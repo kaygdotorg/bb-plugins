@@ -22,9 +22,14 @@ export const OUTBOX_MIGRATIONS = [
    CREATE TABLE superseded (thread TEXT NOT NULL, from_seq INTEGER NOT NULL CHECK(from_seq >= 0),
      to_seq INTEGER NOT NULL CHECK(to_seq >= from_seq), PRIMARY KEY(thread, from_seq));
    CREATE TABLE provider_threads (thread TEXT NOT NULL, provider_thread_id TEXT NOT NULL, PRIMARY KEY(thread, provider_thread_id));`,
+  // v3: when a pause started (epoch ms, shown on the Memory page) moves out of kv; plus a small meta table
+  // (first_started_at: when the plugin first saw this database).
+  `ALTER TABLE pause_ranges ADD COLUMN since_at INTEGER;
+   UPDATE pause_ranges SET since_at=from_value WHERE kind='project';
+   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
 ] as const;
 export interface InFlight { thread: string; firstSeq: number; lastSeq: number; startedAt: number }
-export interface PauseRange { kind: "thread" | "project"; id: string; from: number; to: number | null }
+export interface PauseRange { kind: "thread" | "project"; id: string; from: number; to: number | null; sinceAt: number | null }
 export interface RetryState { attempts: number; nextAt: number; lastError: string }
 export type RetryError = "auth" | "offline" | "rate-limited" | "validation" | "server" | "http";
 
@@ -86,6 +91,22 @@ export class Outbox {
     this.db.prepare("INSERT INTO retries VALUES (?,?,?,?) ON CONFLICT(thread) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at,last_error=excluded.last_error").run(thread, attempts, nextAt, lastError);
     return { attempts, nextAt, lastError };
   }
+  /** Drops retry/backoff state without touching the cursor. */
+  clearRetry(thread: string): void {
+    this.db.prepare("DELETE FROM retries WHERE thread=?").run(thread);
+  }
+  /** Write-once meta value; returns the stored one (the first writer wins). */
+  setMetaOnce(key: string, value: string): string {
+    this.db.prepare("INSERT OR IGNORE INTO meta VALUES (?,?)").run(key, value);
+    return (this.db.prepare("SELECT value FROM meta WHERE key=?").get(key) as { value: string }).value;
+  }
+  meta(key: string): string | undefined {
+    return (this.db.prepare("SELECT value FROM meta WHERE key=?").get(key) as { value: string } | undefined)?.value;
+  }
+  /** Epoch ms the plugin first started against this database; recorded once. */
+  recordFirstStart(now: number): number {
+    return Number(this.setMetaOnce("first_started_at", String(now)));
+  }
   markSwitchOver(thread: string, startSeq: number): void {
     seq(startSeq);
     this.db.prepare("INSERT INTO switch_over VALUES (?,?) ON CONFLICT(thread) DO NOTHING").run(thread, startSeq);
@@ -97,13 +118,14 @@ export class Outbox {
    * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of event
    * createdAt (epoch ms) instead, applied to every thread in the project.
    * `boundary` is the newest seq already seen on the thread (thread kind) or the current time
-   * (project kind): pausing covers everything after it, resuming closes the range at it. */
-  setPaused(kind: "thread" | "project", id: string, paused: boolean, boundary: number): void {
+   * (project kind): pausing covers everything after it, resuming closes the range at it.
+   * `sinceAt` is the wall-clock time the pause began, stored with the range. */
+  setPaused(kind: "thread" | "project", id: string, paused: boolean, boundary: number, sinceAt: number = Date.now()): void {
     seq(boundary);
     this.db.transaction(() => {
       const open = this.db.prepare("SELECT from_value FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").get(kind, id) as { from_value: number } | undefined;
       if (paused) {
-        if (!open) this.db.prepare("INSERT INTO pause_ranges VALUES (?,?,?,NULL)").run(kind, id, kind === "thread" ? boundary + 1 : boundary);
+        if (!open) this.db.prepare("INSERT INTO pause_ranges (kind,id,from_value,to_value,since_at) VALUES (?,?,?,NULL,?)").run(kind, id, kind === "thread" ? boundary + 1 : boundary, sinceAt);
         return;
       }
       if (!open) return;
@@ -122,8 +144,8 @@ export class Outbox {
     return !!this.db.prepare("SELECT 1 FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").get(kind, id);
   }
   pauses(): PauseRange[] {
-    return (this.db.prepare("SELECT kind,id,from_value,to_value FROM pause_ranges ORDER BY kind,id,from_value").all() as Array<{ kind: "thread" | "project"; id: string; from_value: number; to_value: number | null }>)
-      .map(r => ({ kind: r.kind, id: r.id, from: r.from_value, to: r.to_value }));
+    return (this.db.prepare("SELECT kind,id,from_value,to_value,since_at FROM pause_ranges ORDER BY kind,id,from_value").all() as Array<{ kind: "thread" | "project"; id: string; from_value: number; to_value: number | null; since_at: number | null }>)
+      .map(r => ({ kind: r.kind, id: r.id, from: r.from_value, to: r.to_value, sinceAt: r.since_at }));
   }
   /** Forks and side chats copy the parent's completed-turn events: their cursor starts after the last copied seq. */
   setForkSource(thread: string, sourceThreadId: string, boundarySeq: number): void {

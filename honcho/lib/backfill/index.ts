@@ -4,6 +4,7 @@ import { HonchoError, type MessageDraft } from "../honcho-client";
 import { scopeSlug, sessionMetadata, sessionPeers } from "../mapping";
 import { transformEvents, type CaptureEvent, type TransformContext } from "../transform";
 import { redact } from "../redact";
+import { backfillCursorEnd, isBackfilled } from "../capture/switchover";
 import { claudeSessionName, codexChatInstanceName, codexPerDirectoryName, TimeIndex } from "./dedupe";
 import { honchoPort, type BackfillDeps, type HonchoPort, type ThreadSummary } from "./ports";
 import { defaultSleep, RateLimiter } from "./rate";
@@ -64,7 +65,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
-  async function readEvents(threadId: string, afterSeq: number, beforeSeq: number | undefined, types: readonly [string, ...string[]]): Promise<CaptureEvent[]> {
+  async function readEvents(threadId: string, afterSeq: number, upToSeq: number | undefined, types: readonly [string, ...string[]]): Promise<CaptureEvent[]> {
     const out: CaptureEvent[] = [];
     for (let after = afterSeq; ;) {
       const page = await bb.sdk.threads.events.list({
@@ -73,7 +74,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
       }) as CaptureEvent[];
       let reachedMarker = false;
       for (const event of page) {
-        if (beforeSeq !== undefined && event.seq >= beforeSeq) { reachedMarker = true; break; }
+        if (!isBackfilled(event.seq, upToSeq)) { reachedMarker = true; break; }
         out.push(event);
       }
       if (reachedMarker || page.length < EVENT_PAGE) return out;
@@ -94,11 +95,11 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     if (await deps.isDenied?.(thread)) return empty();
     const cursor = store.cursor(thread.id);
     const marker = deps.outbox.switchOver(thread.id); // live capture owns events from here on
-    if (marker !== undefined && cursor >= marker - 1) return empty(cursor);
+    if (marker !== undefined && cursor >= backfillCursorEnd(marker)) return empty(cursor);
     const events = await readEvents(thread.id, cursor, marker, EVENT_TYPES);
     const identities = (await readEvents(thread.id, 0, undefined, ["thread/identity"])) as Array<CaptureEvent & { type: "thread/identity" }>;
     const providerThreadIds = [...new Set(identities.map(e => e.data.providerThreadId).filter(Boolean))];
-    if (events.length === 0) return empty(marker !== undefined ? marker - 1 : cursor);
+    if (events.length === 0) return empty(marker !== undefined ? backfillCursorEnd(marker) : cursor);
 
     const config = await deps.config();
     const extra = await deps.redaction?.();
@@ -120,7 +121,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     }
     const lastSeq = events[events.length - 1].seq;
     const pendingFloor = result.pendingRequests.length ? Math.min(...result.pendingRequests.map(p => p.seq)) - 1 : undefined;
-    let finalCursor = marker !== undefined ? marker - 1 : lastSeq;
+    let finalCursor = marker !== undefined ? backfillCursorEnd(marker) : lastSeq;
     if (pendingFloor !== undefined && marker === undefined) finalCursor = Math.max(cursor, Math.min(finalCursor, pendingFloor));
 
     const since = opts.since ? Date.parse(opts.since) : NaN;
