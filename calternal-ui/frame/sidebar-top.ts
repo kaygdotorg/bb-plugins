@@ -18,6 +18,8 @@ import { R } from "./selectors";
 const OVERLAY = '[data-testid="app-sidebar-trigger-overlay"]';
 const SIDEBAR = '[data-sidebar="sidebar"]';
 const ROW = '[data-testid="app-sidebar-top-reserve-row"]';
+/** The sidebar's rows, in order of preference: the plugin's nav, bb's menu rows, bb's group labels. */
+const REFS = ['[data-cf-nav] button', '[data-sidebar="content"] [data-sidebar="menu-button"]', '[data-sidebar="group-label"]'];
 
 const CSS = `
 /* Back/forward in the sidebar's top rows (main and Settings): gone. */
@@ -41,6 +43,28 @@ function slideOf(sidebar: HTMLElement): { ms: number; ease: string } {
   return { ms: 200, ease: "linear" };
 }
 
+/**
+ * The sidebar's content column, relative to the sidebar's left edge (so it holds mid-slide): where
+ * its rows' content starts (the first row's icon, else its text) and where the rows end on the
+ * right. Measured on the rows themselves, not derived from bb's top row: in some bb builds the
+ * rows sit further in than the top row's padding (kayg's screenshot: ~2.5pt both sides).
+ * Null on sidebars without bb's top reserve row (Settings).
+ */
+export function sidebarColumn(sidebar: HTMLElement): { left: number; right: number } | null {
+  if (!sidebar.querySelector(ROW)) return null;
+  const base = sidebar.getBoundingClientRect().left;
+  for (const sel of REFS) {
+    for (const el of sidebar.querySelectorAll<HTMLElement>(sel)) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      const icon = el.querySelector("svg")?.getBoundingClientRect();
+      const left = icon && icon.width > 0 && icon.left - r.left < 24 ? icon.left : r.left + (parseFloat(getComputedStyle(el).paddingLeft) || 0);
+      return { left: left - base, right: r.right - base };
+    }
+  }
+  return null;
+}
+
 export function mountSidebarTop(): () => void {
   const style = document.createElement("style");
   style.dataset.bbPlugin = "calternal-ui";
@@ -48,24 +72,32 @@ export function mountSidebarTop(): () => void {
   document.head.append(style);
 
   const wide = matchMedia("(min-width: 768px)");
-  let lastExpanded: boolean | null = null;
+  let lastMode: string | null = null;
   let frame = 0;
   let slidingTimer = 0;
 
-  /** Expanded sidebar on desktop: the toggle's right edge on the top row's content edge. */
+  /**
+   * Where the toggle goes. Expanded (desktop, main sidebar): its right edge on the sidebar rows'
+   * right edge. Collapsed (desktop): one card gap (+ the card's 1px border) in from bb's spot, since
+   * our chat card floats inside the window. Elsewhere (Settings, phones): bb's spot. All three are
+   * the one --cf-toggle-dx, so every change between them slides.
+   */
   const place = () => {
     frame = 0;
     const overlay = document.querySelector<HTMLElement>(OVERLAY);
     const toggle = overlay?.querySelector<HTMLElement>("button");
     const sidebar = document.querySelector<HTMLElement>(SIDEBAR);
     if (!overlay || !toggle || !sidebar) return;
+    const state = sidebar.closest("[data-state]")?.getAttribute("data-state");
+    const collapsed = wide.matches && state === "collapsed";
+    document.documentElement.toggleAttribute("data-cf-sb-collapsed", collapsed);
     // The main sidebar only (bb's top reserve row): Settings' row is [toggle][search], already full.
-    const row = sidebar.querySelector<HTMLElement>(ROW);
-    const box = row?.getBoundingClientRect();
-    const expanded = !!box && box.width > 0 && wide.matches && sidebar.closest("[data-state]")?.getAttribute("data-state") === "expanded";
-    // Slide only when the sidebar opens or closes, not while its edge is dragged, and with the
-    // sidebar: bb slides its fixed container's `left`, so copy that transition's duration and curve.
-    if (lastExpanded !== null && expanded !== lastExpanded) {
+    const col = sidebarColumn(sidebar);
+    const expanded = !!col && wide.matches && state === "expanded";
+    const mode = expanded ? "expanded" : collapsed ? "collapsed" : "rest";
+    // Slide when the sidebar opens or closes (not while its edge is dragged), with the sidebar:
+    // bb slides its fixed container's `left`, so copy that transition's duration and curve.
+    if (lastMode !== null && mode !== lastMode) {
       const slide = slideOf(sidebar);
       overlay.style.setProperty("--cf-slide-ms", `${slide.ms}ms`);
       overlay.style.setProperty("--cf-slide-ease", slide.ease);
@@ -73,24 +105,24 @@ export function mountSidebarTop(): () => void {
       window.clearTimeout(slidingTimer);
       slidingTimer = window.setTimeout(() => overlay.removeAttribute("data-cf-sliding"), slide.ms + 60);
     }
-    lastExpanded = expanded;
-    if (!expanded || !row || !box) { overlay.style.setProperty("--cf-toggle-dx", "0px"); return; }
-    // The row's content edge (its 8.8px padding in), which is also every sidebar row's right edge.
+    lastMode = mode;
+    if (mode === "collapsed") { overlay.style.setProperty("--cf-toggle-dx", "calc(var(--cf-gap) + 1px)"); return; }
+    if (mode !== "expanded" || !col) { overlay.style.setProperty("--cf-toggle-dx", "0px"); return; }
     // From the RESTING layout, not the on-screen box: bb's sidebar is off-canvas and slides in by
-    // `left`, so at the moment it opens it is still off screen (its box would put the toggle at x<0).
-    // At rest the sidebar starts at the window's left edge (+ the safe area, the overlay's own left).
+    // `left`, so at the moment it opens it is still off screen. At rest it starts at the window's
+    // left edge (+ the safe area: the overlay's own left); col.right is relative to the sidebar.
     const restLeft = parseFloat(getComputedStyle(overlay).left) || 0;
-    const inset = box.left - sidebar.getBoundingClientRect().left; // the row inside the sidebar (both slide together)
-    const rowRight = restLeft + inset + box.width - (parseFloat(getComputedStyle(row).paddingRight) || 0);
     // The toggle's right edge without our shift. Mid-slide the shift on screen is the transition's
     // current value (the computed translate), not the target in --cf-toggle-dx.
     const current = toggle.getBoundingClientRect().right - (parseFloat(getComputedStyle(overlay).translate) || 0);
-    overlay.style.setProperty("--cf-toggle-dx", `${(rowRight - current).toFixed(2)}px`);
+    overlay.style.setProperty("--cf-toggle-dx", `${(restLeft + col.right - current).toFixed(2)}px`);
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(place); };
 
   const resize = new ResizeObserver(schedule);
-  const states = new MutationObserver(schedule);
+  // A state flip places the toggle at once (a microtask, before the next style pass), so the slide
+  // starts in the same frame as bb's; a rAF later would let the old position render one frame.
+  const states = new MutationObserver(() => { cancelAnimationFrame(frame); place(); });
   let observed: Element | null = null;
   const attach = () => {
     const sidebar = document.querySelector(SIDEBAR);
@@ -114,6 +146,7 @@ export function mountSidebarTop(): () => void {
     wide.removeEventListener("change", schedule);
     window.removeEventListener("resize", schedule);
     document.querySelector<HTMLElement>(OVERLAY)?.style.removeProperty("--cf-toggle-dx");
+    document.documentElement.removeAttribute("data-cf-sb-collapsed");
     style.remove();
   };
 }

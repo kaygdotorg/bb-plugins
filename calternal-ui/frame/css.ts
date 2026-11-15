@@ -604,8 +604,9 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
 
   /* Only while collapsed (expanded, it lines up with the sidebar's own row): bb pins its toggle to the window's top-left for a card
      that starts at (0,0). Ours floats one gap (+1px border) in, so the toggle follows. */
-  ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-sidebar-trigger-overlay"],
-  ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-desktop-sidebar-trigger"] {
+  /* (The overlay's shift is sidebar-top.ts's --cf-toggle-dx, so it slides; it sets the attribute
+     below, which replaces a root :has() that re-checked the whole document on every data-state change.) */
+  ${R}[data-cf-sb-collapsed] [data-testid="app-desktop-sidebar-trigger"] {
     translate: calc(var(--cf-gap) + 1px) 0; /* + the card's 1px side border */
   }
 

@@ -11,12 +11,13 @@
  * baselines, swashes), so no fixed offset centres every font. Once the font has loaded, the
  * ink box of the actual text is measured (canvas measureText) and the wordmark is shifted so
  * the INK's centre sits on the toggle pill's centre line, and the ink starts on the sidebar's
- * text column (where "Threads" starts: the leading edge, like a macOS sidebar title). On phones the ink starts at the
+ * content column (the first row's icon, from sidebar-top.ts sidebarColumn: the leading edge, like a macOS sidebar title). On phones the ink starts at the
  * 20px side inset instead, like Claude's iOS app.
  * The line box is tall enough that swashes and descenders are never clipped.
  */
 import { R } from "./selectors";
 import { s } from "./pills";
+import { sidebarColumn } from "./sidebar-top";
 
 const ROW = '[data-sidebar="sidebar"] [data-testid="app-sidebar-top-reserve-row"]';
 
@@ -25,8 +26,7 @@ let el: HTMLSpanElement | null = null;
 
 /** The toggle pill: its centre is the row's centre line. */
 const TOGGLE = '[data-sidebar="trigger"]';
-/** The leading column: where the sidebar's group labels ("Threads") start their text. */
-const LEAD = '[data-sidebar="sidebar"] [data-sidebar="group-label"]';
+/** The leading column comes from sidebar-top.ts's sidebarColumn (the rows' icon/text start). */
 const LEAD_FALLBACK = 17.6; // the row inset 8.8 + the label's padding 8.8
 /** Phones: the side inset (pills-phone.ts --cf-ph-side). */
 const PHONE = "(max-width: 767px)";
@@ -97,8 +97,8 @@ async function align() {
   // Horizontal: the ink's left edge on the text column (phones: the side inset).
   // The row's content box starts after its own padding; the sidebar may still be sliding in
   // on load, so this runs again when the row settles (mountBrand observes it).
-  const label = document.querySelector<HTMLElement>(LEAD);
-  const labelBox = label?.getBoundingClientRect();
+  const sidebar = document.querySelector<HTMLElement>('[data-sidebar="sidebar"]');
+  const col = sidebar ? sidebarColumn(sidebar) : null;
   const rowEl = node.parentElement;
   const phone = matchMedia(PHONE).matches;
   if (rowEl) {
@@ -107,7 +107,7 @@ async function align() {
     const inkLeft = (parseFloat(cs.paddingLeft) || 0) - m.actualBoundingBoxLeft; // ink start inside the element
     const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ui-scale")) || 1;
     const start = phone ? row.left + PHONE_INSET * scale
-      : label && labelBox && labelBox.width > 0 ? labelBox.left + (parseFloat(getComputedStyle(label).paddingLeft) || 0)
+      : col && sidebar ? sidebar.getBoundingClientRect().left + col.left
       : row.left + LEAD_FALLBACK * scale;
     node.style.setProperty("--cf-brand-left", `${(start - contentLeft - inkLeft).toFixed(2)}px`);
   }
