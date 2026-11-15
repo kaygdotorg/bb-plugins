@@ -318,12 +318,16 @@ describe("pauses", () => {
 
   it("checks pauses at send time, and pauses whole projects by time", async () => {
     fake.addThread("thr_a");
-    fake.prompt("thr_a", "queued then paused");
+    fake.prompt("thr_a", "sent before the pause");
     const { svc } = service();
+    await pass(svc);
+    fake.prompt("thr_a", "queued then paused");
+    await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
     clock.advance(1_000);
     await svc.setPaused({ kind: "project", id: "proj_fixture" }, true);
     await pass(svc);
-    expect(texts()).toEqual(["queued then paused"]); // written before the pause
+    // Still inside the grace window when the project was paused: never uploaded.
+    expect(texts()).toEqual(["sent before the pause"]);
     fake.prompt("thr_a", "during project pause");
     await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
     await pass(svc);
@@ -333,7 +337,8 @@ describe("pauses", () => {
     fake.prompt("thr_a", "after project pause");
     await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
     await pass(svc);
-    expect(texts()).toEqual(["queued then paused", "after project pause"]);
+    // Resuming doesn't release what was waiting when the pause began.
+    expect(texts()).toEqual(["sent before the pause", "after project pause"]);
   });
 });
 
@@ -434,9 +439,9 @@ describe("switch-over gate", () => {
 });
 
 describe("tripwire", () => {
-  const harnessSession = async (name: string) => {
+  const harnessSession = async (name: string, at = clock.now()) => {
     const client = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test" });
-    await client.createMessages(name, [{ peer_id: "hermy", content: "harness wrote this" }]);
+    await client.createMessages(name, [{ peer_id: "hermy", content: "harness wrote this", created_at: new Date(at).toISOString() }]);
   };
 
   it("fires when claude-honcho also wrote a session for the provider thread id", async () => {

@@ -13,3 +13,6 @@ export const isCaptured = (seq: number, marker: number | undefined): boolean => 
 export const isBackfilled = (seq: number, marker: number | undefined): boolean => marker === undefined || seq <= marker;
 /** Backfill's cursor once it has covered everything it owns. */
 export const backfillCursorEnd = (marker: number): number => marker;
+
+/** The switch-over gate is always open for providers that have no harness hooks to turn off. */
+export const gateAlwaysOpen = (providerId: string) => providerId === "pi" || /^acp(?:[-:_]|$)/.test(providerId);

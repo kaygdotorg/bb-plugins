@@ -23,7 +23,7 @@ describe("deny globs", () => {
 describe("git facts through the host file API", () => {
   const files = (tree: Record<string, string>) => ({
     async read({ path }: { path: string }) {
-      if (!(path in tree)) throw new Error("missing");
+      if (!(path in tree)) throw Object.assign(new Error("missing"), { status: 404, code: "ENOENT" });
       return { content: tree[path], contentEncoding: "utf8" as const } as any;
     },
   });

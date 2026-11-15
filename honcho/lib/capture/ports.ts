@@ -25,26 +25,39 @@ export type CaptureBb = {
 export interface GitInfo { commonDir: string | null; remote: string | null }
 export type GitInfoReader = (env: { hostId: string; path: string }) => Promise<GitInfo>;
 
+/** A file bb says is not there (or is not a file). Any other read error (host offline,
+ * timeout, permission) is not an answer: callers must not treat it as absent. */
+export function isAbsentFile(error: unknown): boolean {
+  const { code, status } = (error ?? {}) as { code?: unknown; status?: unknown };
+  if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") return true;
+  return status === 404 && (code === undefined || code === "not_found");
+}
+
 /** Reads .git through the thread's host with bb's file API, so no host worker
  * is needed. A worktree's .git file points at its gitdir, whose `commondir`
- * names the shared repo dir (what `git rev-parse --git-common-dir` prints). */
+ * names the shared repo dir (what `git rev-parse --git-common-dir` prints).
+ * Only "not found" counts as absent; other read errors reject, so a host that is
+ * offline is never mistaken for "no repo, no remote". */
 export function filesGitInfo(files: CaptureBb["sdk"]["files"]): GitInfoReader {
   const read = async (hostId: string, path: string): Promise<string | null> => {
     try {
       const file = await files.read({ hostId, path });
       return file.contentEncoding === "base64" ? Buffer.from(file.content, "base64").toString("utf8") : file.content;
-    } catch { return null; }
+    } catch (error) { if (isAbsentFile(error)) return null; throw error; }
   };
   return async ({ hostId, path }) => {
     let commonDir: string | null = null;
-    const dotGit = await read(hostId, posix.join(path, ".git"));
-    const gitdir = dotGit?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
-    if (gitdir) {
-      const dir = posix.resolve(path, gitdir);
-      const common = (await read(hostId, posix.join(dir, "commondir")))?.trim();
-      commonDir = common ? posix.resolve(dir, common) : posix.dirname(posix.dirname(dir));
-    } else if (await read(hostId, posix.join(path, ".git", "HEAD")) !== null) {
+    // HEAD first: reading `.git` itself when it is a directory is an error, not "absent".
+    if (await read(hostId, posix.join(path, ".git", "HEAD")) !== null) {
       commonDir = posix.join(path, ".git");
+    } else {
+      const dotGit = await read(hostId, posix.join(path, ".git"));
+      const gitdir = dotGit?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+      if (gitdir) {
+        const dir = posix.resolve(path, gitdir);
+        const common = (await read(hostId, posix.join(dir, "commondir")))?.trim();
+        commonDir = common ? posix.resolve(dir, common) : posix.dirname(posix.dirname(dir));
+      }
     }
     if (!commonDir) return { commonDir: null, remote: null };
     const config = await read(hostId, posix.join(commonDir, "config"));
@@ -79,6 +92,15 @@ export async function sessionMessages(client: HonchoClient, session: string, met
 export async function sessionHasMessages(client: HonchoClient, session: string): Promise<boolean> {
   try { return (await client.listMessages(session, {}, { page: 1, size: 1 })).items.length > 0; }
   catch (error) { if (notFound(error)) return false; throw error; }
+}
+
+/** Tripwire probe: does a harness-named session hold a message created at or after `since` (epoch ms)?
+ * Reads the newest message only. */
+export async function sessionHasMessagesSince(client: HonchoClient, session: string, since: number): Promise<boolean> {
+  try {
+    const newest = (await client.listMessages(session, {}, { page: 1, size: 1, reverse: true })).items[0];
+    return newest !== undefined && Date.parse(newest.created_at) >= since;
+  } catch (error) { if (notFound(error)) return false; throw error; }
 }
 
 export async function allConclusions(client: HonchoClient, filters: ConclusionFilters = {}, max = 100_000): Promise<Conclusion[]> {

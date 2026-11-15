@@ -11,9 +11,11 @@ import { sessionMetadata } from "../mapping.js";
 import type { InFlight, RetryError } from "../outbox.js";
 import { readPrivacy, recordProviderSeen, resolvePeer } from "../rpc-server.js";
 import { isEditMessage, providerThreadIdOf, transformEvents, type CaptureEvent, type TransformContext, type TransformResult } from "../transform.js";
-import { sessionHasMessages, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
-import { captureCursorStart } from "./switchover.js";
-import { scopeKey, threadFacts, type ThreadRef } from "./scope.js";
+import { sessionHasMessagesSince, sessionMessages, systemClock, type CaptureBb, type CaptureDeps } from "./ports.js";
+import { captureCursorStart, gateAlwaysOpen } from "./switchover.js";
+export { gateAlwaysOpen } from "./switchover.js";
+import { FactsUnavailable, scopeKey, threadFacts, type ThreadRef } from "./scope.js";
+import { FORK_SCAN_TYPES, forkBoundarySeq } from "./fork.js";
 
 type Thread = PluginThreadEventPayloads["thread.created"]["thread"];
 type EventType = CaptureEvent["type"];
@@ -33,6 +35,8 @@ const STALE_PENDING_MS = 10 * 60_000;
 export const LEASE_TTL_MS = 60_000;
 /** How soon a thread whose lease another generation holds is tried again. */
 const LEASE_RETRY_MS = 5_000;
+/** threads.list accepts at most this many threadIds per call. */
+const THREAD_IDS_PER_LIST = 200;
 export const SWITCHOVER_ENV = "BB_HONCHO";
 export const NOT_SWITCHED_OVER = "harness capture still active until the session rebuilds";
 
@@ -59,16 +63,17 @@ interface ThreadState {
   gateScanSeq: number;
   lastTurnCompleted: number;
   editsDone: Set<number>;
+  /** Newest seq bb reported for the thread (experimental_thread.events), or read from its log. */
+  seenSeq: number;
 }
 
 const data = (e: CaptureEvent) => e.data as unknown as Record<string, unknown>;
 const seqOf = (m: MessageDraft) => Number(m.metadata?.bb_seq);
 const partOf = (m: MessageDraft) => Number(m.metadata?.bb_part ?? 0);
 const isNotFound = (e: unknown) => (e as { status?: number } | null)?.status === 404 || (e as { code?: string } | null)?.code === "thread_not_found";
+const honchoNotFound = (e: unknown) => e instanceof HonchoError && e.status === 404;
 /** claude-honcho's sanitizeForSessionName / getSessionName. */
 export const sanitizeSessionName = (s: string) => s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
-/** The switch-over gate is always open for providers that have no harness hooks to turn off. */
-export const gateAlwaysOpen = (providerId: string) => providerId === "pi" || /^acp(?:[-:_]|$)/.test(providerId);
 
 function semaphore(limit: number) {
   let active = 0;
@@ -130,6 +135,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   const limit = semaphore(deps.concurrency ?? 4);
   const states = new Map<string, ThreadState>();
   const deleted = new Set<string>();
+  const deleting = new Set<string>();
   const providers = new Map<string, Promise<string | undefined>>();
   const deleteTimers = new Map<string, unknown>();
   let authFailing = false;
@@ -150,17 +156,23 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     let st = states.get(id);
     if (!st) {
       st = { id, again: false, lastUploadAt: null, queued: 0, oldestPendingAt: null, blocked: null, sessionReady: false,
-        peers: new Set(), gateScanSeq: 0, lastTurnCompleted: 0, editsDone: new Set() };
+        peers: new Set(), gateScanSeq: 0, lastTurnCompleted: 0, editsDone: new Set(), seenSeq: 0 };
       states.set(id, st);
     }
     return st;
   };
   const privacy = async (): Promise<PrivacySettings> => deps.privacy ? await deps.privacy() : readPrivacy(bb.storage.kv);
   const requiresSwitchover = async () => (await deps.settings?.())?.captureRequiresSwitchover ?? true;
+  /** A thread's provider. A thread bb doesn't have resolves to undefined (a truly unknown sender);
+   * any other failure rejects, so the caller holds its cursor and retries instead of skipping. */
   const providerOf = (threadId: string) => {
     let hit = providers.get(threadId);
     if (!hit) {
-      hit = (bb.sdk.threads.get({ threadId }) as Promise<Thread>).then(t => t.providerId, () => { providers.delete(threadId); return undefined; });
+      hit = (bb.sdk.threads.get({ threadId }) as Promise<Thread>).then(t => t.providerId, error => {
+        if (isNotFound(error)) return undefined;
+        providers.delete(threadId);
+        throw error;
+      });
       providers.set(threadId, hit);
     }
     return hit;
@@ -177,6 +189,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       const page = await bb.sdk.threads.events.list({ threadId, afterSeq: String(after), limit: String(PAGE), order: "asc",
         types: types as [EventType, ...EventType[]] });
       out.push(...page);
+      const last = page.at(-1)?.seq;
+      if (last !== undefined) { const st = states.get(threadId); if (st) st.seenSeq = Math.max(st.seenSeq, last); }
       if (page.length < PAGE) return out;
       after = page[page.length - 1].seq;
     }
@@ -268,10 +282,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
    * their original createdAt, so they are the prefix older than the fork. */
   async function forkBoundary(thread: Thread): Promise<void> {
     if (thread.originKind !== "fork" || outbox.forkSource(thread.id)) return;
-    const events = await readEvents(thread.id, 0, [...READ_TYPES, "turn/started"]);
-    if (!events.length) return;
-    let boundary = 0;
-    for (const e of events) { if (e.createdAt < thread.createdAt) boundary = e.seq; else break; }
+    const boundary = await forkBoundarySeq(thread, () => readEvents(thread.id, 0, FORK_SCAN_TYPES));
+    if (boundary === undefined) return;
     outbox.setForkSource(thread.id, thread.sourceThreadId ?? thread.parentThreadId ?? "", boundary);
   }
 
@@ -364,30 +376,32 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     for (const e of events) if (e.type === "client/turn/requested") model = (e.data.execution as { model?: string } | undefined)?.model ?? model;
     return model;
   };
-  const sendable = (thread: Thread, seq: number, createdAt: number) => outbox.shouldSend(thread.id, seq, { id: thread.projectId, createdAt });
+  /** Send-time gate. A project pause stops anything it overlapped between the event's creation and now. */
+  const sendable = (thread: Thread, seq: number, createdAt: number) => outbox.shouldSend(thread.id, seq, { id: thread.projectId, createdAt, sendAt: clock.now() });
 
-  /** Posts messages; a validation (400/422) rejection splits the batch and retries the
-   * halves until the single bad message is found. That message is skipped and recorded
-   * in activity (seq and part only, never content). Other errors propagate for backoff.
+  /** Posts messages in POSTs of at most 100. A validation (400/422) rejection splits only
+   * the rejected POST and retries its halves until the single bad message is found; POSTs
+   * already accepted are never sent again. The bad message is skipped and recorded in
+   * activity (seq and part only, never content). Other errors propagate for backoff.
    * Returns the number of messages skipped. */
   async function post(client: HonchoClient, threadId: string, messages: MessageDraft[]): Promise<number> {
     let skipped = 0;
-    const send = async (group: MessageDraft[]): Promise<void> => {
-      try { for (const chunk of chunks(group)) { holdLease(threadId); await client.createMessages(threadId, chunk); } }
+    const send = async (chunk: MessageDraft[]): Promise<void> => {
+      try { holdLease(threadId); await client.createMessages(threadId, chunk); }
       catch (error) {
         if (!(error instanceof HonchoError) || error.kind !== "validation") throw error;
-        if (group.length === 1) {
+        if (chunk.length === 1) {
           skipped++;
-          deps.activity.record({ kind: "failure", threadId, summary: `skipped message seq ${seqOf(group[0])} part ${partOf(group[0])}: rejected by honcho (validation)`, error: "validation" });
-          bb.log.warn(`honcho capture: ${threadId} skipped seq ${seqOf(group[0])} (validation)`);
+          deps.activity.record({ kind: "failure", threadId, summary: `skipped message seq ${seqOf(chunk[0])} part ${partOf(chunk[0])}: rejected by honcho (validation)`, error: "validation" });
+          bb.log.warn(`honcho capture: ${threadId} skipped seq ${seqOf(chunk[0])} (validation)`);
           return;
         }
-        const mid = Math.ceil(group.length / 2);
-        await send(group.slice(0, mid));
-        await send(group.slice(mid));
+        const mid = Math.ceil(chunk.length / 2);
+        await send(chunk.slice(0, mid));
+        await send(chunk.slice(mid));
       }
     };
-    await send(messages);
+    for (const chunk of chunks(messages)) await send(chunk);
     authFailing = false;
     return skipped;
   }
@@ -421,14 +435,21 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (disposed || deleted.has(id)) return;
     let thread: Thread;
     try { thread = await bb.sdk.threads.get({ threadId: id }) as Thread; }
-    catch (error) { if (isNotFound(error)) return; throw error; }
-    if (thread.deletedAt !== null) return;
+    catch (error) { if (isNotFound(error)) { goneWhileDown(id); return; } throw error; }
+    if (thread.deletedAt !== null) { goneWhileDown(id); return; }
     st.thread = thread;
 
     const startSeq = await gate(st, thread);
     if (startSeq === undefined) return;
     const settings = await privacy();
-    const deny = await facts.denied(thread, settings);
+    let deny: string | null;
+    try { deny = await facts.denied(thread, settings); }
+    catch (error) {
+      // Fail closed: without the environment or git facts the deny list can't be checked, so
+      // nothing is uploaded and the cursor stays put; the backoff retries.
+      if (error instanceof FactsUnavailable) st.blocked = error.message;
+      throw error;
+    }
     if (deny) {
       // Denied threads never upload; what was logged while denied is skipped for good.
       st.blocked = deny; st.queued = 0; st.oldestPendingAt = null;
@@ -486,7 +507,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     st.queued = later.length;
     st.oldestPendingAt = oldest(later);
 
-    if (eligible.some(e => e.type === "turn/completed" && e.seq > startSeq)) await checkTripwire(thread);
+    if (eligible.some(e => e.type === "turn/completed" && e.seq > startSeq)) await checkTripwire(thread, startSeq);
   }
 
   async function upload(st: ThreadState, thread: Thread, messages: MessageDraft[], cursor: number, commit: number,
@@ -514,9 +535,13 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   // ---------- tripwire ----------
 
-  /** After a captured thread's first turn: did a harness integration also write a session for it? */
-  async function checkTripwire(thread: Thread): Promise<void> {
+  /** After a captured thread's first turn: did a harness integration also write a session for it?
+   * Only harness messages written after this thread's switch-over count: a session the harness
+   * filled before bb took over is expected, not a double capture. */
+  async function checkTripwire(thread: Thread, marker: number): Promise<void> {
     if (await bb.storage.kv.get(KV.tripwireChecked(thread.id))) return;
+    const first = await bb.sdk.threads.events.list({ threadId: thread.id, afterSeq: String(marker), order: "asc", limit: "1" });
+    const switchedAt = first[0]?.createdAt ?? clock.now();
     const env = await facts.env(thread);
     const names = new Set<string>();
     for (const providerThreadId of outbox.providerThreads(thread.id)) {
@@ -526,7 +551,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     names.delete(thread.id);
     const client = await deps.client();
     for (const name of names) {
-      if (!(await sessionHasMessages(client, name))) continue;
+      if (!(await sessionHasMessagesSince(client, name, switchedAt))) continue;
       tripwire = `harness session "${name}" is still capturing thread ${thread.id}`;
       await bb.storage.kv.set(KV.tripwire, tripwire);
       deps.activity.record({ kind: "harness", threadId: thread.id, summary: `tripwire: ${tripwire}`, error: "tripwire" });
@@ -545,7 +570,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (settings.purgeConclusionsOnDelete) {
       const own = new Set<string>();
       for (let page = 1; ; page++) {
-        const result = await client.listConclusions({ session_id: threadId }, { page, size: 100 });
+        // A session that never reached Honcho has no conclusions.
+        const result = await client.listConclusions({ session_id: threadId }, { page, size: 100 })
+          .catch(error => { if (honchoNotFound(error)) return { items: [] as Conclusion[], total: 0 }; throw error; });
         for (const c of result.items) own.add(c.id);
         if (result.items.length < 100 || (result.total != null && own.size >= result.total)) break;
       }
@@ -573,7 +600,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
         if (capped) bb.log.warn(`honcho capture: purge of ${threadId} scanned only ${PURGE_SCAN_PAGES * 100} conclusions`);
       }
     }
-    await client.deleteSession(threadId);
+    // 404: the session never reached Honcho (deleted inside the grace window) or is already gone.
+    try { await client.deleteSession(threadId); }
+    catch (error) { if (!honchoNotFound(error)) throw error; }
     for (const key of [KV.pendingDelete(threadId), scopeKey(threadId), KV.tripwireChecked(threadId)]) await bb.storage.kv.delete(key);
     deps.activity.record({ kind: "delete", threadId, summary: settings.purgeConclusionsOnDelete
       ? `deleted the honcho session and ${purged} derived conclusion(s)${capped ? ` (scan capped at ${PURGE_SCAN_PAGES * 100} conclusions)` : ""}; the peer card may reflect this thread until it regenerates`
@@ -581,13 +610,17 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   }
 
   async function onDeleted(threadId: string, attempt = 0): Promise<void> {
-    const settings = await privacy();
+    // One deletion per thread: the bb event, startup catch-up and a run that found the thread gone can race.
+    if (attempt === 0) { if (deleting.has(threadId)) return; deleting.add(threadId); }
     deleted.add(threadId);
+    const settings = await privacy();
     const st = states.get(threadId);
     if (st?.timer !== undefined) clock.clearTimeout(st.timer);
     await st?.running?.catch(() => undefined);
     states.delete(threadId);
     if (!settings.deleteOnDelete) {
+      // The thread is gone, so there is nothing left to upload: drop its local state either way.
+      outbox.deleteThread(threadId);
       if (attempt === 0) deps.activity.record({ kind: "delete", threadId, summary: "thread deleted; honcho session kept (delete-on-delete is off)" });
       return;
     }
@@ -603,11 +636,36 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     }
   }
 
+  /** A thread bb no longer has (deleted, possibly while the plugin was down): handle it as a
+   * deletion. Not awaited: onDeleted waits for the thread's running work, which may be the caller. */
+  function goneWhileDown(threadId: string): void {
+    if (disposed || deleted.has(threadId)) return;
+    void onDeleted(threadId).catch(error => bb.log.error(`honcho capture: delete of ${threadId} failed: ${(error as Error).name}`));
+  }
+
+  /** bb deleted, while nobody listened, threads the outbox still has state for: threads.list
+   * leaves deleted ids out. Each missing one is confirmed with threads.get before it is deleted,
+   * so a list that ignored the filter can't delete a live thread's session. */
+  async function reconcileDeleted(signal?: AbortSignal): Promise<void> {
+    const known = outbox.knownThreads();
+    for (let i = 0; i < known.length && !disposed && !signal?.aborted; i += THREAD_IDS_PER_LIST) {
+      const ids = known.slice(i, i + THREAD_IDS_PER_LIST);
+      const rows = await bb.sdk.threads.list({ threadIds: ids, includeHidden: true, limit: ids.length });
+      const live = new Set(rows.filter(r => !r.deletedAt).map(r => r.id));
+      for (const id of ids) {
+        if (live.has(id)) continue;
+        const gone = await (bb.sdk.threads.get({ threadId: id }) as Promise<Thread>).then(t => t.deletedAt !== null, error => isNotFound(error) ? true : undefined);
+        if (gone) goneWhileDown(id);
+      }
+    }
+  }
+
   // ---------- startup ----------
 
   async function boot(signal?: AbortSignal): Promise<void> {
     tripwire = (await bb.storage.kv.get<string>(KV.tripwire)) ?? null;
     for (const key of await bb.storage.kv.list(KV.pendingDeletePrefix)) void onDeleted(key.slice(KV.pendingDeletePrefix.length)).catch(() => undefined);
+    await reconcileDeleted(signal).catch(error => bb.log.warn(`honcho capture: deletion check failed: ${(error as Error).name}`));
     for (const marker of outbox.inFlight()) schedule(marker.thread, 0);
     // Startup reconcile: catch up on everything missed while the plugin was down.
     for (let offset = 0; !disposed && !signal?.aborted;) {
@@ -629,7 +687,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function listen(): void {
     if (listening) return;
     listening = true;
-    const later = (event: { thread: Thread }) => { if (!disposed) schedule(event.thread.id, grace); };
+    const later = (event: { thread: Thread; sequence?: number }) => {
+      if (disposed) return;
+      if (typeof event.sequence === "number") { const st = state(event.thread.id); st.seenSeq = Math.max(st.seenSeq, event.sequence); }
+      schedule(event.thread.id, grace);
+    };
     // experimental_thread.events fires at most once a second per thread; the
     // timer it arms reads once the grace window has passed, not per event.
     for (const name of ["thread.created", "thread.active", "thread.idle", "thread.archived", "experimental_thread.events"] as const) bb.events.on(name, later);
@@ -671,13 +733,24 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
     async setPaused(target, paused) {
       const now = clock.now();
-      // Thread pauses are seq ranges after the newest logged seq; project pauses are createdAt ranges.
-      let boundary = now;
-      if (target.kind === "thread") {
-        const latest = await bb.sdk.threads.events.list({ threadId: target.id, order: "desc", limit: "1" }).catch(() => []);
-        boundary = latest[0]?.seq ?? 0;
+      if (target.kind === "project") { outbox.setPaused("project", target.id, paused, now, now); return; }
+      const id = target.id;
+      if (paused) {
+        // The pause starts at the first seq not yet uploaded, so whatever is still waiting out the
+        // grace window (or queued while offline) is stopped too; nothing already sent is touched.
+        const floor = Math.min(outbox.cursor(id), ...outbox.inFlight(id).map(m => m.firstSeq - 1));
+        outbox.setPaused("thread", id, true, Math.max(0, floor), now);
+        return;
       }
-      outbox.setPaused(target.kind, target.id, paused, boundary, now);
+      // Resume closes the range at the newest logged seq. If the log can't be read, close it at the
+      // newest seq known here instead, and never below the range's start (that would drop it).
+      const latest = await bb.sdk.threads.events.list({ threadId: id, order: "desc", limit: "1" }).then(rows => rows[0]?.seq ?? 0, () => undefined);
+      let boundary = latest;
+      if (boundary === undefined) {
+        bb.log.warn(`honcho capture: resume of ${id} could not read the event log; closing the pause at the newest known seq`);
+        boundary = Math.max(outbox.newestKnownSeq(id), states.get(id)?.seenSeq ?? 0, outbox.openPause("thread", id)?.from ?? 0);
+      }
+      outbox.setPaused("thread", id, false, boundary, now);
     },
 
     async pauses() {

@@ -19,33 +19,55 @@ export interface ThreadFacts {
   project(thread: ThreadRef): Promise<Project | null>;
   /** Repo name from the git common dir (worktrees share it), else the bb project name; slugged like claude-honcho.
    * Computed once per thread and kept, so it survives the environment going away. A thread with no
-   * environment yet, or whose environment could not be read, gets the project name without keeping it. */
+   * environment yet, or whose environment or project bb no longer has, gets the project name without
+   * keeping it. A lookup that fails (host offline, bb error) rejects: nothing is guessed or kept. */
   scopeFor(thread: ThreadRef): Promise<string>;
   /** The kept scope, synchronously, once this load has resolved or read it. */
   known(threadId: string): string | null;
-  /** Why the deny list covers this thread, or null. */
+  /** Why the deny list covers this thread, or null. Fails closed: when the environment, project or
+   * git info can't be read, it rejects with FactsUnavailable instead of answering "not denied". */
   denied(thread: ThreadRef, privacy: PrivacySettings): Promise<string | null>;
 }
+
+/** A thread fact (environment, project, git info) could not be read; retry later, upload nothing meanwhile. */
+export class FactsUnavailable extends Error {
+  constructor(what: string, readonly cause?: unknown) { super(`could not read the thread's ${what}; retrying`); this.name = "FactsUnavailable"; }
+}
+
+/** bb answered "no such environment/project": a definite answer, unlike a failed request. */
+const isNotFound = (error: unknown) => {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  return status === 404 || code === "environment_not_found" || code === "project_not_found";
+};
 
 export function threadFacts(bb: Pick<CaptureBb, "sdk" | "storage">, git: GitInfoReader = filesGitInfo(bb.sdk.files)): ThreadFacts {
   const envs = new Map<string, Promise<Env | null>>();
   const gits = new Map<string, Promise<GitInfo | null>>();
   const projects = new Map<string, Promise<Project | null>>();
-  const cached = <T>(map: Map<string, Promise<T | null>>, key: string, load: () => Promise<T>) => {
+  /** Successful lookups are cached; a failed one is dropped (so it is asked again next time) and
+   * rejects with FactsUnavailable. `notFound` turns bb's definite "no such thing" into null. */
+  const cached = <T>(map: Map<string, Promise<T | null>>, key: string, what: string, load: () => Promise<T>, notFound = isNotFound) => {
     let hit = map.get(key);
-    // Failures are not cached, so a host that was offline is asked again next time.
-    if (!hit) { hit = load().catch(() => { map.delete(key); return null; }); map.set(key, hit); }
+    if (!hit) {
+      hit = load().catch(error => {
+        if (notFound(error)) return null;
+        map.delete(key);
+        throw new FactsUnavailable(what, error);
+      });
+      map.set(key, hit);
+    }
     return hit;
   };
   const known = new Map<string, string>();
   const facts: ThreadFacts = {
     known: id => known.get(id) ?? null,
-    env: t => t.environmentId ? cached(envs, t.environmentId, () => bb.sdk.environments.get({ environmentId: t.environmentId! })) : Promise.resolve(null),
+    env: t => t.environmentId ? cached(envs, t.environmentId, "environment", () => bb.sdk.environments.get({ environmentId: t.environmentId! })) : Promise.resolve(null),
     async git(t) {
       const env = await facts.env(t);
-      return env?.path && env.isGitRepo ? cached(gits, env.id, () => git({ hostId: env.hostId, path: env.path! })) : null;
+      // The reader already maps "file not found" to absent; anything it throws is a failure.
+      return env?.path && env.isGitRepo ? cached(gits, env.id, "git info", () => git({ hostId: env.hostId, path: env.path! }), () => false) : null;
     },
-    project: t => cached(projects, t.projectId, () => bb.sdk.projects.get({ projectId: t.projectId })),
+    project: t => cached(projects, t.projectId, "project", () => bb.sdk.projects.get({ projectId: t.projectId })),
     async scopeFor(t) {
       const hit = known.get(t.id) ?? await bb.storage.kv.get<string>(scopeKey(t.id));
       if (hit) { known.set(t.id, hit); return hit; }

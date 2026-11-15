@@ -104,7 +104,9 @@ export function fakeBb(clock: FakeClock) {
           return { ...t };
         },
         async list(args: Row = {}) {
-          const all = [...threads.values()].filter(t => t.deletedAt === null && (args.archived !== false || t.archivedAt === null));
+          // Like bb: deleted threads are left out, and threadIds limits the rows to those ids.
+          const all = [...threads.values()].filter(t => t.deletedAt === null && (args.archived !== false || t.archivedAt === null)
+            && (!args.threadIds || args.threadIds.includes(t.id)));
           return all.slice(args.offset ?? 0, (args.offset ?? 0) + (args.limit ?? 100));
         },
         events: {

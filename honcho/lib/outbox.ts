@@ -136,10 +136,12 @@ export class Outbox {
     return (this.db.prepare("SELECT start_seq FROM switch_over WHERE thread=?").get(thread) as { start_seq: number } | undefined)?.start_seq;
   }
   /** Pauses are inclusive ranges, closed or open at the end, checked when an item is about to be sent.
-   * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of event
-   * createdAt (epoch ms) instead, applied to every thread in the project.
-   * `boundary` is the newest seq already seen on the thread (thread kind) or the current time
-   * (project kind): pausing covers everything after it, resuming closes the range at it.
+   * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of time
+   * (epoch ms) instead, applied to every thread in the project.
+   * Thread kind: pausing covers every seq after `boundary`, which the caller sets to the last seq
+   * already uploaded (so unsent items inside the grace window are paused too); resuming closes the
+   * range at `boundary`, the newest seq logged. Project kind: `boundary` is the current time.
+   * Resuming at a boundary below the range's start drops the range (nothing happened while paused).
    * `sinceAt` is the wall-clock time the pause began, stored with the range. */
   setPaused(kind: "thread" | "project", id: string, paused: boolean, boundary: number, sinceAt: number = Date.now()): void {
     seq(boundary);
@@ -155,10 +157,18 @@ export class Outbox {
       else this.db.prepare("UPDATE pause_ranges SET to_value=? WHERE kind=? AND id=? AND to_value IS NULL").run(to, kind, id);
     })();
   }
-  /** Whether the event at `seq` (created at `createdAt`) falls in a thread or project pause range. */
-  isPaused(thread: string, seqNumber: number, project?: { id: string; createdAt: number }): boolean {
+  /** Whether the event at `seq` falls in a thread pause range, or in a project pause range.
+   * Project pauses: with `sendAt`, the event is paused when the project was paused at any point
+   * between its creation and the send (so pausing right after a paste stops it, and resuming
+   * never releases what was waiting at pause time); without it, only its createdAt is checked. */
+  isPaused(thread: string, seqNumber: number, project?: { id: string; createdAt: number; sendAt?: number }): boolean {
     const covers = this.db.prepare("SELECT 1 FROM pause_ranges WHERE kind=? AND id=? AND from_value<=? AND (to_value IS NULL OR to_value>=?) LIMIT 1");
-    return !!covers.get("thread", thread, seqNumber, seqNumber) || (project !== undefined && !!covers.get("project", project.id, project.createdAt, project.createdAt));
+    return !!covers.get("thread", thread, seqNumber, seqNumber)
+      || (project !== undefined && !!covers.get("project", project.id, Math.max(project.createdAt, project.sendAt ?? project.createdAt), project.createdAt));
+  }
+  /** The open pause range of a target, if any. */
+  openPause(kind: "thread" | "project", id: string): PauseRange | undefined {
+    return this.pauses().find(r => r.kind === kind && r.id === id && r.to === null);
   }
   /** Whether new events are being paused right now. */
   isPausedNow(kind: "thread" | "project", id: string): boolean {
@@ -193,7 +203,7 @@ export class Outbox {
     return (this.db.prepare("SELECT from_seq,to_seq FROM superseded WHERE thread=? ORDER BY from_seq").all(thread) as Array<{ from_seq: number; to_seq: number }>).map(r => ({ from: r.from_seq, to: r.to_seq }));
   }
   /** Send-time gate: false when the seq is paused or superseded. */
-  shouldSend(thread: string, seqNumber: number, project?: { id: string; createdAt: number }): boolean {
+  shouldSend(thread: string, seqNumber: number, project?: { id: string; createdAt: number; sendAt?: number }): boolean {
     return !this.isSuperseded(thread, seqNumber) && !this.isPaused(thread, seqNumber, project);
   }
   /** thread/identity.providerThreadId; a thread can have several. */
@@ -203,6 +213,19 @@ export class Outbox {
   }
   providerThreads(thread: string): string[] {
     return (this.db.prepare("SELECT provider_thread_id FROM provider_threads WHERE thread=? ORDER BY rowid").all(thread) as Array<{ provider_thread_id: string }>).map(r => r.provider_thread_id);
+  }
+  /** Every thread the outbox holds state for (startup checks them for deletions missed while down). */
+  knownThreads(): string[] {
+    return (this.db.prepare(`SELECT thread FROM cursors UNION SELECT thread FROM in_flight UNION SELECT thread FROM retries
+      UNION SELECT thread FROM switch_over UNION SELECT thread FROM fork_sources ORDER BY thread`).all() as Array<{ thread: string }>).map(r => r.thread);
+  }
+  /** The newest seq of a thread that the outbox has a record of (cursor, in-flight range, markers, edits). */
+  newestKnownSeq(thread: string): number {
+    const row = this.db.prepare(`SELECT MAX(v) AS v FROM (
+      SELECT after_seq AS v FROM cursors WHERE thread=:t UNION ALL SELECT last_seq FROM in_flight WHERE thread=:t
+      UNION ALL SELECT start_seq FROM switch_over WHERE thread=:t UNION ALL SELECT boundary_seq FROM fork_sources WHERE thread=:t
+      UNION ALL SELECT to_seq FROM superseded WHERE thread=:t)`).get({ t: thread }) as { v: number | null };
+    return row.v ?? 0;
   }
   /** Removes the thread's state, including its pause ranges. Project pauses stay. */
   deleteThread(thread: string): void {

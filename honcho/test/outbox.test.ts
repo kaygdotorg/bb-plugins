@@ -119,6 +119,30 @@ describe("content-free outbox", () => {
     expect(outbox.isPaused("a", 1, { id: "p", createdAt: 2_000 })).toBe(true);
     expect(outbox.isPaused("a", 1, { id: "p", createdAt: 2_001 })).toBe(false);
   });
+  it("pauses a project item when the pause overlapped its wait between creation and send", () => {
+    const { outbox } = setup(); outbox.setPaused("project", "p", true, 1_000);
+    // Created before the pause, sent after it began: paused.
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 900, sendAt: 1_100 })).toBe(true);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 900 })).toBe(false); // point check (backfill)
+    outbox.setPaused("project", "p", false, 2_000);
+    // Waiting when the pause began and sent after resuming: still never sent.
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 900, sendAt: 3_000 })).toBe(true);
+    // Created after the resume, or sent before the pause: not paused.
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 2_001, sendAt: 3_000 })).toBe(false);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 500, sendAt: 999 })).toBe(false);
+    expect(outbox.shouldSend("a", 1, { id: "p", createdAt: 900, sendAt: 3_000 })).toBe(false);
+  });
+  it("lists the threads it holds state for, and the newest seq it knows per thread", () => {
+    const { outbox } = setup();
+    outbox.advance("a", 4); outbox.markSwitchOver("b", 9); outbox.begin({ thread: "c", firstSeq: 3, lastSeq: 7, startedAt: 1 });
+    outbox.setForkSource("d", "a", 2); outbox.supersede("a", 5, 12);
+    expect(outbox.knownThreads()).toEqual(["a", "b", "c", "d"]);
+    expect(["a", "b", "c", "d", "none"].map(t => outbox.newestKnownSeq(t))).toEqual([12, 9, 7, 2, 0]);
+    outbox.setPaused("thread", "t", true, 3);
+    expect(outbox.openPause("thread", "t")).toMatchObject({ from: 4, to: null });
+    outbox.deleteThread("c");
+    expect(outbox.knownThreads()).toEqual(["a", "b", "d"]);
+  });
   it("migrates v1 flag pauses into open ranges", () => {
     const db = new Database(":memory:"); databases.push(db);
     db.exec("CREATE TABLE honcho_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
