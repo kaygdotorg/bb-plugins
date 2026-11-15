@@ -100,6 +100,69 @@ export function removeHandlers(file: JsonObject, remove: (handler: Json) => bool
   return { file: { ...file, hooks }, removed, moved };
 }
 
+/** The handler at a position, which must exist. */
+export function handlerAt(file: JsonObject, at: HookPosition): Json {
+  return handlersOf(groupsOf(file, at.event)[at.group]!)[at.handler]!;
+}
+
+/** The first handler identical to `handler` in `event`. */
+export function locateHandler(file: JsonObject, event: string, handler: Json): HookPosition | null {
+  const want = JSON.stringify(handler);
+  const groups = groupsOf(file, event);
+  for (let g = 0; g < groups.length; g += 1) {
+    const handlers = handlersOf(groups[g]!);
+    for (let h = 0; h < handlers.length; h += 1) if (JSON.stringify(handlers[h]) === want) return { event, group: g, handler: h };
+  }
+  return null;
+}
+
+/**
+ * Puts handlers that `removeHandlers` took out of `source` back into `target`,
+ * at their old positions where the file still lines up: a whole removed group
+ * goes back as a group, a lone handler back into its old group. A handler that
+ * is already present is not added twice. Returns `target` itself if nothing was
+ * missing; events are put back in `source`'s order.
+ */
+export function reinsertHandlers(target: JsonObject, source: JsonObject, removed: HookPosition[]): JsonObject {
+  if (target.hooks !== undefined && !isRecord(target.hooks)) return target;
+  const hooks: JsonObject = isRecord(target.hooks) ? { ...(target.hooks as JsonObject) } : {};
+  let changed = false;
+  const byEvent = new Map<string, Map<number, number[]>>();
+  for (const at of removed) {
+    const groups = byEvent.get(at.event) ?? new Map<number, number[]>();
+    groups.set(at.group, [...(groups.get(at.group) ?? []), at.handler]);
+    byEvent.set(at.event, groups);
+  }
+  for (const [event, byGroup] of byEvent) {
+    const existing = hooks[event];
+    if (existing !== undefined && !Array.isArray(existing)) continue;
+    const groups: Json[] = Array.isArray(existing) ? [...existing] : [];
+    const present = (handler: Json) => groups.some((g) => handlersOf(g).some((h) => JSON.stringify(h) === JSON.stringify(handler)));
+    const sourceGroups = groupsOf(source, event);
+    for (const g of [...byGroup.keys()].sort((a, b) => a - b)) {
+      const src = sourceGroups[g] as JsonObject;
+      const srcHandlers = handlersOf(src);
+      const indices = byGroup.get(g)!.sort((a, b) => a - b);
+      const missing = indices.filter((h) => !present(srcHandlers[h]!));
+      if (!missing.length) continue;
+      changed = true;
+      const fresh = (): JsonObject => ({ ...src, hooks: missing.map((h) => srcHandlers[h]!) });
+      if (indices.length === srcHandlers.length) { groups.splice(Math.min(g, groups.length), 0, fresh()); continue; }
+      const at = groups[g];
+      if (isRecord(at) && Array.isArray((at as JsonObject).hooks) && ((at as JsonObject).matcher ?? null) === (src.matcher ?? null)) {
+        const next = [...((at as JsonObject).hooks as Json[])];
+        for (const h of missing) next.splice(Math.min(h, next.length), 0, srcHandlers[h]!);
+        groups[g] = { ...(at as JsonObject), hooks: next };
+      } else groups.splice(Math.min(g, groups.length), 0, fresh());
+    }
+    hooks[event] = groups;
+  }
+  if (!changed) return target;
+  const sourceOrder = isRecord(source.hooks) ? Object.keys(source.hooks as JsonObject) : [];
+  const order = [...sourceOrder.filter((k) => k in hooks), ...Object.keys(hooks).filter((k) => !sourceOrder.includes(k))];
+  return { ...target, hooks: Object.fromEntries(order.map((k) => [k, hooks[k]!])) };
+}
+
 export function findHandler(file: JsonObject, desired: DesiredHook): HookPosition | null {
   const groups = groupsOf(file, desired.event);
   for (let g = 0; g < groups.length; g += 1) {
