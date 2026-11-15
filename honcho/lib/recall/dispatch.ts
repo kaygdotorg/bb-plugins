@@ -37,8 +37,12 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
     const sideChat = ctx.thread.originKind === "fork" && ctx.thread.originPluginId === "side-chat";
     const parentThreadId = ctx.thread.parentThreadId ?? ctx.thread.sourceThreadId ?? ctx.parentThreadId ?? null;
     const environmentId = ctx.environment?.id ?? ctx.thread.environmentId ?? null;
-    // Paused or deny-listed: no search, no cache file.
-    if (await shared.gate.blocked({ id: threadId, projectId: ctx.project.id, environmentId, contextThreadId: sideChat ? parentThreadId : null })) return;
+    // Paused or deny-listed: no search; the skip marker (no hash, no prompt data) tells the hook not to wait.
+    if (await shared.gate.blocked({ id: threadId, projectId: ctx.project.id, environmentId, contextThreadId: sideChat ? parentThreadId : null })) {
+      await shared.host.call("recall.skip", { threadId }, { hostId, signal: AbortSignal.timeout(15_000) });
+      await rememberHost(threadId, hostId).catch(() => undefined);
+      return;
+    }
     const scopeInput = {
       threadId, parentThreadId, sideChat,
       projectId: ctx.project.id, environmentId,

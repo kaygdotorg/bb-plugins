@@ -62,6 +62,7 @@ const HOST_RESULTS: Record<string, unknown> = {
   harnessEnv: ENV_PATHS,
   harnessState: STATE,
   harnessUndo: { state: STATE, restored: [] },
+  "recall.skip": { path: "/data/recall/x.json" },
   "recall.write": { counter: 1, path: "/data/recall/x.json" },
   "secrets.read": { fingerprint: "f", values: ["synthetic-deny-value-1"] },
 };
@@ -114,7 +115,7 @@ describe("plugin factory", () => {
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.write", "secrets.read"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.skip", "recall.write", "secrets.read"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {

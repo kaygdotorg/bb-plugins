@@ -112,6 +112,8 @@ function emit(value) {
   return new Promise((resolve) => process.stdout.write(JSON.stringify(value) + "\n", () => resolve()));
 }
 
+const debug = (reason) => { if (process.env.BB_HONCHO_HOOK_DEBUG === "1") process.stderr.write(`bb-honcho-hook: ${reason}\n`); };
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function prompt(input) {
@@ -124,16 +126,20 @@ async function prompt(input) {
   if (!hashes.size) return;
   const deadline = START + budgetMs();
   for (;;) {
-    const entry = pickEntry(readCache(path), hashes, START);
+    const file = readCache(path);
+    // Skip marker (paused or deny-listed thread): nothing to wait for.
+    if (file && typeof file === "object" && file.v === FILE_VERSION && file.skip === true) { debug("skip-marker"); return; }
+    const entry = pickEntry(file, hashes, START);
     // A matching entry is terminal: empty memory means "nothing for this prompt", stop at once.
     if (entry) {
-      if (!entry.memory.trim()) return;
+      if (!entry.memory.trim()) { debug("terminal-empty-match"); return; }
+      debug("hit");
       const event = typeof input.hook_event_name === "string" && input.hook_event_name ? input.hook_event_name : "UserPromptSubmit";
       await emit({ hookSpecificOutput: { hookEventName: event, additionalContext: entry.memory } });
       return;
     }
     const left = deadline - Date.now();
-    if (left <= 0) return;
+    if (left <= 0) { debug("miss"); return; }
     await sleep(Math.min(POLL_MS, left));
   }
 }

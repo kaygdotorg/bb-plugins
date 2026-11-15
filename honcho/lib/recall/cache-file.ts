@@ -78,6 +78,21 @@ export async function writeRecallEntry(dir: string, threadId: string, entry: { h
   return { entry: merged.entry, path };
 }
 
+/** Replaces the thread's cache with the skip marker (paused or deny-listed): `{"v":2,"skip":true}`, no hash, no prompt data. */
+export async function writeSkipMarker(dir: string, threadId: string): Promise<{ path: string }> {
+  const path = recallFilePath(dir, threadId);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify({ v: 2, skip: true }), { mode: 0o600 });
+    await rename(tmp, path);
+  } catch (error) {
+    await rm(tmp, { force: true });
+    throw error;
+  }
+  return { path };
+}
+
 /** Removes a thread's cache file; true when one existed. */
 export async function deleteRecallFile(dir: string, threadId: string): Promise<boolean> {
   const path = recallFilePath(dir, threadId);

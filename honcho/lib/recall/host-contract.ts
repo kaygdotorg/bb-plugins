@@ -13,6 +13,11 @@ export const recallHostContract = defineRpcContract({
     }).strict(),
     output: z.object({ counter: z.number().int(), path: z.string() }).strict(),
   },
+  /** Paused or deny-listed thread: the cache becomes the skip marker so the hook exits at once. */
+  "recall.skip": {
+    input: z.object({ threadId: z.string().regex(THREAD_ID_PATTERN) }).strict(),
+    output: z.object({ path: z.string() }).strict(),
+  },
   /** Removes the thread's recall cache file (thread.deleted). */
   "recall.delete": {
     input: z.object({ threadId: z.string().regex(THREAD_ID_PATTERN) }).strict(),

@@ -88,7 +88,12 @@ Out of v1: the "remember this" message action, the full conclusions review panel
 - Per-turn recall, where the harness has a prompt hook (Claude Code, Codex):
   - On `bb.experimental_hooks.on("message.dispatch")`, the plugin returns `proceed` at once, then starts a fast Honcho `search` (about 0.3–0.4 s on honcho.kayg.org), never `chat`.
   - The host worker writes the result to a cache file in that machine's plugin data dir, keyed by `BB_THREAD_ID` plus a dispatch counter, with the normalized prompt text. The hook can't know that dir, so a host RPC reports it and bb passes it as a non-secret env value. The worker is kept warm with `experimental_retainWorker`, since it otherwise cold-starts in up to 10 s after 5 idle minutes. No http, and no token in env.
-  - The hook waits up to a small budget for the newest entry for its thread whose text is contained in the prompt it received. Prompts reach the harness with envelopes, prefixes, expanded mentions and grouped queued rows, so exact hashes wouldn't match. It injects that entry or gives up, and never serves an earlier prompt's result. Steers that join a running turn may not fire the hook at all; they get no per-turn recall.
+  - The hook waits up to a small budget for an entry whose hash equals the sha256 of the normalized prompt it received (trim, collapse whitespace, first 500 chars). Matching is strict equality, never "contained in":
+    - Candidates are the prompt itself plus versions with only bb's own wrappers stripped: the plugin mention context suffix, leading and trailing attachment markers, and one leading agent-to-agent envelope. Nothing else is removed.
+    - Among entries matching a candidate, the highest counter wins. A match is terminal: empty memory means "nothing for this prompt" and the hook exits at once, and a miss never falls back to an earlier prompt's result.
+    - The cache file stores hashes only (v2), never prompt text. Steers that join a running turn may not fire the hook at all; they get no per-turn recall.
+    - Paused (thread, project, or a side chat's parent) and deny-listed threads get a skip marker, `{"v":2,"skip":true}`, written through the same host op path (`recall.skip`). The hook exits at once on it with no output, so these threads never wait out the budget. The next normal write replaces it.
+    - `BB_HONCHO_HOOK_DEBUG=1` makes the hook print one reason line to stderr (`hit`, `miss`, `terminal-empty-match`, `skip-marker`).
   - Pi, ACP and sandboxes without a bb host daemon get session-start recall only.
 - Injected memory is framed as background about kayg, not instructions. Conclusions an agent saves are marked as agent-written.
 

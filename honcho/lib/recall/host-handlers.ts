@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { ExperimentalHostRpcContext, ExperimentalHostWorkerLease } from "@get-bb/plugin-sdk";
-import { deleteRecallFile, writeRecallEntry } from "./cache-file.js";
+import { deleteRecallFile, writeRecallEntry, writeSkipMarker } from "./cache-file.js";
 
 /** How long the worker stays warm after the last recall call. The daemon's own
  * idle stop is 5 minutes, and a cold start (up to 10 s) misses the hook budget. */
@@ -46,6 +46,11 @@ export function createRecallHostHandlers() {
         const { entry, path } = await serial(input.threadId, () =>
           writeRecallEntry(recallDir(context), input.threadId, { hash: input.hash, memory: input.memory, createdAt: Date.now() }));
         return { counter: entry.counter, path };
+      },
+      "recall.skip": async (input: { threadId: string }, context: ExperimentalHostRpcContext) => {
+        warm(context);
+        const { path } = await serial(input.threadId, () => writeSkipMarker(recallDir(context), input.threadId));
+        return { path };
       },
       "recall.delete": async (input: { threadId: string }, context: ExperimentalHostRpcContext) => {
         const deleted = await serial(input.threadId, () => deleteRecallFile(recallDir(context), input.threadId));

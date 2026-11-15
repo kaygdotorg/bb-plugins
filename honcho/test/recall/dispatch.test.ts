@@ -116,24 +116,32 @@ describe("privacy", () => {
     expect(JSON.parse(raw).entries[0].hash).toBe(h(`rotate token: ${SECRET} and hunter2-synthetic`));
   });
 
-  it("skips paused threads and projects, and deny-listed threads: no search, no cache file", async () => {
+  it("paused or deny-listed threads: no search, a skip marker; a resume replaces it with a normal entry", async () => {
     const denied = new Set<string>();
     const s = await make({ ports: { isDenied: async t => denied.has(t.id) } });
+    const calls = () => s.harness.inspection.experimental_hostRpcCalls.map(c => c.method);
     s.deps.outbox.setPaused("thread", "thr_main", true, 0);
     await dispatch(s, dispatchCtx("paused thread prompt"));
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
     s.deps.outbox.setPaused("thread", "thr_main", false, 0);
     const ctx = dispatchCtx("paused project prompt");
     s.deps.outbox.setPaused("project", ctx.project.id, true, Date.now());
     await dispatch(s, ctx);
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
     s.deps.outbox.setPaused("project", ctx.project.id, false, Date.now());
     denied.add("thr_main");
     await dispatch(s, dispatchCtx("denied prompt"));
+    expect(await readCache(s)).toEqual({ v: 2, skip: true });
+    expect(await readFile(join(s.recallDir, "thr_main.json"), "utf8")).not.toContain("prompt");
     expect(s.mock.requests.filter(r => r.path.endsWith("/search"))).toEqual([]);
-    expect(s.harness.inspection.experimental_hostRpcCalls).toEqual([]);
+    expect(calls()).toEqual(["recall.skip", "recall.skip", "recall.skip"]);
     denied.clear();
     s.internals.shared.gate["denied"].clear();
     await dispatch(s, dispatchCtx("allowed again"));
-    expect(s.harness.inspection.experimental_hostRpcCalls.map(c => c.method)).toEqual(["recall.write"]);
+    expect(calls().at(-1)).toBe("recall.write");
+    const file = await readCache(s);
+    expect(file.skip).toBeUndefined();
+    expect(file.entries.map((e: { hash: string }) => e.hash)).toEqual([h("allowed again")]);
   });
 
   it("thread.deleted deletes the thread's recall file on the host it was written on", async () => {

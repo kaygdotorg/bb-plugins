@@ -116,15 +116,27 @@ describe("prompt mode", () => {
     expect(run("prompt", promptInput(agent), baseEnv()).stdout).toBe("");
   });
 
-  it("an empty matching entry is terminal: nothing is injected and the hook exits without waiting the budget", () => {
+  it("an empty matching entry is terminal: nothing is injected and the hook reports it", () => {
     // An empty newer entry for the same prompt wins over an older one with memory.
     writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 2, entries: [
       { counter: 1, hash: promptHash("same prompt"), createdAt: Date.now(), memory: "older memory" },
       { counter: 3, hash: promptHash("same prompt"), createdAt: Date.now() - 1000, memory: "" },
     ] }));
-    const r = spawnSync("sh", [hookSh, "prompt"], { input: promptInput("same prompt"), env: baseEnv({ BB_HONCHO_HOOK_BUDGET_MS: "5000" }) as NodeJS.ProcessEnv, encoding: "utf8", timeout: 4000 });
-    // Had it waited out the 5000 ms budget, spawnSync's 4000 ms timeout would have killed it (status null).
-    expect([r.status, r.stdout]).toEqual([0, ""]);
+    const r = run("prompt", promptInput("same prompt"), baseEnv({ BB_HONCHO_HOOK_BUDGET_MS: "5000", BB_HONCHO_HOOK_DEBUG: "1" }));
+    expect([r.code, r.stdout, r.stderr.trim()]).toEqual([0, "", "bb-honcho-hook: terminal-empty-match"]);
+  });
+
+  it("the skip marker makes the hook exit with no output", () => {
+    writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 2, skip: true }));
+    const r = run("prompt", promptInput("anything"), baseEnv({ BB_HONCHO_HOOK_BUDGET_MS: "5000", BB_HONCHO_HOOK_DEBUG: "1" }));
+    expect([r.code, r.stdout, r.stderr.trim()]).toEqual([0, "", "bb-honcho-hook: skip-marker"]);
+  });
+
+  it("reports hit and miss in debug mode", () => {
+    writeCache(THREAD, [{ counter: 1, text: "dbg prompt", createdAt: Date.now(), memory: "m" }]);
+    const env = baseEnv({ BB_HONCHO_HOOK_DEBUG: "1" });
+    expect(run("prompt", promptInput("dbg prompt"), env).stderr.trim()).toBe("bb-honcho-hook: hit");
+    expect(run("prompt", promptInput("other prompt"), env).stderr.trim()).toBe("bb-honcho-hook: miss");
   });
 
   it("ignores a v1 (plaintext) cache", () => {
