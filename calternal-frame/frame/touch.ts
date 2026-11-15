@@ -4,7 +4,8 @@
  *    keyboard squeezes the drawer's thread list to nothing.
  *  - When the visible area is short anyway, html gets [data-cf-short] and the sidebar
  *    scrolls as one column (css.ts) instead of collapsing its thread list.
- *  - Pull down at the top of the sidebar to open thread search.
+ *  - Pull down to search: from the top of the sidebar, from the chat's title bar, or in a
+ *    chat scrolled all the way up.
  *  - While the keyboard is up for the composer, a keyboard-down button sits in its icon row.
  * Listeners are passive where possible and attached to single elements, never the DOM tree.
  */
@@ -42,7 +43,10 @@ function watchDrawer(): () => void {
 function watchViewport(): () => void {
   const vv = window.visualViewport;
   if (!vv) return () => {};
-  const update = () => document.documentElement.toggleAttribute("data-cf-short", vv.height < SHORT_VIEWPORT);
+  const update = () => {
+    document.documentElement.toggleAttribute("data-cf-short", vv.height < SHORT_VIEWPORT);
+    document.documentElement.style.setProperty("--cf-vvh", `${Math.round(vv.height)}px`);
+  };
   update();
   vv.addEventListener("resize", update, { passive: true });
   return () => { vv.removeEventListener("resize", update); document.documentElement.removeAttribute("data-cf-short"); };
@@ -59,14 +63,12 @@ function pullToSearch(): () => void {
   const pill = document.createElement("div");
   pill.setAttribute("data-cf-pull", "");
   pill.setAttribute("aria-hidden", "true");
-  let startY = 0, startX = 0, pull = 0, tracking = false, body: HTMLElement | null = null;
+  let startY = 0, startX = 0, pull = 0, tracking = false;
+  /** What moves with the finger: the sidebar body (+ its separate toggle), or the chat's messages. */
+  let moving: HTMLElement[] = [];
 
-  const scroller = (sidebar: Element) => sidebar.querySelector<HTMLElement>('[data-sidebar="content"]');
-  // bb's sidebar toggle is a separate fixed overlay: move it with the sidebar body.
-  const toggle = () => document.querySelector<HTMLElement>('[data-testid="app-sidebar-trigger-overlay"]');
   const shift = (px: number, animate: boolean) => {
-    for (const el of [body, toggle()]) {
-      if (!el) continue;
+    for (const el of moving) {
       el.style.transition = animate ? "translate 220ms cubic-bezier(0.32,0.72,0,1)" : "none";
       el.style.translate = px ? `0 ${px}px` : "";
     }
@@ -79,18 +81,49 @@ function pullToSearch(): () => void {
     pull = 0;
   };
 
+  /** Where a pull can start: the top of the sidebar, or the chat scrolled all the way up. */
+  const begin = (target: Element): boolean => {
+    const sidebar = target.closest<HTMLElement>(SIDEBAR);
+    if (sidebar) {
+      const list = sidebar.querySelector<HTMLElement>('[data-sidebar="content"]');
+      if (list && list.scrollTop > 0) return false;
+      const toggle = document.querySelector<HTMLElement>('[data-testid="app-sidebar-trigger-overlay"]');
+      moving = toggle ? [sidebar, toggle] : [sidebar];
+      sidebar.prepend(pill);
+      pill.style.top = "0.5rem";
+      return true;
+    }
+    // From the chat's title bar, at any scroll position: bb keeps long threads anchored and
+    // loads older messages as you scroll up, so "scrolled to the very top" is rare there.
+    const header = target.closest<HTMLElement>(`${SHELF} header`);
+    if (header && !target.closest("button, a, input, [role=button]")) {
+      const list = document.querySelector<HTMLElement>(`${SHELF} [data-timeline-row-list]`);
+      // The bar stays put (as on iOS); the messages stretch under its frost.
+      moving = list ? [list] : [];
+      header.closest<HTMLElement>(SHELF)?.append(pill);
+      pill.style.top = "calc(var(--bb-app-chrome-row-height, 3rem) + 0.75rem)";
+      return true;
+    }
+    const viewport = target.closest<HTMLElement>(`${SHELF} [data-page-scroll-viewport]`);
+    // Not from the composer: dragging there is text selection, not a pull.
+    if (!viewport || viewport.scrollTop > 0 || target.closest("[data-app-composer]")) return false;
+    const list = viewport.querySelector<HTMLElement>("[data-timeline-row-list]");
+    if (!list) return false;
+    moving = [list];
+    const pane = viewport.closest<HTMLElement>(SHELF);
+    pane?.append(pill);
+    pill.style.top = "calc(var(--bb-app-chrome-row-height, 3rem) + 0.75rem)";
+    return true;
+  };
+
   const onStart = (e: TouchEvent) => {
-    const sidebar = (e.target as Element).closest(SIDEBAR);
-    const list = sidebar && scroller(sidebar);
-    if (!sidebar || (list && list.scrollTop > 0) || e.touches.length !== 1) return;
-    body = sidebar as HTMLElement;
-    if (!pill.isConnected) body.prepend(pill);
+    if (e.touches.length !== 1 || !begin(e.target as Element)) return;
     startY = e.touches[0].clientY;
     startX = e.touches[0].clientX;
     tracking = true;
   };
   const onMove = (e: TouchEvent) => {
-    if (!tracking || !body) return;
+    if (!tracking) return;
     const dy = e.touches[0].clientY - startY;
     const dx = e.touches[0].clientX - startX;
     // Vertical only: bb's own sideways swipes (drawer, panels) stay untouched.
@@ -121,37 +154,55 @@ function pullToSearch(): () => void {
   };
 }
 
-/** The keyboard is up when the visible area is much shorter than the layout and an editor has focus. */
+const COMPOSER_EDITOR = '[data-app-composer] [contenteditable="true"]';
+
+/**
+ * Keyboard-down button, shown while the composer's editor has focus on a touch device (on a
+ * phone that means the keyboard is up). It sits right after bb's mic button and copies its
+ * classes, so size and spacing match its neighbours.
+ */
 function keyboardButton(): () => void {
-  const vv = window.visualViewport;
-  if (!vv) return () => {};
   const button = document.createElement("button");
   button.type = "button";
   button.setAttribute("data-cf-kb", "");
   button.setAttribute("aria-label", "Hide keyboard");
-  button.style.cssText = "align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:0.375rem;color:var(--muted-foreground);background:transparent;border:0;";
   // Lucide "keyboard" with a chevron-down under it.
   button.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="12" rx="2"/><path d="M6 7h.01M10 7h.01M14 7h.01M18 7h.01M7 11h10"/><path d="m9 19 3 3 3-3"/></svg>';
-  // pointerdown + preventDefault: the editor keeps focus until we blur it on purpose.
-  button.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    if (isEditing(document.activeElement)) document.activeElement.blur();
-  });
+  // bb's composer refocuses its editor on any press inside it, which brought the keyboard
+  // straight back: swallow every event of the press, then blur on purpose.
+  const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+  for (const type of ["pointerdown", "mousedown", "touchstart", "pointerup", "mouseup", "click"]) {
+    button.addEventListener(type, swallow, { passive: false });
+  }
+  button.addEventListener("touchend", (e) => {
+    swallow(e);
+    (document.activeElement as HTMLElement | null)?.blur();
+  }, { passive: false });
+  button.addEventListener("click", () => (document.activeElement as HTMLElement | null)?.blur());
 
-  const update = () => {
-    const up = vv.height < window.innerHeight - 150 && isEditing(document.activeElement)
-      && !!document.activeElement?.closest("[data-app-composer]");
-    document.documentElement.toggleAttribute("data-cf-keyboard", up);
-    if (!up) return;
-    const group = document.activeElement?.closest("[data-app-composer]")?.querySelector("[data-promptbox-submit-group]");
-    if (group && button.parentElement !== group) group.prepend(button);
+  const place = (editor: Element) => {
+    const composer = editor.closest("[data-app-composer]");
+    const mic = composer?.querySelector<HTMLButtonElement>('[data-promptbox-action-row] button[aria-label*="oice" i], [data-promptbox-action-row] button[aria-label*="ictat" i]');
+    const anchor = mic ?? composer?.querySelector("[data-promptbox-submit-group]");
+    if (!anchor) return;
+    if (mic) {
+      button.className = mic.className;
+      if (button.previousElementSibling !== mic) mic.after(button);
+    } else if (button.parentElement !== anchor) {
+      anchor.prepend(button);
+    }
   };
-  vv.addEventListener("resize", update, { passive: true });
+  const update = () => {
+    const editor = document.activeElement?.closest(COMPOSER_EDITOR) ?? null;
+    document.documentElement.toggleAttribute("data-cf-keyboard", !!editor);
+    if (editor) place(editor);
+  };
+  const onFocusOut = () => setTimeout(update, 0);
   document.addEventListener("focusin", update);
-  document.addEventListener("focusout", () => setTimeout(update, 0));
+  document.addEventListener("focusout", onFocusOut);
   return () => {
-    vv.removeEventListener("resize", update);
     document.removeEventListener("focusin", update);
+    document.removeEventListener("focusout", onFocusOut);
     button.remove();
     document.documentElement.removeAttribute("data-cf-keyboard");
   };
