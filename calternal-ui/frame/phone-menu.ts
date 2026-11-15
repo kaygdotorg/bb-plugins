@@ -61,7 +61,8 @@ export const PHONE_MENU_CSS = `
     width: max-content !important;
     min-width: 0 !important;
     max-width: min(${MAX_W}px, 100vw - ${2 * INSET}px) !important;
-    max-height: calc(100dvh - var(--cf-am-top) - ${INSET}px) !important;
+    /* The visible area, not the screen: with the keyboard up the menu ended under its toolbar (simulator). */
+    max-height: var(--cf-am-max, calc(100dvh - var(--cf-am-top) - ${INSET}px)) !important;
     /* The menus' glass and corners (css.ts "Every floating menu"): radius 14 = item 8 + padding 6. */
     border-radius: var(--cf-radius) !important;
     padding: 6px !important;
@@ -200,6 +201,8 @@ export function mountPhoneMenu(): () => void {
     const top = Math.max(INSET / 2, p.top);
     drawer.style.setProperty("--cf-am-top", `${top}px`);
     drawer.style.setProperty("--cf-am-right", `${right}px`);
+    const visible = window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : innerHeight;
+    drawer.style.setProperty("--cf-am-max", `${Math.max(120, visible - top - INSET)}px`);
     // "prep": placed but hidden until bb has rendered its items (it fills the drawer a frame or so after opening).
     drawer.setAttribute("data-cf-anchored", "prep");
     const backdrop = [...document.querySelectorAll<HTMLElement>("[data-persistent-drawer-backdrop]")].find((b) => b.getAttribute("data-state") === "open") ?? null;
