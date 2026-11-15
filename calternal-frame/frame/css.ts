@@ -255,6 +255,13 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     background: var(--cf-side) !important;
     isolation: isolate;
     overflow: clip;
+    transition: border-radius 220ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 220ms ease-out;
+  }
+  /* At rest the pane is a full-screen sheet. When it slides aside for the drawer or the
+     right panel, it becomes the floating card: rounded, with the card's edge and shadow. */
+  ${MAIN}:is([data-sidebar-shelf]:not([data-sidebar-shelf="closed"]), [data-panel-shelf]:not([data-panel-shelf="closed"])) {
+    border-radius: 28px;
+    box-shadow: 0 0 0 1px var(--cf-edge), 0 18px 48px -12px rgb(0 0 0 / 0.55);
   }
   ${MAIN}::before {
     content: "";
