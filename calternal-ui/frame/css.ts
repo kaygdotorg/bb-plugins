@@ -823,6 +823,26 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
      attachments are one scrolling row (below), and the text area is capped to a share of the visible height
      (--cf-vvh is the visual viewport height, set by frame/touch.ts). */
   ${R} [data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
+  /* ── Native reading (phones), measured from Claude's and ChatGPT's iOS apps (2026-11-15): body 17pt with a
+     ~1.55 line height, ~0.85em between paragraphs, text 16pt from the screen edges (bb: 15px, 24pt), headings
+     a step larger than the body (bb's h3 was body-sized), and near-white text in dark (bb's measured 0.81). */
+  ${MAIN} [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto { padding-inline: calc(0.5rem * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id] .max-w-none {
+    font-size: calc(17px * var(--cf-ui-scale, 1));
+    line-height: 1.55;
+  }
+  ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 0.85em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none li + li { margin-top: 0.3em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none :is(h1, h2, h3, h4) { font-weight: 650; line-height: 1.3; margin: 1.15em 0 0.45em; letter-spacing: -0.01em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none h1 { font-size: 1.4em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none h2 { font-size: 1.25em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none h3 { font-size: 1.1em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none h4 { font-size: 1em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > :is(h1, h2, h3, h4):first-child { margin-top: 0; }
+  ${MAIN} [data-timeline-row-id] .max-w-none :not(pre) > code { font-size: 0.88em; }
+  /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
+  ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed { font-size: calc(17px * var(--cf-ui-scale, 1)); line-height: 1.45; margin-right: calc(0.5rem * var(--cf-ui-scale, 1)); }
+  ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
     ${R} [data-cf-nav] > button { height: 2.25rem; } /* text size: text-sm, like bb's thread rows */
