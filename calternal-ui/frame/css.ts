@@ -843,6 +843,37 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
   ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed { font-size: calc(17px * var(--cf-ui-scale, 1)); line-height: 1.45; margin-right: calc(0.5rem * var(--cf-ui-scale, 1)); }
   ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
+  /* Code blocks like Claude's: 20pt corners, a 44pt header with the language in the text font (bb: tiny
+     uppercase mono), a hairline under it, 16pt padding, 14.5pt code. bb's block: wrapper
+     .overflow-hidden.rounded-md.border.bg-surface-recessed > header .justify-between + pre.bb-code-highlight. */
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed { border-radius: calc(20px * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed > div.justify-between:first-child {
+    min-height: calc(44px * var(--cf-ui-scale, 1));
+    padding: 0 calc(6px * var(--cf-ui-scale, 1)) 0 calc(16px * var(--cf-ui-scale, 1)) !important;
+    border-bottom: 1px solid var(--cf-edge);
+  }
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed > div.justify-between:first-child .font-mono {
+    font-family: inherit !important;
+    font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    color: var(--muted-foreground);
+  }
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed > div.justify-between:first-child button { width: calc(36px * var(--cf-ui-scale, 1)) !important; height: calc(36px * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed > div.justify-between:first-child button svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id] .max-w-none div.overflow-hidden.rounded-md.border.bg-surface-recessed pre {
+    padding: calc(12px * var(--cf-ui-scale, 1)) calc(16px * var(--cf-ui-scale, 1)) calc(16px * var(--cf-ui-scale, 1)) !important;
+    font-size: calc(14.5px * var(--cf-ui-scale, 1)) !important;
+    line-height: 1.35 !important;
+  }
+  /* Message actions like Claude's: 18pt icons in 32pt buttons (bb: 12pt icons in 20pt buttons), 32pt apart,
+     the first icon on the text's edge. */
+  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full { height: calc(32px * var(--cf-ui-scale, 1)) !important; margin-top: calc(4px * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child { gap: 0 !important; margin-left: calc(-1px * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child :is(span, div) { gap: 0 !important; }
+  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button { width: calc(32px * var(--cf-ui-scale, 1)) !important; height: calc(32px * var(--cf-ui-scale, 1)) !important; margin: 0 !important; }
+  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id] [data-message-action-metadata] { font-size: calc(13px * var(--cf-ui-scale, 1)) !important; }
   /* ── The drawer like Claude's and ChatGPT's (measured, 2026-11-15): about 75% of the screen wide (bb: 86%,
      max 360), rows 48pt with 17pt labels and 20pt icons (bb: 36–40, 15px, 14px icons), quiet 15pt section
      headers, and a neutral grey for the selected and pressed rows instead of the accent tint. bb sets its
