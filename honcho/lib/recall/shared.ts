@@ -126,8 +126,8 @@ const shared = new WeakMap<BbPluginApi, RecallShared>();
 export function recallShared(bb: BbPluginApi, deps: Deps, ports: RecallPorts = {}): RecallShared {
   const existing = shared.get(bb);
   if (existing) { Object.assign(existing.ports, ports); return existing; }
-  let host: ExperimentalHostClient<RecallHostContract> | null = null;
-  try { host = bb.hosts.experimental_client({ contract: recallHostContract }); } catch { host = null; }
+  let host: ExperimentalHostClient<RecallHostContract> | null = ports.host ?? null;
+  if (ports.host === undefined) { try { host = bb.hosts.experimental_client({ contract: recallHostContract }); } catch { host = null; } }
   const portsRef: RecallPorts = { ...ports };
   const state: RecallShared = {
     store: new RecallStore(bb.storage.database()),

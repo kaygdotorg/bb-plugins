@@ -1,4 +1,6 @@
+import type { ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import type { Conclusion, HonchoClient } from "../honcho-client.js";
+import type { RecallHostContract } from "./host-contract.js";
 
 /**
  * Seams the recall slice needs from code it does not own. Every member is
@@ -13,8 +15,12 @@ export interface RecallPorts {
   scopeConclusions?(client: HonchoClient, peer: string, scope: string, limit: number): Promise<Conclusion[]>;
   /** The scope the capture slice created this thread's session with, when it knows it. */
   scopeFor?(threadId: string): string | null | undefined;
-  /** Synchronous settings view. Default: recall defines `codexUseBbTools` and `hookBudgetMs` itself. */
+  /** Synchronous settings view. server.ts passes the plugin's one settings handle;
+   * without it (unit tests) recall defines `codexUseBbTools` and `hookBudgetMs` itself. */
   settings?: RecallSettings;
+  /** The plugin's one host client (built from the full host contract in
+   * lib/host-contract.ts). Default: a client over the recall ops alone. */
+  host?: ExperimentalHostClient<RecallHostContract> | null;
 }
 
 export interface RecallSettings {

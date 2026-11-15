@@ -1,7 +1,9 @@
 // Harness host ops: every harness file operation runs in the plugin's host
 // worker on the machine that runs the threads, so remote machines work.
 //
-// host.ts (owned by the recall slice) merges these into its single host entry:
+// lib/host-contract.ts merges these into the plugin's one host contract, and
+// host.ts spreads `harnessHostHandlers()` into its handlers. A standalone entry
+// (tests) can merge them the same way:
 //
 //   import { registerHarnessHostOps } from "./lib/harness/host-ops.js";
 //   const contract = { ...recallContract };   // plain mutable objects

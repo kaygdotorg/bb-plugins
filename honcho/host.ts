@@ -1,15 +1,15 @@
-import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
-import { recallHostContract } from "./lib/recall/host-contract.js";
+import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
+import { hostContract } from "./lib/host-contract.js";
+import { harnessHostHandlers } from "./lib/harness/host-ops.js";
 import { createRecallHostHandlers } from "./lib/recall/host-handlers.js";
 
-/** The plugin's single host entry. Other slices merge their contracts and
- * handlers here the same way the recall slice does. */
+/** The plugin's single host entry: recall's cache writer and harness's file ops. */
 const recall = createRecallHostHandlers();
 
-export const hostContract = { ...recallHostContract };
+export { hostContract };
 
 export default experimental_defineHostEntry({
   contract: hostContract,
-  handlers: { ...recall.handlers },
+  handlers: { ...recall.handlers, ...harnessHostHandlers() },
   dispose: () => { recall.dispose(); },
 });
