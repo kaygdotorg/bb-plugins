@@ -242,8 +242,9 @@ ${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/search"] {
 ${R} [data-sidebar="footer"] li[data-footer-item="builtin:settings"] { order: 3; }
 ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]) { order: 4; }
 
-/* Quiet sidebar: "More" (top) and bb's footer "…" appear only while the pointer is over the
-   sidebar or focus is inside it, fading and sliding in and taking their space only then.
+/* Quiet sidebar: "More" appears only while the pointer is near it (over the top navigation)
+   and bb's footer "…" only while it is over the footer row, or focus is inside them; each
+   fades and slides in and takes its space only then.
    Touch screens have no hover: they always show. The footer item keeps bb's 2rem when shown
    (bb measures footer items to decide what overflows). */
 @media (hover: hover) {
@@ -254,7 +255,7 @@ ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]
     overflow: hidden;
     transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  ${R} [data-sidebar="sidebar"]:is(:hover, :focus-within) [data-cf-nav-more],
+  ${R} [data-cf-nav]:is(:hover, :focus-within) [data-cf-nav-more],
   ${R} [data-cf-nav-more][data-open] { max-height: 2.25rem; opacity: 1; translate: 0 0; }
 
   ${R} [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]) {
@@ -266,7 +267,7 @@ ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]
     overflow: hidden;
     transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  ${R} [data-sidebar="sidebar"]:is(:hover, :focus-within) [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]),
+  ${R} [data-sidebar="footer"]:is(:hover, :focus-within) li li[data-sidebar="menu-item"]:not([data-footer-item]),
   ${R} [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]):has([data-state="open"]) {
     width: 2rem;
     margin-inline-start: 0;

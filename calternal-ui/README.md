@@ -9,7 +9,7 @@ A bb plugin that gives bb calternal's look, after Craft's window:
 - **Light and dark:** both themes measured to WCAG 4.5:1 text contrast.
 - **Fonts:** any Google Font for the UI, chat, code and terminal, stored locally.
 - **Composer:** one compact bottom row of icons (model, context, permission, environment); one line on phones until you type; voice input as an accent pill with a clock.
-- **Sidebar:** compact navigation aligned with the thread list (it follows bb's Customize navigation); `+` and search sit in the footer next to Settings; More and the footer's … appear only on hover.
+- **Sidebar:** compact navigation aligned with the thread list (it follows bb's Customize navigation); `+` and search sit in the footer next to Settings; More and the footer's … appear only when you hover near them.
 - **Details:** warm tooltips, iMessage-style bubble tails, glass menus and dialogs.
 - **Phones:** swipe a thread to archive or pin, swipe a message to reply or see times, pull down to search, a keyboard-down button.
 - **Storage:** every wallpaper and font the plugin keeps is listed in its settings, with sizes, and can be removed.
