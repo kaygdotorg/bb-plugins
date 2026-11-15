@@ -65,7 +65,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   bb.onDispose(secrets.start());
 
   // 2. Capture.
-  const capture = createCaptureService(bb, { ...deps, settings: view.capture, extraDeny: secretValues });
+  // Recall is created after capture, so the purge hook binds to it late.
+  let recallForPurge: { conclusionsForThread(threadId: string): Array<{ id: string; attached: boolean }> } | undefined;
+  const capture = createCaptureService(bb, {
+    ...deps, settings: view.capture, extraDeny: secretValues,
+    unattachedConclusions: threadId => (recallForPurge?.conclusionsForThread(threadId) ?? []).filter(c => !c.attached).map(c => c.id),
+  });
 
   // 3. Recall. The service creates the store the tools share, so it comes first.
   // One scope resolver: recall searches the scope capture created the session in.
@@ -78,6 +83,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     // bb-secrets values are redacted from search queries, cached memory and honcho_conclude.
     secretValues,
   } });
+  recallForPurge = recall;
   registerTools(bb, deps);
   registerConfigure(bb, deps, recall);
   registerDispatchPrefetch(bb, deps, recall);
@@ -95,6 +101,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     isDenied: thread => capture.isDenied(thread),
     redaction: async () => ({ patterns: compile((await readPrivacy(bb.storage.kv)).patterns), deny: await secretValues() }),
     messagesPerMinute: view.backfillMessagesPerMinute,
+    captureRequiresSwitchover: async () => (await view.capture()).captureRequiresSwitchover,
   });
 
   // 6. CLI and the Memory page's RPC.

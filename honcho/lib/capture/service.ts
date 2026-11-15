@@ -576,6 +576,14 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
         for (const c of result.items) own.add(c.id);
         if (result.items.length < 100 || (result.total != null && own.size >= result.total)) break;
       }
+      // Unattached conclusions from honcho_conclude: no session_id, so neither the list above nor the
+      // session cascade reaches them. Delete them by id, and chase what was derived from them.
+      const loose = deps.unattachedConclusions?.(threadId) ?? [];
+      for (const id of loose) {
+        try { await client.deleteConclusion(id); purged++; }
+        catch (error) { if (!honchoNotFound(error)) throw error; }
+        own.add(id);
+      }
       // Derived conclusions carry no session_id and Honcho can't filter by source id, so scan the
       // user's own derived conclusions (observer = observed = peer) in a bounded number of pages,
       // and follow source_ids (transitively) back to this session's conclusions.

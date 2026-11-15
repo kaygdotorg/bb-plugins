@@ -135,6 +135,9 @@ export interface CaptureDeps extends Deps {
   settings?(): Promise<Partial<CaptureSettings>> | Partial<CaptureSettings>;
   /** Values from bb-secrets dotenv files, joined to the redaction deny set. */
   extraDeny?(): Promise<string[]> | string[];
+  /** Conclusion ids saved from this thread without a session_id (honcho_conclude before its
+   * session existed); the session cascade can't reach them, so purge deletes them by id. */
+  unattachedConclusions?(threadId: string): string[];
   git?: GitInfoReader;
   clock?: Clock;
   random?: () => number;

@@ -24,6 +24,7 @@ export function formatPlan(plan: BackfillPlan): string {
     `  tokens (about):         ${plan.tokens}`,
     `  reasoning messages:     ${plan.reasoningMessages}`,
     `  already in honcho:      ${plan.skippedAlreadyInHoncho} (skipped)`,
+    ...(plan.notYetSeenByCapture ? [`  waiting for capture:    ${plan.notYetSeenByCapture} (skipped until live capture sees them)`] : []),
   ].join("\n");
 }
 export function formatHarness(state: HarnessState): string {

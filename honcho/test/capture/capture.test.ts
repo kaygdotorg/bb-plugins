@@ -391,6 +391,22 @@ describe("deletion", () => {
     expect(deps.activity.entries.find(e => e.kind === "delete")?.summary).toContain("2 derived conclusion(s)");
   });
 
+  it("purges conclusions honcho_conclude saved without a session, by id", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "hi");
+    const { svc } = service({ unattachedConclusions: (id: string) => (id === "thr_a" ? ["con_loose"] : []) });
+    await pass(svc);
+    mock.conclusions.push(
+      { id: "con_loose", content: "agent fact", observer_id: "hermy", observed_id: "hermy", level: "explicit" },
+      { id: "con_from_loose", content: "derived", observer_id: "hermy", observed_id: "hermy", level: "deductive", source_ids: ["con_loose"] },
+      { id: "con_keep", content: "unrelated", observer_id: "hermy", observed_id: "hermy", level: "explicit" },
+    );
+    fake.deleteThread("thr_a");
+    await fake.emit("thread.deleted", { thread: fake.threads.get("thr_a") });
+    await pass(svc);
+    expect(mock.conclusions.map(c => c.id)).toEqual(["con_keep"]);
+  });
+
   it("keeps the session when delete-on-delete is off", async () => {
     fake.addThread("thr_a");
     fake.prompt("thr_a", "keep");

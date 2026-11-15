@@ -105,6 +105,8 @@ export interface BackfillPlan {
   messages: number;
   tokens: number;
   skippedAlreadyInHoncho: number;
+  /** pi/acp threads live capture hasn't seen yet: skipped, so the two never both upload one. */
+  notYetSeenByCapture?: number;
   reasoningMessages: number;
 }
 

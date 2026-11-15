@@ -119,7 +119,7 @@ function Backfill() {
       <Card className="space-y-2.5 p-3">
         {plan ? (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-5" aria-label="dry run">
-            {([["threads", plan.threads], ["messages", plan.messages], ["tokens", plan.tokens], ["already there", plan.skippedAlreadyInHoncho], ["with reasoning", plan.reasoningMessages]] as const).map(([k, v]) => (
+            {([["threads", plan.threads], ["messages", plan.messages], ["tokens", plan.tokens], ["already there", plan.skippedAlreadyInHoncho], ["waiting for capture", plan.notYetSeenByCapture ?? 0], ["with reasoning", plan.reasoningMessages]] as const).map(([k, v]) => (
               <div key={k}><dt className="text-2xs text-muted-foreground">{k}</dt><dd className="text-xs tabular-nums">{v.toLocaleString()}</dd></div>
             ))}
           </dl>
