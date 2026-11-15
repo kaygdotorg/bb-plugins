@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, readFileSync, statSync, symlinkSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { listBackups, testHooks } from "../../lib/harness/files";
 import { codexHookKey, codexTrustHash } from "../../lib/harness/hooks-json";
 import { connect, desiredHooks, handOver, harnessState, layout, prepareEnv, undo } from "../../lib/harness/ops";
 import { readHookStates } from "../../lib/harness/toml";
-import { FAKE_BEARER, makeHome, snapshot, userPromptHook, type FakeHome } from "./fixtures";
+import { claudeSettingsJson, codexConfigToml, codexHooksJson, FAKE_BEARER, makeHome, snapshot, userPromptHook, type FakeHome } from "./fixtures";
 
 const homes: FakeHome[] = [];
-afterEach(() => { for (const h of homes.splice(0)) h.cleanup(); });
+afterEach(() => { delete testHooks.beforeSwap; for (const h of homes.splice(0)) h.cleanup(); });
 const setup = (opts?: Parameters<typeof makeHome>[0]) => { const h = makeHome(opts); homes.push(h); return h; };
 const json = (text: string | null) => JSON.parse(text ?? "null");
 
@@ -203,6 +204,151 @@ describe("undo", () => {
     await undo(h.paths);
     expect(existsSync(toml)).toBe(false);
     expect(h.read(".codex/hooks.json")).toBe("");
+  });
+});
+
+describe("undo keeps edits made after the step", () => {
+  const edit = (h: FakeHome, rel: string, change: (value: any) => void) => {
+    const path = join(h.home, rel);
+    const value = json(readFileSync(path, "utf8"));
+    change(value);
+    writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+  };
+  const userStop = { hooks: [{ type: "command", command: "echo later" }] };
+
+  it("undo connect keeps a settings.json connect created once the user edited it", async () => {
+    const h = setup();
+    rmSync(join(h.home, ".claude/settings.json"));
+    await connect(h.paths);
+    edit(h, ".claude/settings.json", (s) => { s.model = "opus"; s.hooks.Stop = [userStop]; });
+    await undo(h.paths, "connect");
+    expect(json(h.read(".claude/settings.json"))).toEqual({ hooks: { Stop: [userStop] }, model: "opus" });
+    expect((await harnessState(h.paths)).claude.hookInstalled).toBe(false);
+  });
+
+  it("undo connect keeps a codex hooks.json connect created once the user edited it", async () => {
+    const h = setup();
+    rmSync(join(h.home, ".codex/hooks.json"));
+    await connect(h.paths);
+    edit(h, ".codex/hooks.json", (s) => { s.hooks.Stop = [userStop]; });
+    await undo(h.paths);
+    expect(json(h.read(".codex/hooks.json"))).toEqual({ hooks: { Stop: [userStop] } });
+    // the trust connect granted is gone again, the rest of the toml is as it was
+    expect(h.read(".codex/config.toml")).toBe(codexConfigToml(h.paths.codexDir));
+  });
+
+  it("undo connect still removes a file connect created when nobody touched it", async () => {
+    const h = setup();
+    rmSync(join(h.home, ".claude/settings.json"));
+    await connect(h.paths);
+    await undo(h.paths, "connect");
+    expect(existsSync(join(h.home, ".claude/settings.json"))).toBe(false);
+  });
+
+  it("undo hand over keeps later harness writes and puts back only what hand over removed", async () => {
+    const h = setup();
+    await handOver(h.paths);
+    edit(h, ".claude/settings.json", (s) => { s.permissions = { allow: ["Bash(ls)"] }; });
+    const tomlPath = join(h.home, ".codex/config.toml");
+    writeFileSync(tomlPath, readFileSync(tomlPath, "utf8") + '\n[projects."/tmp/later"]\ntrust_level = "trusted"\n');
+    expect((await undo(h.paths, "handOver")).restored).toHaveLength(1);
+
+    const settings = json(h.read(".claude/settings.json"));
+    expect(settings).toEqual({ ...json(claudeSettingsJson()), permissions: { allow: ["Bash(ls)"] } });
+    expect(json(h.read(".codex/hooks.json"))).toEqual(json(codexHooksJson(h.paths.codexDir)));
+    const toml = h.read(".codex/config.toml")!;
+    expect(toml).toContain('[projects."/tmp/later"]');
+    expect(toml).toContain("[mcp_servers.honcho]");
+    expect(toml).toContain("[mcp_servers.honcho.tools]");
+    expect(toml).toContain("honcho.example.invalid");
+    const { states } = readHookStates(toml);
+    expect(states).toEqual(readHookStates(codexConfigToml(h.paths.codexDir)).states);
+    const state = await harnessState(h.paths);
+    expect(state.claude.handedOver).toBe(false);
+    expect(state.codex.handedOver).toBe(false);
+    // codex-honcho's own strip still finds what was put back
+    await handOver(h.paths);
+    expect(h.read(".codex/config.toml")).not.toContain("mcp_servers.honcho");
+  });
+
+  it("undo hand over removes the enabledPlugins entry it added", async () => {
+    const h = setup();
+    writeFileSync(join(h.home, ".claude/settings.json"), JSON.stringify({ env: { A: "1" } }, null, 2) + "\n");
+    await handOver(h.paths);
+    edit(h, ".claude/settings.json", (s) => { s.model = "opus"; });
+    await undo(h.paths, "handOver");
+    expect(json(h.read(".claude/settings.json"))).toEqual({ env: { A: "1" }, model: "opus" });
+  });
+
+  it("out-of-order undos with later edits keep the edits and end with both steps undone", async () => {
+    const h = setup();
+    await connect(h.paths);
+    await handOver(h.paths);
+    edit(h, ".claude/settings.json", (s) => { s.model = "opus"; });
+    await undo(h.paths, "connect");
+    await undo(h.paths, "handOver");
+    expect(json(h.read(".claude/settings.json"))).toEqual({ ...json(claudeSettingsJson()), model: "opus" });
+    expect(snapshot(h)[".codex/hooks.json"]).toBe(codexHooksJson(h.paths.codexDir));
+    expect(h.read(".codex/config.toml")).toBe(codexConfigToml(h.paths.codexDir));
+    const state = await harnessState(h.paths);
+    expect(state.claude).toMatchObject({ hookInstalled: false, handedOver: false });
+    expect(state.codex).toMatchObject({ hookInstalled: false, handedOver: false });
+  });
+
+  it("out-of-order hand over undo after connect re-keys bb's hook so it stays trusted", async () => {
+    const h = setup();
+    const original = snapshot(h);
+    await handOver(h.paths);
+    await connect(h.paths);
+    edit(h, ".claude/settings.json", (s) => { s.model = "opus"; });
+    await undo(h.paths, "handOver");
+    expect((await harnessState(h.paths)).codex).toEqual({ hookInstalled: true, handedOver: false, trusted: true });
+    await undo(h.paths, "connect");
+    const now = snapshot(h);
+    expect(now[".codex/hooks.json"]).toBe(original[".codex/hooks.json"]);
+    expect(now[".codex/config.toml"]).toBe(original[".codex/config.toml"]);
+    expect(json(now[".claude/settings.json"]!)).toEqual({ ...json(original[".claude/settings.json"]!), model: "opus" });
+  });
+});
+
+describe("concurrent writers", () => {
+  it("re-reads and retries when a file changes between the read and the write", async () => {
+    const h = setup();
+    const settings = join(h.home, ".claude/settings.json");
+    let fired = false;
+    testHooks.beforeSwap = (path) => {
+      if (fired || path !== settings) return;
+      fired = true;
+      writeFileSync(settings, JSON.stringify({ ...json(readFileSync(settings, "utf8")), model: "opus" }, null, 2) + "\n");
+    };
+    await connect(h.paths);
+    expect(fired).toBe(true);
+    const after = json(h.read(".claude/settings.json"));
+    expect(after.model).toBe("opus");
+    expect(after.hooks.PreToolUse).toHaveLength(1);
+    expect((await listBackups(layout(h.paths).backupsDir)).map((b) => b.manifest.op)).toEqual(["connect"]);
+    // the backup holds the bytes the edit was made from, so undo keeps the concurrent edit
+    await undo(h.paths);
+    expect(json(h.read(".claude/settings.json"))).toEqual({ ...json(claudeSettingsJson()), model: "opus" });
+  });
+
+  it("gives up after its retries, rolling back the files it had already written", async () => {
+    const h = setup();
+    const original = snapshot(h);
+    const hooks = join(h.home, ".codex/hooks.json");
+    let n = 0;
+    testHooks.beforeSwap = (path) => {
+      if (path !== hooks) return;
+      n += 1;
+      writeFileSync(hooks, codexHooksJson(h.paths.codexDir).replace("echo user-hook", `echo user-hook-${n}`));
+    };
+    await expect(connect(h.paths)).rejects.toThrow(/kept changing.*no file was changed/);
+    expect(n).toBe(4);
+    const now = snapshot(h);
+    expect(now[".claude/settings.json"]).toBe(original[".claude/settings.json"]);
+    expect(now[".codex/config.toml"]).toBe(original[".codex/config.toml"]);
+    expect(now[".codex/hooks.json"]).toContain("echo user-hook-4");
+    expect(await listBackups(layout(h.paths).backupsDir)).toEqual([]);
   });
 });
 
