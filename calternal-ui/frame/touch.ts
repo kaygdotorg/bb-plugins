@@ -96,6 +96,46 @@ function openSearch() {
  * transition carries on from exactly there (no hitch). Not from the composer, from things that scroll
  * sideways, or from the 24px screen edges (bb's own edge swipe).
  */
+/**
+ * The first tap on a sheet's button works while typing (kayg: "tapping Rename first dismisses the keyboard,
+ * the second tap renames"). iOS Safari: with a text field focused, a tap elsewhere blurs it, the keyboard
+ * starts down, the sheet (sitting above the keyboard) moves, and the click never lands on the button that
+ * moved away. So for a clean tap (no movement) on a button, link or menu item inside a sheet or dialog while
+ * a text field has focus, the touch's default (the blur and the synthesized click) is cancelled at touchend
+ * and the element is pressed directly. Scrolling is untouched (only touchend, only without movement).
+ */
+function firstTapInSheets(): () => void {
+  const SHEETS = '[data-persistent-drawer-content], [role="dialog"], [role="alertdialog"], [role="menu"]';
+  const PRESSABLE = 'button, a[href], [role="button"], [role="menuitem"], [role="option"]';
+  let target: HTMLElement | null = null, x0 = 0, y0 = 0, moved = false;
+  const onStart = (e: TouchEvent) => {
+    target = null;
+    if (e.touches.length !== 1 || !isEditing(document.activeElement)) return;
+    const el = (e.target as Element).closest?.<HTMLElement>(PRESSABLE);
+    if (!el || !el.closest(SHEETS) || el.contains(document.activeElement)) return;
+    if ((el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true") return;
+    target = el; moved = false; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  };
+  const onMove = (e: TouchEvent) => {
+    if (target && Math.hypot(e.touches[0].clientX - x0, e.touches[0].clientY - y0) > 10) moved = true;
+  };
+  const onEnd = (e: TouchEvent) => {
+    const el = target;
+    target = null;
+    if (!el || moved || !el.isConnected) return;
+    e.preventDefault(); // no blur, no synthesized click (it would miss the moved button)
+    el.click();
+  };
+  document.addEventListener("touchstart", onStart, { capture: true, passive: true });
+  document.addEventListener("touchmove", onMove, { capture: true, passive: true });
+  document.addEventListener("touchend", onEnd, { capture: true, passive: false });
+  return () => {
+    document.removeEventListener("touchstart", onStart, { capture: true });
+    document.removeEventListener("touchmove", onMove, { capture: true });
+    document.removeEventListener("touchend", onEnd, { capture: true });
+  };
+}
+
 const TOGGLE_OVERLAY = '[data-testid="app-sidebar-trigger-overlay"]';
 
 /** bb's right panel: a fixed layer at the right edge (z 45) that slides in with its own translate. */
@@ -504,6 +544,6 @@ function keyboardButton(): () => void {
 export function mountTouch(): () => void {
   // Any touch-capable device (iPhone, iPad, touch laptops); mouse-only desktops skip all of it.
   if (navigator.maxTouchPoints === 0) return () => {};
-  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes(), sideSwipes()];
+  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes(), sideSwipes(), firstTapInSheets()];
   return () => { for (const dispose of disposers) dispose(); };
 }

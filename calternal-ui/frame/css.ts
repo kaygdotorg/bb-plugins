@@ -19,6 +19,7 @@ import { PILL_PHONE_CSS } from "./pills-phone";
 import { TITLE_PILL_CSS } from "./title-pill";
 import { PILL_SETTINGS_CSS } from "./pills-settings";
 import { PHONE_MENU_CSS } from "./phone-menu";
+import { edgeFadeCSS } from "./edge-fade";
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL, SIDEBAR } from "./selectors";
 
 export const CSS = `
@@ -148,6 +149,25 @@ ${R}, ${R}.dark {
   --state-hover: color-mix(in oklab, var(--cf-accent) 12%, transparent);
   --state-active: color-mix(in oklab, var(--cf-accent) 22%, transparent);
 }
+/* The sidebar scrolls as ONE column (kayg): the nav and the thread list together, with only the wordmark row
+   pinned at the top and the footer at the bottom, both floating over the rows, which fade progressively as
+   they pass under either bar (edge-fade.ts). bb's own layout scrolls only the thread list and pins its
+   section labels (sticky), which, on our transparent sidebar, let rows show through the labels. */
+${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"] { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"]::-webkit-scrollbar { display: none; }
+${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"] > [data-testid="app-sidebar-top-reserve-row"] { position: sticky; top: 0; z-index: 3; }
+${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"] > [data-sidebar="content"] { flex: 0 0 auto; min-height: auto; overflow: visible; }
+${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"] > [data-sidebar="footer"] { position: sticky; bottom: 0; z-index: 3; margin-top: auto; }
+${R} [data-sidebar="sidebar"] [data-sidebar-sticky-tier] { position: relative !important; top: auto !important; }
+${edgeFadeCSS({
+  name: "sidebar",
+  scroller: `${R} [data-sidebar="sidebar"] [data-testid="app-sidebar-body"]`,
+  rows: `[data-cf-nav] > button, [data-sidebar="group-label"], .group\\/thread-row, [data-sidebar="content"] [data-sidebar="menu-button"]`,
+  top: "var(--bb-app-chrome-row-height, 3.25rem)",
+  bottom: "var(--cf-sb-footer-h, 3.75rem)",
+  mid: "1.5rem", // half a 48pt row
+})}
+
 /* Selection: on the root only. Chrome (131+) inherits ::selection from the root; a universal
    \`html ::selection\` made it compute a selection style for EVERY element, doubling each whole-page
    restyle bb does (sidebar toggle, menus, tooltips: ~2,100 -> ~1,100 elements, desktop trace

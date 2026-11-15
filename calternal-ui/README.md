@@ -33,6 +33,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 
 **On phones**
 - **The header:** the thread title sits on the left; the ⋯ menu also holds the right panel, and opening it keeps your keyboard up.
+- **The sidebar scrolls as one**, under its name at the top and its buttons at the bottom, with items fading softly as they pass under them.
 - **Swipe a thread** left to archive it, right to pin it.
 - **Pull down** on the title bar (or at the top of the sidebar) to search.
 - **Swipe sideways** anywhere in a chat: the chat follows your finger, right to open the sidebar, left for the right panel.
