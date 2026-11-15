@@ -89,6 +89,7 @@ export function mountTooltips(): () => void {
   let open = false;
   let warmUntil = 0;
   let graceTimer = 0;
+  let openFrame = 0; // the pending open; a press in the same frame must cancel it
 
   const place = (el: HTMLElement, glide: boolean) => {
     const r = el.getBoundingClientRect();
@@ -113,7 +114,9 @@ export function mountTooltips(): () => void {
     keys.hidden = !info.keys;
     if (!open) tip.dataset.state = "closed"; // start from the pop-in pose
     place(el, glide);
-    requestAnimationFrame(() => {
+    cancelAnimationFrame(openFrame);
+    openFrame = requestAnimationFrame(() => {
+      openFrame = 0;
       tip.dataset.state = instant || reduce ? "open-instant" : "open";
       open = true;
     });
@@ -121,6 +124,12 @@ export function mountTooltips(): () => void {
 
   const hide = () => {
     clearTimeout(openTimer);
+    if (openFrame) {
+      cancelAnimationFrame(openFrame);
+      openFrame = 0;
+      trigger = null;
+      tip.dataset.state = "closed";
+    }
     if (!open) return;
     open = false;
     trigger = null;
@@ -176,6 +185,7 @@ export function mountTooltips(): () => void {
   return () => {
     clearTimeout(openTimer);
     clearTimeout(graceTimer);
+    cancelAnimationFrame(openFrame);
     document.removeEventListener("pointerover", onOver);
     document.removeEventListener("pointerout", onOut);
     document.removeEventListener("focusin", onFocus);
