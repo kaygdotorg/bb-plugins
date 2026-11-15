@@ -231,7 +231,7 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
      that starts at (0,0). Ours floats one gap (+1px border) in, so the toggle follows. */
   ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-sidebar-trigger-overlay"],
   ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-desktop-sidebar-trigger"] {
-    translate: calc(var(--cf-gap) + 1px) 1px; /* + the card's 1px border */
+    translate: calc(var(--cf-gap) + 1px) 0; /* + the card's 1px side border */
   }
 
   /* Resize handles: no seam lines. A small grip pill appears on hover only. */
@@ -261,10 +261,13 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     --surface-scrim: transparent;
     position: relative;
     isolation: isolate;
-    /* Flush with the window's top and bottom; the gap separates it from the sidebars only. */
+    /* Flush with the window's top and bottom; the gap separates it from the sidebars only.
+       No top/bottom border there: the edge colour is translucent and the glass layers sit
+       inside the border box, so a border at the window edge showed a strip of wallpaper. */
     margin: 0 var(--cf-gap);
     background: transparent !important;
     border: 1px solid var(--cf-edge);
+    border-block-width: 0;
     border-radius: var(--cf-radius);
     box-shadow: var(--cf-shadow);
     overflow: clip !important;
