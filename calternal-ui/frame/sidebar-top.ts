@@ -23,8 +23,23 @@ const CSS = `
 /* Back/forward in the sidebar's top rows (main and Settings): gone. */
 ${R} ${SIDEBAR} div:has(> button[aria-label="Go back"]) { display: none !important; }
 ${R} ${OVERLAY} { translate: var(--cf-toggle-dx, 0) 0; }
-${R} ${OVERLAY}[data-cf-sliding] { transition: translate 220ms var(--cf-ease-out); }
+/* Slides with the sidebar: bb's own duration and curve for its slide (read at runtime). */
+${R} ${OVERLAY}[data-cf-sliding] { transition: translate var(--cf-slide-ms, 200ms) var(--cf-slide-ease, linear); }
 `;
+
+/** bb's slide for the sidebar: the transition on `left` of its fixed container. */
+function slideOf(sidebar: HTMLElement): { ms: number; ease: string } {
+  for (let e: HTMLElement | null = sidebar; e && e !== document.body; e = e.parentElement) {
+    const cs = getComputedStyle(e);
+    if (cs.position !== "fixed") continue;
+    const props = cs.transitionProperty.split(",").map((x) => x.trim());
+    const i = Math.max(0, props.indexOf("left"));
+    const pick = (list: string) => { const xs = list.split(/,(?![^(]*\))/).map((x) => x.trim()); return xs[i % xs.length]; };
+    const ms = parseFloat(pick(cs.transitionDuration)) * (pick(cs.transitionDuration).endsWith("ms") ? 1 : 1000);
+    return { ms: Number.isFinite(ms) ? ms : 200, ease: pick(cs.transitionTimingFunction) || "linear" };
+  }
+  return { ms: 200, ease: "linear" };
+}
 
 export function mountSidebarTop(): () => void {
   const style = document.createElement("style");
@@ -35,6 +50,7 @@ export function mountSidebarTop(): () => void {
   const wide = matchMedia("(min-width: 768px)");
   let lastExpanded: boolean | null = null;
   let frame = 0;
+  let slidingTimer = 0;
 
   /** Expanded sidebar on desktop: the toggle's right edge on the top row's content edge. */
   const place = () => {
@@ -47,16 +63,28 @@ export function mountSidebarTop(): () => void {
     const row = sidebar.querySelector<HTMLElement>(ROW);
     const box = row?.getBoundingClientRect();
     const expanded = !!box && box.width > 0 && wide.matches && sidebar.closest("[data-state]")?.getAttribute("data-state") === "expanded";
-    // Slide only when the sidebar opens or closes, not while its edge is dragged.
+    // Slide only when the sidebar opens or closes, not while its edge is dragged, and with the
+    // sidebar: bb slides its fixed container's `left`, so copy that transition's duration and curve.
     if (lastExpanded !== null && expanded !== lastExpanded) {
+      const slide = slideOf(sidebar);
+      overlay.style.setProperty("--cf-slide-ms", `${slide.ms}ms`);
+      overlay.style.setProperty("--cf-slide-ease", slide.ease);
       overlay.setAttribute("data-cf-sliding", "");
-      window.setTimeout(() => overlay.removeAttribute("data-cf-sliding"), 260);
+      window.clearTimeout(slidingTimer);
+      slidingTimer = window.setTimeout(() => overlay.removeAttribute("data-cf-sliding"), slide.ms + 60);
     }
     lastExpanded = expanded;
     if (!expanded || !row || !box) { overlay.style.setProperty("--cf-toggle-dx", "0px"); return; }
     // The row's content edge (its 8.8px padding in), which is also every sidebar row's right edge.
-    const rowRight = box.right - (parseFloat(getComputedStyle(row).paddingRight) || 0);
-    const current = toggle.getBoundingClientRect().right - (parseFloat(overlay.style.getPropertyValue("--cf-toggle-dx")) || 0);
+    // From the RESTING layout, not the on-screen box: bb's sidebar is off-canvas and slides in by
+    // `left`, so at the moment it opens it is still off screen (its box would put the toggle at x<0).
+    // At rest the sidebar starts at the window's left edge (+ the safe area, the overlay's own left).
+    const restLeft = parseFloat(getComputedStyle(overlay).left) || 0;
+    const inset = box.left - sidebar.getBoundingClientRect().left; // the row inside the sidebar (both slide together)
+    const rowRight = restLeft + inset + box.width - (parseFloat(getComputedStyle(row).paddingRight) || 0);
+    // The toggle's right edge without our shift. Mid-slide the shift on screen is the transition's
+    // current value (the computed translate), not the target in --cf-toggle-dx.
+    const current = toggle.getBoundingClientRect().right - (parseFloat(getComputedStyle(overlay).translate) || 0);
     overlay.style.setProperty("--cf-toggle-dx", `${(rowRight - current).toFixed(2)}px`);
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(place); };
