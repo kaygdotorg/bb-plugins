@@ -19,7 +19,7 @@ export const WORKSPACE = "test";
 type FakeHostFactory = (options: any) => { bb: BbPluginApi; harness: { lifecycle: { dispose(): Promise<void> } } };
 type HostHarnessFactory = (entry: any, options: any) => { experimental_call(method: any, input: any): Promise<any>; experimental_dispose(): Promise<void> };
 export interface TestingSdk<F extends FakeHostFactory, H extends HostHarnessFactory> { createFakePluginHost: F; experimental_createHostEntryHarness: H }
-export type SetupOptions = { settings?: Record<string, boolean | number | string>; ports?: RecallPorts; offline?: boolean };
+export type SetupOptions = { settings?: Record<string, boolean | number | string>; ports?: RecallPorts; offline?: boolean; sdk?: Record<string, unknown> };
 
 /** Fake bb host + mock Honcho + the real host entry, routed through the fake host-RPC driver.
  * The testing SDK is passed in: only *.test.ts files may import it (package scan). */
@@ -29,7 +29,7 @@ export async function setup<F extends FakeHostFactory, H extends HostHarnessFact
   const dataDir = await mkdtemp(join(tmpdir(), "honcho-recall-"));
   const host = experimental_createHostEntryHarness(hostEntry, { experimental_paths: { dataDir, tempDir: join(dataDir, "tmp") } }) as ReturnType<H>;
   const fake = createFakePluginHost({
-    pluginId: "honcho", settings: opts.settings,
+    pluginId: "honcho", settings: opts.settings, sdk: opts.sdk,
     experimental_callHostRpc: ({ method, input }: { method: string; input: unknown }) => host.experimental_call(method, input),
   }) as ReturnType<F>;
   const bb: BbPluginApi = fake.bb;
@@ -71,4 +71,22 @@ export function seedMessage(mock: Awaited<ReturnType<typeof mockHoncho>>, row: {
 }
 export function seedConclusion(mock: Awaited<ReturnType<typeof mockHoncho>>, row: { id: string; content: string; level?: string; session?: string }) {
   mock.conclusions.push({ id: row.id, content: row.content, observer_id: PEER, observed_id: PEER, created_at: "2026-10-01T00:00:00.000Z", level: row.level ?? "deductive", ...(row.session ? { session_id: row.session } : {}) });
+}
+
+/** A synthetic linked worktree: its .git file points into the main repo's .git/worktrees. */
+export const WORKTREE = "/synthetic/wt/feature-x";
+export function worktreeSdk() {
+  const files: Record<string, string> = {
+    [`${WORKTREE}/.git`]: "gitdir: /synthetic/src/Cool.Repo/.git/worktrees/feature-x\n",
+    "/synthetic/src/Cool.Repo/.git/worktrees/feature-x/commondir": "../..\n",
+    "/synthetic/src/Cool.Repo/.git/config": "[remote \"origin\"]\n\turl = git@example.test:acme/cool-repo.git\n",
+  };
+  return {
+    environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_a", path: WORKTREE, isGitRepo: true }) },
+    projects: { get: async ({ projectId }: { projectId: string }) => ({ id: projectId, name: "Repo One", gitRemoteUrl: null }) },
+    files: { read: async ({ path }: { path: string }) => {
+      if (!(path in files)) throw Object.assign(new Error("not found"), { status: 404 });
+      return { content: files[path], contentEncoding: "utf8" };
+    } },
+  };
 }

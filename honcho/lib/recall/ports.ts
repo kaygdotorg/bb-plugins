@@ -2,6 +2,7 @@ import type { ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { Conclusion, HonchoClient } from "../honcho-client.js";
 import type { RecallHostContract } from "./host-contract.js";
+import type { ThreadRef } from "../capture/scope.js";
 
 /**
  * Seams the recall slice needs from code it does not own. Every member is
@@ -14,8 +15,11 @@ export interface RecallPorts {
   /** Top conclusions for one scope. Default: a semantic conclusions query on
    * the scope name; Honcho v3 has no scope filter on conclusions. */
   scopeConclusions?(client: HonchoClient, peer: string, scope: string, limit: number): Promise<Conclusion[]>;
-  /** The scope the capture slice created this thread's session with, when it knows it. */
+  /** The scope the capture slice created this thread's session with, when it already knows it (sync). */
   scopeFor?(threadId: string): string | null | undefined;
+  /** The plugin's one scope resolver (capture's `scopeFor`). Default: capture's
+   * resolver built over this bb, with the same kv cache. */
+  resolveScope?(thread: ThreadRef): Promise<string>;
   /** Synchronous settings view. server.ts passes the plugin's one settings handle;
    * without it (unit tests) recall defines `codexUseBbTools` and `hookBudgetMs` itself. */
   settings?: RecallSettings;

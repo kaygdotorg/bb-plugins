@@ -1,7 +1,8 @@
 import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import type { Deps, ConclusionView } from "../contract.js";
 import { HonchoError, type Conclusion, type HonchoClient } from "../honcho-client.js";
-import { scopeSlug, sessionScope } from "../mapping.js";
+import { scopeSlug } from "../mapping.js";
+import { createScopeResolver, type ThreadRef } from "../capture/scope.js";
 import { recallHostContract, type RecallHostContract } from "./host-contract.js";
 import { RecallStore, type ConclusionMark } from "./store.js";
 import type { RecallPorts } from "./ports.js";
@@ -13,58 +14,64 @@ export interface ScopeInput {
   threadId: string;
   parentThreadId?: string | null;
   sideChat?: boolean;
-  hostId?: string | null;
+  /** Ids the shared resolver looks the environment and project up by. */
+  projectId: string;
+  environmentId?: string | null;
   path?: string | null;
   isGitRepo?: boolean | null;
   projectName: string;
 }
 
+/** The one scope resolver: capture's `scopeFor` (lib/capture/scope.ts). */
+export type ScopeLookup = (thread: ThreadRef) => Promise<string>;
+
 /**
- * Scope resolution, computed exactly like the capture slice's session scope
- * (lib/mapping.ts `sessionScope`). The git common dir comes from the thread's
- * own host (recall.gitCommonDir); until it is known, the synchronous path falls
- * back to the project name and the caller schedules `resolve`.
+ * Recall's view of the session scope. It never computes a scope of its own:
+ * the async path asks the plugin's one resolver (capture's `scopeFor`, which
+ * reads the git common dir through the thread's host and keeps the result),
+ * so recall searches exactly the scope capture created the session in. The
+ * synchronous path (configure) serves what is already known; until then it
+ * falls back to the project name and the caller schedules `resolve`.
  */
 export class ScopeResolver {
   private readonly byThread = new Map<string, string>();
-  private readonly commonDirs = new Map<string, string | null>();
-  private readonly pending = new Map<string, Promise<void>>();
-  constructor(private readonly ports: RecallPorts, private readonly host: ExperimentalHostClient<RecallHostContract> | null) {}
+  private readonly pending = new Map<string, Promise<string>>();
+  constructor(private readonly ports: RecallPorts, private readonly lookup: ScopeLookup) {}
 
   /** The thread whose memory context applies: side chats use their parent's. */
   static contextThread(input: Pick<ScopeInput, "threadId" | "parentThreadId" | "sideChat">): string {
     return input.sideChat && input.parentThreadId ? input.parentThreadId : input.threadId;
   }
   known(threadId: string): string | null {
-    return this.ports.scopeFor?.(threadId) ?? this.byThread.get(threadId) ?? null;
+    return this.byThread.get(threadId) ?? this.ports.scopeFor?.(threadId) ?? null;
   }
-  /** Synchronous; never touches the network. `provisional` means the git common dir was not known yet. */
+  /** Synchronous; never touches the network. `provisional` means the resolver has not answered yet. */
   sync(input: ScopeInput): { scope: string; provisional: boolean } {
     const key = ScopeResolver.contextThread(input);
     const known = this.known(key);
     if (known) { this.remember(input.threadId, known); return { scope: known, provisional: false }; }
-    const dirKey = input.hostId && input.path ? `${input.hostId}\0${input.path}` : null;
-    if (input.isGitRepo === false || !input.path) return { scope: this.settle(input, key, null), provisional: false };
-    if (dirKey && this.commonDirs.has(dirKey)) return { scope: this.settle(input, key, this.commonDirs.get(dirKey)!), provisional: false };
+    // No environment yet (a queued thread): the scope is not decided, so nothing is kept.
+    if (!input.environmentId) return { scope: scopeSlug(input.projectName), provisional: false };
+    // Outside git the resolver's answer is the project name too, so it is final.
+    if (input.isGitRepo === false || !input.path) return { scope: this.settle(input, key, scopeSlug(input.projectName)), provisional: false };
     return { scope: scopeSlug(input.projectName), provisional: true };
   }
   async resolve(input: ScopeInput): Promise<string> {
-    const first = this.sync(input);
-    if (!first.provisional || !this.host || !input.hostId || !input.path) return first.scope;
-    const dirKey = `${input.hostId}\0${input.path}`;
-    let run = this.pending.get(dirKey);
+    const key = ScopeResolver.contextThread(input);
+    const known = this.known(key);
+    if (known) { this.remember(input.threadId, known); return known; }
+    if (!input.environmentId) return scopeSlug(input.projectName);
+    let run = this.pending.get(key);
     if (!run) {
-      run = this.host.call("recall.gitCommonDir", { cwd: input.path }, { hostId: input.hostId, signal: AbortSignal.timeout(8_000) })
-        .then(r => { this.commonDirs.set(dirKey, r.commonDir); }, () => undefined)
-        .finally(() => this.pending.delete(dirKey));
-      this.pending.set(dirKey, run);
+      run = this.lookup({ id: key, projectId: input.projectId, environmentId: input.environmentId ?? null })
+        .finally(() => this.pending.delete(key));
+      this.pending.set(key, run);
     }
-    await run;
-    return this.sync(input).scope;
+    try { return this.settle(input, key, await run); }
+    catch { return this.sync(input).scope; }
   }
   remember(threadId: string, scope: string): void { this.byThread.set(threadId, scope); }
-  private settle(input: ScopeInput, key: string, commonDir: string | null): string {
-    const scope = sessionScope({ project: input.projectName, cwd: input.path ?? undefined, commonDir });
+  private settle(input: ScopeInput, key: string, scope: string): string {
     this.byThread.set(key, scope);
     this.byThread.set(input.threadId, scope);
     return scope;
@@ -129,10 +136,12 @@ export function recallShared(bb: BbPluginApi, deps: Deps, ports: RecallPorts = {
   let host: ExperimentalHostClient<RecallHostContract> | null = ports.host ?? null;
   if (ports.host === undefined) { try { host = bb.hosts.experimental_client({ contract: recallHostContract }); } catch { host = null; } }
   const portsRef: RecallPorts = { ...ports };
+  let fallback: ((thread: ThreadRef) => Promise<string>) | undefined;
   const state: RecallShared = {
     store: new RecallStore(bb.storage.database()),
     keyLevel: new KeyLevelProbe(deps),
-    scopes: new ScopeResolver(portsRef, host),
+    // Without a resolver from server.ts (unit tests), capture's resolver over this bb.
+    scopes: new ScopeResolver(portsRef, thread => (portsRef.resolveScope ?? (fallback ??= createScopeResolver(bb)))(thread)),
     host, ports: portsRef, peerName: null,
     async client() {
       const [client, config] = await Promise.all([deps.client(), deps.config()]);

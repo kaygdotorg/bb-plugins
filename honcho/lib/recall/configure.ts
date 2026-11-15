@@ -29,7 +29,8 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
       const parentThreadId = ctx.thread.parentThreadId ?? ctx.thread.sourceThreadId;
       const input = {
         threadId: ctx.thread.id, parentThreadId, sideChat,
-        hostId: ctx.host.id, path: ctx.environment.path, projectName: ctx.project.name,
+        projectId: ctx.project.id, environmentId: ctx.environment.id,
+        path: ctx.environment.path, projectName: ctx.project.name,
       };
       const { scope, provisional } = shared.scopes.sync(input);
       if (provisional) void shared.scopes.resolve(input).then(s => { if (cache.want(s)) cache.request(true); }, () => undefined);

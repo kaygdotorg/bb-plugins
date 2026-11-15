@@ -62,9 +62,7 @@ const HOST_RESULTS: Record<string, unknown> = {
   harnessEnv: ENV_PATHS,
   harnessState: STATE,
   harnessUndo: { state: STATE, restored: [] },
-  "recall.dir": { dir: ENV_PATHS.recallDir },
   "recall.write": { counter: 1, path: "/data/recall/x.json" },
-  "recall.gitCommonDir": { commonDir: null },
 };
 
 const open: Array<{ dispose(): Promise<void> }> = [];
@@ -112,7 +110,7 @@ describe("plugin factory", () => {
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.dir", "recall.gitCommonDir", "recall.write"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.write"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {

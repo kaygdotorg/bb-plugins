@@ -36,7 +36,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const capture = createCaptureService(bb, { ...deps, settings: view.capture });
 
   // 3. Recall. The service creates the store the tools share, so it comes first.
-  const recall = createRecallService(bb, { ...deps, recall: { settings: view.recall, host } });
+  // One scope resolver: recall searches the scope capture created the session in.
+  const recall = createRecallService(bb, { ...deps, recall: {
+    settings: view.recall, host,
+    scopeFor: threadId => capture.knownScope(threadId),
+    resolveScope: thread => capture.scopeFor(thread),
+  } });
   registerTools(bb, deps);
   registerConfigure(bb, deps, recall);
   registerDispatchPrefetch(bb, deps, recall);

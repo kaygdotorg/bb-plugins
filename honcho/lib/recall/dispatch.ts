@@ -27,7 +27,8 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
     const parentThreadId = ctx.thread.parentThreadId ?? ctx.thread.sourceThreadId ?? ctx.parentThreadId ?? null;
     const scopeInput = {
       threadId, parentThreadId, sideChat,
-      hostId: ctx.environment?.hostId ?? hostId, path: ctx.environment?.path ?? null,
+      projectId: ctx.project.id, environmentId: ctx.environment?.id ?? ctx.thread.environmentId ?? null,
+      path: ctx.environment?.path ?? null,
       isGitRepo: ctx.environment ? ctx.environment.isGitRepo : null, projectName: ctx.project.name,
     };
     let memory = "";

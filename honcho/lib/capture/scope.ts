@@ -18,8 +18,11 @@ export interface ThreadFacts {
   git(thread: ThreadRef): Promise<GitInfo | null>;
   project(thread: ThreadRef): Promise<Project | null>;
   /** Repo name from the git common dir (worktrees share it), else the bb project name; slugged like claude-honcho.
-   * Computed once per thread and kept, so it survives the environment going away. */
+   * Computed once per thread and kept, so it survives the environment going away. A thread with no
+   * environment yet, or whose environment could not be read, gets the project name without keeping it. */
   scopeFor(thread: ThreadRef): Promise<string>;
+  /** The kept scope, synchronously, once this load has resolved or read it. */
+  known(threadId: string): string | null;
   /** Why the deny list covers this thread, or null. */
   denied(thread: ThreadRef, privacy: PrivacySettings): Promise<string | null>;
 }
@@ -34,7 +37,9 @@ export function threadFacts(bb: Pick<CaptureBb, "sdk" | "storage">, git: GitInfo
     if (!hit) { hit = load().catch(() => { map.delete(key); return null; }); map.set(key, hit); }
     return hit;
   };
+  const known = new Map<string, string>();
   const facts: ThreadFacts = {
+    known: id => known.get(id) ?? null,
     env: t => t.environmentId ? cached(envs, t.environmentId, () => bb.sdk.environments.get({ environmentId: t.environmentId! })) : Promise.resolve(null),
     async git(t) {
       const env = await facts.env(t);
@@ -42,11 +47,14 @@ export function threadFacts(bb: Pick<CaptureBb, "sdk" | "storage">, git: GitInfo
     },
     project: t => cached(projects, t.projectId, () => bb.sdk.projects.get({ projectId: t.projectId })),
     async scopeFor(t) {
-      const saved = await bb.storage.kv.get<string>(scopeKey(t.id));
-      if (saved) return saved;
+      const hit = known.get(t.id) ?? await bb.storage.kv.get<string>(scopeKey(t.id));
+      if (hit) { known.set(t.id, hit); return hit; }
       const [env, info, project] = await Promise.all([facts.env(t), facts.git(t), facts.project(t)]);
       const scope = sessionScope({ project: project?.name || t.projectId, cwd: env?.path ?? undefined, commonDir: info?.commonDir ?? null });
+      // Not decided yet: keeping it would pin the project name over the repo for good.
+      if (!env || (env.isGitRepo && env.path && info === null) || !project) return scope;
       await bb.storage.kv.set(scopeKey(t.id), scope);
+      known.set(t.id, scope);
       return scope;
     },
     async denied(t, privacy) {

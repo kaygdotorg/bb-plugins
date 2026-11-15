@@ -93,8 +93,10 @@ const chunks = <T>(items: T[]) => Array.from({ length: Math.ceil(items.length / 
 
 export type CaptureHandle = CaptureService & {
   start(): () => void;
-  /** Same resolver and cache backfill must use. */
+  /** The plugin's one scope resolver and cache; backfill and recall use it too. */
   scopeFor(thread: ThreadRef): Promise<string>;
+  /** The scope already resolved for a thread in this load, synchronously (recall's configure reads it). */
+  knownScope(threadId: string): string | null;
   /** True when the privacy deny list covers the thread. */
   isDenied(thread: ThreadRef): Promise<boolean>;
 };
@@ -596,6 +598,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     },
 
     scopeFor: thread => facts.scopeFor(thread),
+    knownScope: threadId => facts.known(threadId),
     isDenied: async thread => (await facts.denied(thread, await privacy())) !== null,
 
     async threadStatus(threadId): Promise<ThreadMemoryStatus> {

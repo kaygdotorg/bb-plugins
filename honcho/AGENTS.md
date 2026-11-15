@@ -27,8 +27,8 @@ Shared (`lib/`):
 - `cli.ts`: `registerCli`, `bb honcho status|pause|backfill|harness …`.
 
 Slices (`lib/<slice>/`):
-- `capture/`: `createCaptureService`: thread events to Honcho sessions, the switch-over gate, pauses, deletion and the tripwire. It also exports `scopeFor` and `isDenied`, which backfill reuses.
-- `recall/`: `createRecallService`, `registerConfigure` (session-start memory), `registerDispatchPrefetch` (the per-turn search that writes the host's recall cache file), and recall's host ops (`recall.write`, `recall.dir`, `recall.gitCommonDir`).
+- `capture/`: `createCaptureService`: thread events to Honcho sessions, the switch-over gate, pauses, deletion and the tripwire. It also exports `scopeFor` (the plugin's one scope resolver) and `isDenied`, which backfill and recall reuse.
+- `recall/`: `createRecallService`, `registerConfigure` (session-start memory), `registerDispatchPrefetch` (the per-turn search that writes the host's recall cache file), and recall's one host op (`recall.write`). Recall has no scope logic of its own: it reads capture's `knownScope` and asks capture's `scopeFor`.
 - `tools/`: `registerTools`, the `honcho_*` agent tools. They share recall's store, so they register after `createRecallService`.
 - `harness/`: `createHarnessService` (connect, hand over, per-step undo), `registerProviderEnv`, and the harness host ops. All harness file edits run in the host worker on the thread's machine.
 - `backfill/`: `createBackfillService`: imports past threads at its own rate. It is resumable, and it stops at each switch-over marker.

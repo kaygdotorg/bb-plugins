@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import type { MessageDispatchHookContext } from "@get-bb/plugin-sdk";
-import { setup, seedMessage, type SetupOptions } from "./harness";
+import { setup, seedMessage, WORKTREE, worktreeSdk, type SetupOptions } from "./harness";
 
 const testing = { createFakePluginHost, experimental_createHostEntryHarness };
 const start = (opts: SetupOptions = {}) => setup(testing, opts);
@@ -77,14 +76,12 @@ describe("message.dispatch prefetch", () => {
     expect(s.harness.inspection.experimental_hostRpcCalls).toEqual([]);
   });
 
-  it("computes the git scope on the thread's host, like the session scope", async () => {
-    const s = await make();
-    const repo = join(s.dataDir, "work", "Cool.Repo");
-    await mkdir(repo, { recursive: true });
-    execFileSync("git", ["init", "-q"], { cwd: repo });
-    await dispatch(s, dispatchCtx("where is the config", { environment: { path: repo, isGitRepo: true, hostId: "host_a" } }));
+  it("searches the scope capture's resolver gives the thread: a worktree shares its repo's scope", async () => {
+    const s = await make({ sdk: worktreeSdk() });
+    await dispatch(s, dispatchCtx("where is the config", { environment: { id: "env_wt", path: WORKTREE, isGitRepo: true, hostId: "host_a" } }));
     expect(s.mock.requests.find(r => r.path.endsWith("/search"))!.body.scope).toBe("cool-repo");
     expect(s.internals.shared.scopes.known("thr_main")).toBe("cool-repo");
+    expect(s.harness.inspection.experimental_hostRpcCalls.map(c => c.method)).toEqual(["recall.write"]);
   });
 
   it("falls back to a peer search when the key is restricted", async () => {
