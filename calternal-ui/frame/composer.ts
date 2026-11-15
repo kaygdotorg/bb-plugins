@@ -42,10 +42,19 @@ export function mountComposer(): () => void {
   let lastForm: { el: HTMLElement | null; h: number; collapsed: boolean } = { el: null, h: 0, collapsed: false };
   let flippedAt = -Infinity;
   let morphing: { form: HTMLElement; until: number } | null = null;
+  let opening: { form: HTMLElement; composer: HTMLElement; anim: Animation; at: number; from: number; to: number } | null = null;
+  let expandedH = 0; // the two-row form's height, last seen (the early open grows toward it)
+  const MORPH_MS = 350;
+  const MORPH_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+  const phone = matchMedia("(max-width: 767px)");
+  const animates = () => document.documentElement.getAttribute("data-cf-input") !== "keys" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** The form's size, seen after layout and before paint (a ResizeObserver): bb lays out the new rows a frame
    *  after it flips the flag, so the pass alone would let one full-height frame show before the morph. */
   const formSize = new ResizeObserver((entries) => {
-    for (const e of entries) morphHeight(e.target as HTMLElement, lastForm.collapsed);
+    for (const e of entries) {
+      const f = (e.target as HTMLElement).closest<HTMLElement>("form[data-promptbox]");
+      if (f) morphHeight(f, f.closest("[data-app-composer]")?.hasAttribute("data-cf-collapsed") ?? lastForm.collapsed);
+    }
   });
   let sizedForm: HTMLElement | null = null;
   try { lastModel = { ...lastModel, ...JSON.parse(localStorage.getItem(MODEL_CACHE) ?? "{}") }; } catch { /* none yet */ }
@@ -130,7 +139,15 @@ export function mountComposer(): () => void {
 
     // ── Writes.
     composer.toggleAttribute("data-cf-collapsed", collapsed);
-    if (sizedForm !== form) { formSize.disconnect(); formSize.observe(form); sizedForm = form; }
+    if (sizedForm !== form) {
+      formSize.disconnect();
+      formSize.observe(form);
+      // The rows' own box too: during an early open the form's height is the animation's, so only this one
+      // tells when bb has laid out its rows.
+      const rows = form.querySelector("[data-promptbox-layout]");
+      if (rows) formSize.observe(rows);
+      sizedForm = form;
+    }
     morphHeight(form, collapsed);
     // Collapsed composers render neither the footer nor the model button.
     if (footer) labelControls(footer);
@@ -203,16 +220,96 @@ export function mountComposer(): () => void {
       if (collapsed !== lastForm.collapsed) { lastForm.collapsed = collapsed; flippedAt = now; }
       return;
     }
+    // An early open (a tap on the one-line composer, see beginOpen) is under way and bb has now laid out
+    // its rows: carry on from wherever the box is to the real height, in the time left, never restart.
+    if (opening && opening.form === form && !collapsed) {
+      // bb flips its flag a frame before it lays out the rows. The true height can only be read with the
+      // animation off: cancel, read, and if the rows aren't there yet, resume toward the same target from the
+      // same point, all in this one task, so nothing paints in between.
+      const current = form.getBoundingClientRect().height; // the animated height
+      opening.anim.cancel();
+      const h = form.getBoundingClientRect().height;       // bb's real one
+      if (h < opening.from + 8) {
+        const rest = Math.max(1, MORPH_MS - (now - opening.at));
+        opening.anim = form.animate({ height: [`${current}px`, `${opening.to}px`] }, { duration: rest, easing: MORPH_EASE, fill: "forwards" });
+        // Nothing else will say when the rows land (the animation holds the box's size): look again next frame.
+        requestAnimationFrame(() => { if (!disposed) morphHeight(form, !!form.closest("[data-app-composer]")?.hasAttribute("data-cf-collapsed")); });
+        return;
+      }
+      const left = Math.max(160, MORPH_MS - (now - opening.at));
+      opening.composer.removeAttribute("data-cf-opening");
+      opening = null;
+      lastForm = { el: form, h, collapsed };
+      if (Math.abs(current - h) >= 2) {
+        morphing = { form, until: now + left + 10 };
+        form.animate({ height: [`${current}px`, `${h}px`] }, { duration: left, easing: MORPH_EASE });
+      }
+      revealRows(form);
+      return;
+    }
     const h = form.getBoundingClientRect().height;
     const was = lastForm;
     if (was.el === form && collapsed !== was.collapsed) flippedAt = now;
     lastForm = { el: form, h, collapsed };
+    if (!collapsed) expandedH = h;
     // bb flips the flag a frame before it lays out the new rows: animate any real height change that
     // follows a flip closely, whichever pass sees it.
     if (was.el !== form || now - flippedAt > 400 || Math.abs(was.h - h) < 4) return;
-    if (document.documentElement.getAttribute("data-cf-input") === "keys" || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    morphing = { form, until: now + 360 };
-    form.animate({ height: [`${was.h}px`, `${h}px`] }, { duration: 350, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
+    if (!animates()) return;
+    morphing = { form, until: now + MORPH_MS + 10 };
+    form.animate({ height: [`${was.h}px`, `${h}px`] }, { duration: MORPH_MS, easing: MORPH_EASE });
+    if (!collapsed) revealRows(form);
+  }
+
+  /**
+   * The open starts at the tap, like ChatGPT's and Claude's (kayg's 60fps recordings, 2026-11-15): their
+   * composers widen and grow while the keyboard is still rising. bb switches to its two-row layout only once
+   * the keyboard has settled (~230ms later on an iPhone), and a morph started then read as a second jolt.
+   * So a touch on the one-line composer (not on its buttons) marks it opening: the width eases out at once
+   * (CSS, [data-cf-opening]) and the height grows toward the expanded height last seen; when bb's rows
+   * arrive, morphHeight carries on from there. If no focus follows (the touch was a scroll), it eases back.
+   */
+  function beginOpen(e: TouchEvent) {
+    if (!phone.matches || !animates() || e.touches.length !== 1) return;
+    const target = e.target as Element;
+    const host = target.closest<HTMLElement>("[data-app-composer][data-cf-collapsed]");
+    if (!host || target.closest("button, a, [role=button]")) return;
+    const form = host.querySelector<HTMLElement>("form[data-promptbox]");
+    if (!form || opening) return;
+    const from = form.getBoundingClientRect().height;
+    const to = expandedH > from + 8 ? expandedH : from * 2.6;
+    host.setAttribute("data-cf-opening", "");
+    const anim = form.animate({ height: [`${from}px`, `${to}px`] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
+    const me = { form, composer: host, anim, at: performance.now(), from, to };
+    opening = me;
+    const back = () => {
+      if (opening !== me) return;
+      const current = form.getBoundingClientRect().height;
+      me.anim.cancel();
+      host.removeAttribute("data-cf-opening");
+      opening = null;
+      form.animate({ height: [`${current}px`, `${from}px`] }, { duration: 220, easing: MORPH_EASE });
+    };
+    // The touch became a scroll (it moved): ease back. Otherwise wait for bb's rows (on an iPhone they come
+    // once the keyboard has settled; focus itself can land late), with a safety net if they never do.
+    const x0 = e.touches[0].clientX, y0 = e.touches[0].clientY;
+    const onMove = (m: TouchEvent) => {
+      const p = m.touches[0];
+      if (p && Math.hypot(p.clientX - x0, p.clientY - y0) > 10) { stop(); back(); }
+    };
+    const stop = () => {
+      document.removeEventListener("touchmove", onMove, true);
+      document.removeEventListener("touchend", stop, true);
+    };
+    document.addEventListener("touchmove", onMove, { capture: true, passive: true });
+    document.addEventListener("touchend", stop, true);
+    window.setTimeout(() => { stop(); back(); }, 2000);
+  }
+
+  /** bb's new rows (the buttons) ease in instead of popping: a short fade and rise, after the box has room. */
+  function revealRows(form: HTMLElement) {
+    const row = form.querySelector<HTMLElement>("[data-promptbox-action-row]");
+    row?.animate({ opacity: [0, 1], translate: ["0 6px", "0 0"] }, { duration: 240, delay: 60, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "backwards" });
   }
 
   /** Icons need words for the tooltip; bb's own labels supply them. */
@@ -278,6 +375,7 @@ export function mountComposer(): () => void {
   const timer = window.setInterval(schedule, 1500); // the composer is re-created on navigation
   window.addEventListener("resize", schedule, { passive: true });
   document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
+  document.addEventListener("touchstart", beginOpen, { capture: true, passive: true });
   schedule();
   return () => {
     disposed = true;
@@ -287,6 +385,8 @@ export function mountComposer(): () => void {
     window.clearInterval(timer);
     window.removeEventListener("resize", schedule);
     document.removeEventListener("pointerdown", onPointerDown, { capture: true });
+    document.removeEventListener("touchstart", beginOpen, { capture: true });
+    opening?.anim.cancel();
     mutations.disconnect();
     resize.disconnect();
     modelChip.remove();

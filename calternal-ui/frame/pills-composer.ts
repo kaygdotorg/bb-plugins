@@ -118,7 +118,10 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     padding-inline: ${s(4)};
     transition: padding-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
   }
-  ${C}[data-cf-collapsed] [data-composer-box] { padding-inline: ${s(30)}; }
+  ${C}[data-cf-collapsed]:not([data-cf-opening]) [data-composer-box] { padding-inline: ${s(30)}; }
+  /* bb's expanded placeholder is two lines long; swapping to it mid-morph reflowed the text. Keep the short
+     one (only for bb's default text: other states, like "Setting up…", keep theirs). */
+  ${C} p.is-editor-empty[data-placeholder^="Ask for a follow-up."]::before { content: "Ask a follow-up" !important; }
   ${C} [data-promptbox-layout] {
     transition-duration: 350ms !important;
     transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
