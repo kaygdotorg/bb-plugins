@@ -7,7 +7,7 @@
  *  - Pull down to search: from the top of the sidebar, from the chat's title bar, or in a
  *    chat scrolled all the way up.
  *  - While the keyboard is up for the composer, a keyboard-down button sits in its icon row.
- *  - Swipe actions (swipe.ts).
+ *  - Swipe actions (swipe.ts), and sideways swipes in the chat that open the sidebar / right panel.
  * Listeners are passive where possible and attached to single elements, never the DOM tree.
  */
 import { mountSwipes } from "./swipe";
@@ -74,10 +74,74 @@ function watchViewport(): () => void {
   };
 }
 
+/** bb's "Search threads" (the sidebar footer's button; it works with the drawer closed). The nav's old
+ *  Search row is gone, which had made every pull to search do nothing. */
 function openSearch() {
-  const button = [...document.querySelectorAll<HTMLButtonElement>("[data-cf-nav] button")]
-    .find((b) => /search/i.test(b.textContent ?? ""));
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button[aria-label]")]
+    .find((b) => /^Search threads/i.test(b.getAttribute("aria-label") ?? ""))
+    ?? [...document.querySelectorAll<HTMLButtonElement>("[data-cf-nav] button")].find((b) => /search/i.test(b.textContent ?? ""));
   button?.click();
+}
+
+/**
+ * Swipe sideways anywhere in the chat (phones), like Claude's and ChatGPT's apps: left to right opens the
+ * sidebar drawer, right to left the right panel. bb only opens them from the screen edge (left there to
+ * bb). Not from the composer (text selection), nor from anything that scrolls sideways itself (code
+ * blocks, tables, the attachment strip). The swipe is decided once it is clearly horizontal (|dx| > 1.5
+ * |dy| past 12px), and opens on release past 56px, or on a quick flick (> 0.35 px/ms). It presses bb's
+ * own buttons (the drawer toggle; the right-panel button, hidden in the header on phones), so bb animates.
+ */
+function sideSwipes(): () => void {
+  const EDGE = 24, DECIDE = 12, OPEN = 56, FLICK = 0.35;
+  const phone = matchMedia("(max-width: 767px)");
+  let x0 = 0, y0 = 0, t0 = 0, dx = 0, state: "idle" | "maybe" | "horizontal" | "no" = "idle";
+
+  const scrollsSideways = (el: Element | null, stop: Element) => {
+    for (let e = el; e && e !== stop; e = e.parentElement) {
+      if (e.scrollWidth > e.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(e).overflowX)) return true;
+    }
+    return false;
+  };
+  const onStart = (e: TouchEvent) => {
+    state = "idle";
+    if (!phone.matches || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    if (touch.clientX < EDGE || touch.clientX > innerWidth - EDGE) return; // the edges are bb's
+    const target = e.target as Element;
+    const main = target.closest<HTMLElement>(SHELF);
+    if (!main || (main.getAttribute("data-sidebar-shelf") ?? "closed") !== "closed") return;
+    if (target.closest("[data-app-composer], input, textarea, [contenteditable='true'], [data-persistent-drawer-content]")) return;
+    if (scrollsSideways(target, main)) return;
+    x0 = touch.clientX; y0 = touch.clientY; t0 = performance.now(); dx = 0;
+    state = "maybe";
+  };
+  const onMove = (e: TouchEvent) => {
+    if (state !== "maybe" && state !== "horizontal") return;
+    const touch = e.touches[0];
+    dx = touch.clientX - x0;
+    const dy = touch.clientY - y0;
+    if (state === "maybe" && Math.hypot(dx, dy) > DECIDE) state = Math.abs(dx) > 1.5 * Math.abs(dy) ? "horizontal" : "no";
+  };
+  const onEnd = () => {
+    if (state !== "horizontal") { state = "idle"; return; }
+    state = "idle";
+    const v = Math.abs(dx) / Math.max(1, performance.now() - t0);
+    if (Math.abs(dx) < OPEN && v < FLICK) return;
+    if (dx > 0) document.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click();
+    else [...document.querySelectorAll<HTMLButtonElement>("main header [data-thread-header-pane-actions] button")]
+      .find((b) => /^Show right panel/i.test(b.getAttribute("aria-label") ?? ""))?.click();
+  };
+  const onCancel = () => { state = "idle"; };
+  document.addEventListener("touchstart", onStart, { passive: true });
+  document.addEventListener("touchmove", onMove, { passive: true });
+  document.addEventListener("touchend", onEnd, { passive: true });
+  document.addEventListener("touchcancel", onCancel, { passive: true });
+  return () => {
+    document.removeEventListener("touchstart", onStart);
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onEnd);
+    document.removeEventListener("touchcancel", onCancel);
+  };
 }
 
 /** Pull down at the top of the sidebar to search, with a small pill that says what happens. */
@@ -241,6 +305,6 @@ function keyboardButton(): () => void {
 export function mountTouch(): () => void {
   // Any touch-capable device (iPhone, iPad, touch laptops); mouse-only desktops skip all of it.
   if (navigator.maxTouchPoints === 0) return () => {};
-  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes()];
+  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes(), sideSwipes()];
   return () => { for (const dispose of disposers) dispose(); };
 }
