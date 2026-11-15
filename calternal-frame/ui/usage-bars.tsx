@@ -16,9 +16,11 @@ function resetLabel(iso: string): string | null {
   return `${Math.round(minutes / 1440)}d`;
 }
 
-/** Text colour by how full the window is. */
-function tone(used: number): string {
-  return used >= 0.9 ? "text-destructive" : used >= 0.75 ? "text-warning" : "text-muted-foreground";
+/** Text colour by how full the window is (amber is css.ts's --cf-warn-ink, legible in light mode). */
+function tone(used: number): { className: string; warn?: true } {
+  if (used >= 0.9) return { className: "text-destructive" };
+  if (used >= 0.75) return { className: "", warn: true };
+  return { className: "text-muted-foreground" };
 }
 
 type ProviderUsage = UsageSummary["providers"][number];
@@ -43,6 +45,7 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
   const { session, weekly } = provider;
   const shown = prefs.window === "session" ? session : prefs.window === "weekly" ? weekly : (session ?? weekly);
   const pct = shown ? percentOf(shown) : null;
+  const level = shown ? tone(shown.used) : { className: "text-muted-foreground" };
   const reset = shown ? resetLabel(shown.resetsAt) : null;
   const title = [
     `${name}: ${provider.accounts} account${provider.accounts === 1 ? "" : "s"}, pooled`,
@@ -66,7 +69,8 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
         aria-valuemax={100}
         aria-valuenow={pct ?? undefined}
         aria-valuetext={pct === null ? "No data" : `${pct}%`}
-        className={`shrink-0 tabular-nums ${shown ? tone(shown.used) : "text-muted-foreground"}`}
+        className={`shrink-0 tabular-nums ${level.className}`}
+        data-cf-tone={level.warn ? "warn" : undefined}
       >
         {pct === null ? "\u2014" : `${pct}%`}
       </span>

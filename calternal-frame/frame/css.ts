@@ -44,11 +44,15 @@ ${R} {
   --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
   --cf-edge: rgb(255 255 255 / 0.55);
   --cf-shadow: 0 6px 14px -7px rgb(60 40 20 / 0.28);
+  /* Warning text (usage at 75%+, Full Access): bb's amber is too light to read on a light
+     glass, so light mode inks it darker. */
+  --cf-warn-ink: oklch(0.55 0.15 50);
   background: var(--cf-side) !important;
 }
 ${R}.dark {
   --radius: 10px;
   --cf-edge: rgb(255 255 255 / 0.09);
+  --cf-warn-ink: var(--warning, oklch(0.75 0.15 70));
   /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
   --cf-shadow: 0 6px 14px -7px rgb(0 0 0 / 0.55);
 }
@@ -163,6 +167,17 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   pointer-events: none;
 }
 
+/* Strips stacked above the composer (bb's git status, plugin notices) are solid panels in
+   bb; here they share the composer's glass. Text only, so a plain backdrop-filter is fine. */
+${R} [data-app-composer] section.bg-surface-raised-solid {
+  background: var(--cf-glass-fill) !important;
+  -webkit-backdrop-filter: var(--cf-glass-blur);
+  backdrop-filter: var(--cf-glass-blur);
+  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+}
+/* Mention pills (thread titles, prompts): a faint tint instead of a solid white chip. */
+${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%, transparent) !important; border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important; }
+
 /* Composer (frame/composer.ts): bb's row under the composer is pinned into its bottom row,
    right after the model button, as icons; collapsed composers show one line only. */
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
@@ -207,7 +222,8 @@ ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"]::b
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="edit"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.2 6.8a1 1 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.2 6.8a1 1 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z'/%3E%3C/svg%3E"); }
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="plan"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); }
-${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: var(--warning, oklch(0.75 0.15 70)); }
+${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: var(--cf-warn-ink); }
+${R} [data-cf-tone="warn"] { color: var(--cf-warn-ink); }
 /* Context ring: the percentage only when it's nearly full. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
@@ -322,6 +338,28 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   backdrop-filter: blur(24px) saturate(160%);
   border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+}
+
+/* A list inside a menu, picker or dialog (the model picker's list, the palette's results) is
+   part of that one surface: no second glass layer, border or padding ring. */
+${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state], [role="dialog"][data-bb-portaled-overlay]) :is([role="menu"], [role="listbox"]) {
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: transparent !important;
+  padding: 0.25rem !important;
+}
+/* Modal dialogs (the search palette, confirmations) float like menus: the same glass, with
+   their inner bands clear. Outside the card, bg-background would be opaque. Phone sheets
+   ([data-persistent-drawer-content]) keep their own glass. */
+${R} [role="dialog"][data-bb-portaled-overlay]:not([data-persistent-drawer-content]):is(.bg-background, .bg-popover, .bg-card) {
+  background-color: color-mix(in oklab, var(--popover) 80%, transparent) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+}
+${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, .bg-card, [data-palette-input-band], [data-palette-results-clip]) {
+  background-color: transparent !important;
 }
 
 @media (min-width: 768px) {
