@@ -10,6 +10,7 @@ import { CHANGED_EVENT } from "../frame/events";
 import { applyWallpaper } from "../frame/wallpaper";
 import { applyFontFaces, applyPrefs } from "../frame/prefs";
 import { applyAccent } from "../frame/accent";
+import { registerTimesLoader } from "../frame/times";
 import { UsageBars } from "./usage-bars";
 
 /**
@@ -109,6 +110,12 @@ export function FrameOverlay() {
     } catch {
       // Keep what is applied; the next change event or reload retries.
     }
+  }, [rpc]);
+
+  // Lets the swipe module (a content script, no RPC of its own) read message times.
+  useEffect(() => {
+    registerTimesLoader((threadId) => rpc.call("message_times", { threadId }));
+    return () => registerTimesLoader(null);
   }, [rpc]);
 
   useEffect(() => {

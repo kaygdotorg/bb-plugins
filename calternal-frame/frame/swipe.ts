@@ -2,11 +2,15 @@
  * Swipe actions on touch devices, running bb's own actions (no core changes):
  *   thread row (sidebar)   left: Archive   right: Pin / Unpin   (via bb's context menu)
  *   message (chat)         right: Reply, iMessage-style (left to right; the bubble follows
- *                          your finger and a reply arrow grows in behind it). Left: none yet.
+ *                          your finger and a reply arrow grows in behind it).
+ *                          left: reveal times, iMessage-style (the whole conversation slides
+ *                          left and each visible message's time shows at the right edge).
  * A horizontal drag slides the row and shows the action in the gap; past the threshold it
  * fires on release. Touches near the left screen edge are left to bb's drawer swipe, and a
  * row being swiped is marked so bb's own sidebar/panel swipes ignore it.
  */
+import { formatTime, messageTimes } from "./times";
+
 const THRESHOLD = 72;
 const EDGE = 28;
 /** One thread row; the section wrapper above it carries the same data attribute but no role. */
@@ -16,6 +20,7 @@ const MESSAGE = "[data-timeline-row-id]";
 type Side = "left" | "right";
 interface Action { label: string; icon?: string; tone?: "danger"; run: (row: HTMLElement) => void }
 const REPLY_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+const REVEAL = 64; // px the conversation slides to show times
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -84,14 +89,80 @@ const ACTIONS: Record<"thread" | "message", Partial<Record<Side, Action>>> = {
   },
 };
 
+/**
+ * Times reveal: slides the conversation list left and labels each visible message with its
+ * time, fetched once per thread (frame/times.ts). Labels are removed when it settles back.
+ */
+function createTimesReveal() {
+  let list: HTMLElement | null = null;
+  let labels: HTMLElement[] = [];
+  let current = 0; // the latest drag offset, applied to labels that arrive mid-drag
+  let layer: HTMLElement | null = null;
+
+  async function begin(row: HTMLElement) {
+    list = row.closest<HTMLElement>("[data-timeline-row-list]");
+    if (!list) return;
+    const threadId = location.pathname.match(/\/threads\/(thr_[\w-]+)/)?.[1];
+    if (!threadId) return;
+    const viewport = list.closest<HTMLElement>("[data-page-scroll-viewport]");
+    const times = await messageTimes(threadId);
+    if (!list || !viewport) return; // settled before the times arrived
+    // bb lays rows out with content-visibility, which clips anything drawn outside a row, so
+    // the times live on one fixed layer over the chat, aligned to each row's top and to the
+    // chat's right edge; the conversation slides left to uncover them.
+    const view = viewport.getBoundingClientRect();
+    layer = document.createElement("div");
+    layer.setAttribute("data-cf-time-layer", "");
+    document.body.append(layer);
+    for (const r of list.querySelectorAll<HTMLElement>("[data-timeline-row-id]")) {
+      const at = times[r.getAttribute("data-timeline-row-id") ?? ""];
+      const box = r.getBoundingClientRect();
+      if (!at || box.bottom < view.top || box.top > view.bottom || box.height < 8) continue;
+      const label = document.createElement("span");
+      label.setAttribute("data-cf-time", "");
+      label.textContent = formatTime(at);
+      label.style.top = `${box.top + 4}px`;
+      label.style.right = `${window.innerWidth - view.right + 10}px`;
+      layer.append(label);
+      labels.push(label);
+    }
+    // The times can arrive after the finger has stopped moving: show them at once.
+    move(current);
+  }
+  function move(dx: number) {
+    current = dx;
+    if (!list) return;
+    list.style.transition = "none";
+    list.style.translate = `${dx}px 0`;
+    for (const l of labels) l.style.opacity = String(Math.min(1, -dx / REVEAL));
+  }
+  function settle() {
+    const l = list;
+    const old = labels;
+    const oldLayer = layer;
+    list = null;
+    labels = [];
+    layer = null;
+    current = 0;
+    if (!l) { oldLayer?.remove(); return; }
+    l.style.transition = "translate 260ms cubic-bezier(0.32,0.72,0,1)";
+    l.style.translate = "";
+    for (const label of old) label.style.opacity = "0";
+    setTimeout(() => { oldLayer?.remove(); if (!l.style.translate) l.style.transition = ""; }, 280);
+  }
+  return { begin, move, settle, active: () => list !== null };
+}
+
 export function mountSwipes(): () => void {
   let row: HTMLElement | null = null;
   let kind: "thread" | "message" = "thread";
-  let startX = 0, startY = 0, dx = 0, decided: "swipe" | "scroll" | null = null;
+  let startX = 0, startY = 0, dx = 0, decided: "swipe" | "scroll" | "times" | null = null;
   const label = document.createElement("div");
   label.setAttribute("data-cf-swipe-label", "");
+  const reveal = createTimesReveal();
 
   const settle = () => {
+    reveal.settle();
     if (!row) return;
     const r = row;
     r.style.transition = "translate 220ms cubic-bezier(0.32,0.72,0,1)";
@@ -125,9 +196,20 @@ export function mountSwipes(): () => void {
       if (Math.abs(x) < 8 && Math.abs(y) < 8) return;
       decided = Math.abs(x) > Math.abs(y) * 1.5 ? "swipe" : "scroll";
       if (decided === "scroll") { settle(); row = null; return; }
-      const parent = row.parentElement;
-      if (parent && getComputedStyle(parent).position === "static") parent.style.position = "relative";
-      parent?.insertBefore(label, row);
+      if (kind === "message" && x < 0) {
+        decided = "times";
+        void reveal.begin(row);
+      } else {
+        const parent = row.parentElement;
+        if (parent && getComputedStyle(parent).position === "static") parent.style.position = "relative";
+        parent?.insertBefore(label, row);
+      }
+    }
+    if (decided === "times") {
+      // 1:1 to the reveal width, then resistance; nothing runs on release.
+      const mag = Math.max(0, -x);
+      reveal.move(-(mag <= REVEAL ? mag : REVEAL + (mag - REVEAL) * 0.25));
+      return;
     }
     const side: Side = x < 0 ? "left" : "right";
     const action = ACTIONS[kind][side];
@@ -186,5 +268,6 @@ export function mountSwipes(): () => void {
     document.removeEventListener("touchend", onEnd);
     document.removeEventListener("touchcancel", settle);
     label.remove();
+    reveal.settle();
   };
 }
