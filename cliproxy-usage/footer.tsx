@@ -78,13 +78,13 @@ function shownWindow(provider: Provider, prefs: Prefs): UsageWindow | null {
   return provider.session ?? provider.weekly;
 }
 
-function Entry({ provider, prefs }: { provider: Provider; prefs: Prefs }) {
+function Entry({ provider, prefs, primary }: { provider: Provider; prefs: Prefs; primary: boolean }) {
   const shown = shownWindow(provider, prefs);
   const pct = shown ? Math.round(shown.used * 100) : null;
   const tone = pct === null ? undefined : pct >= prefs.critical ? "critical" : pct >= prefs.warn ? "warn" : undefined;
   const mask = `url(${LOGOS[provider.provider]}) center / contain no-repeat`;
   return (
-    <span className={tone === "critical" ? "text-destructive" : tone ? "" : "text-muted-foreground"} data-cliproxy-tone={tone}>
+    <span className={tone === "critical" ? "text-destructive" : tone ? "" : "text-muted-foreground"} data-cliproxy-tone={tone} data-cliproxy-provider={provider.provider} data-cliproxy-primary={primary ? "" : undefined}>
       {prefs.labels === "icons" ? (
         <span aria-hidden="true" className="inline-block size-3 shrink-0" style={{ mask, WebkitMask: mask, backgroundColor: "currentColor" }} />
       ) : (
@@ -128,6 +128,11 @@ export function FooterUsage() {
 
   const providers = (summary?.providers ?? []).filter((p) => prefs.providers === "both" || p.provider === prefs.providers);
   const show = enabled && providers.length > 0;
+  // The entry a themed footer keeps when it has to shrink to one (data-cliproxy-primary): the one closest to its limit.
+  const primary = providers.reduce<Provider | null>((best, p) => {
+    const used = shownWindow(p, prefs)?.used ?? -1;
+    return !best || used > (shownWindow(best, prefs)?.used ?? -1) ? p : best;
+  }, null);
 
   // bb re-creates the footer on navigation and when the sidebar collapses: re-attach on a
   // light 1s check instead of observing the whole document.
@@ -187,7 +192,7 @@ export function FooterUsage() {
 
   if (!host || !show) return null;
   return createPortal(
-    <>{providers.map((p) => <Entry key={p.provider} provider={p} prefs={prefs} />)}</>,
+    <>{providers.map((p) => <Entry key={p.provider} provider={p} prefs={prefs} primary={p === primary} />)}</>,
     host,
   );
 }
