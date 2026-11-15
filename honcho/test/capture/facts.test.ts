@@ -8,6 +8,13 @@ describe("deny globs", () => {
     expect(globMatcher("/work/client")!.test("/work/clientele")).toBe(false);
     expect(globMatcher("*acme/*", { caseInsensitive: true })!.test("git@example.test:ACME/repo.git")).toBe(true);
     expect(globMatcher("  ")).toBeNull();
+    // `*` stays within a segment, `**` crosses `/`, and a path also covers everything below it.
+    expect(globMatcher("/work/*/app")!.test("/work/client/app")).toBe(true);
+    expect(globMatcher("/work/*/app")!.test("/work/client/sub/app")).toBe(false);
+    expect(globMatcher("/work/**/app")!.test("/work/client/sub/app")).toBe(true);
+    expect(globMatcher("/work/*")!.test("/work/client/deep/file")).toBe(true);
+    expect(globMatcher("/work/client/**")!.test("/work/client")).toBe(true);
+    expect(globMatcher("/work/cl?ent")!.test("/work/cl/ent")).toBe(false);
     expect(denyReason({ remotes: [null, "https://example.test/acme/x.git"], path: null }, { denyRemotes: ["https://example.test/acme/x"], denyPaths: [] })).toContain("remote");
     expect(denyReason({ remotes: [], path: "/a/b" }, { denyRemotes: [], denyPaths: [] })).toBeNull();
   });

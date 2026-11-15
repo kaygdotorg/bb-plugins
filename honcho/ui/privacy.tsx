@@ -56,7 +56,7 @@ function Rules({ settings, onSaved }: { settings: PrivacySettings; onSaved(): vo
     <Section title="never capture or redact" hint="one entry per line.">
       <Card className="space-y-3 p-3">
         {box("deny remotes", "git remote globs, e.g. git@github.com:client/*", remotes, setRemotes)}
-        {box("deny paths", "environment path globs, e.g. /work/client/**", paths, setPaths)}
+        {box("deny paths", "environment path globs, e.g. /work/client/**. * stays within one folder, ** crosses folders; a path also covers everything below it", paths, setPaths)}
         {box("regex patterns", "matches are replaced with [REDACTED] before upload", patterns, setPatterns)}
         <div className="flex items-center gap-2">
           <Button disabled={!dirty || busy !== null} onClick={() => void run("save", async () => {
