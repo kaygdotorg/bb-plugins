@@ -14,6 +14,7 @@ import { mountComposer } from "./composer";
 import { mountTitlePill } from "./title-pill";
 import { installClock } from "./clock";
 import { mountBrand } from "./brand";
+import { mountInputMode } from "./input-mode";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -39,10 +40,12 @@ export function mountFrame(): () => void {
   const unmountComposer = mountComposer();
   const unmountTitlePill = mountTitlePill();
   const unmountBrand = mountBrand();
+  const unmountInputMode = mountInputMode();
 
   return () => {
     uninstallClock();
     unmountBrand();
+    unmountInputMode();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();
