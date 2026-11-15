@@ -19,7 +19,7 @@ import { PILL_PHONE_CSS } from "./pills-phone";
 import { TITLE_PILL_CSS } from "./title-pill";
 import { PILL_SETTINGS_CSS } from "./pills-settings";
 import { PHONE_MENU_CSS } from "./phone-menu";
-import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
+import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL, SIDEBAR } from "./selectors";
 
 export const CSS = `
 ${R} {
@@ -843,9 +843,29 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
   ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed { font-size: calc(17px * var(--cf-ui-scale, 1)); line-height: 1.45; margin-right: calc(0.5rem * var(--cf-ui-scale, 1)); }
   ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
-  /* Touch: the compact nav rows match bb's own touch row height. */
-  @media (pointer: coarse) {
-    ${R} [data-cf-nav] > button { height: 2.25rem; } /* text size: text-sm, like bb's thread rows */
+  /* ── The drawer like Claude's and ChatGPT's (measured, 2026-11-15): about 75% of the screen wide (bb: 86%,
+     max 360), rows 48pt with 17pt labels and 20pt icons (bb: 36–40, 15px, 14px icons), quiet 15pt section
+     headers, and a neutral grey for the selected and pressed rows instead of the accent tint. bb sets its
+     drawer width inline; a custom property with !important wins over an inline one. */
+  ${R} [style*="--sidebar-width-mobile"] { --sidebar-width-mobile: min(75vw, 330px) !important; }
+  ${SIDEBAR} {
+    --sidebar-accent: color-mix(in oklab, var(--foreground) 10%, transparent);
+    --accent: color-mix(in oklab, var(--foreground) 10%, transparent); /* the plugin nav's selected row (ui/nav.tsx bg-accent) */
+    --accent-foreground: var(--foreground);
+    --state-hover: color-mix(in oklab, var(--foreground) 8%, transparent);
+    --state-active: color-mix(in oklab, var(--foreground) 12%, transparent);
+  }
+  ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row) {
+    height: calc(48px * var(--cf-ui-scale, 1)) !important;
+    border-radius: calc(12px * var(--cf-ui-scale, 1)) !important;
+  }
+  ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row, .group\\/thread-row .text-sm) { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
+  ${SIDEBAR} [data-cf-nav] > button svg { width: calc(20px * var(--cf-ui-scale, 1)) !important; height: calc(20px * var(--cf-ui-scale, 1)) !important; }
+  ${SIDEBAR} [data-sidebar="group-label"] {
+    font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
+    font-weight: 400 !important;
+    color: var(--muted-foreground) !important;
+    margin-top: calc(8px * var(--cf-ui-scale, 1));
   }
 ${cardInterior(MAIN)}}
 ${PILL_CSS}
