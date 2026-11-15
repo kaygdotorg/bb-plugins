@@ -170,6 +170,10 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   pointer-events: none;
 }
 
+/* bb's "thread context" strip above the composer (git changed files, pull request) repeats
+   what the right sidebar's info tab shows, so it is not shown in the chat. */
+${R} [data-app-composer] section[aria-label="Thread context before sending"] { display: none !important; }
+
 /* Optical spacing in compact buttons (bb's gap-1: model pill, chips, toolbar buttons). The
    boxes are evenly spaced, but a leading icon fills its box to the edge while text has side
    bearings, and a chevron's glyph sits inset in its box. So icon → text reads tighter and
