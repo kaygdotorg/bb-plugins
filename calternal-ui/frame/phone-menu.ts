@@ -88,6 +88,9 @@ export const PHONE_MENU_CSS = `
 
   /* The menu covers the ⋯ pill; its glyph steps out so it never shows through the menu's glass. */
   ${R} ${ACTIONS_SEL}[data-cf-am-open] :is(svg, span.size-4) { opacity: 0; }
+  /* And its glass: the menu IS the pill now (it grows out of it and shrinks back into it). With the menu's
+     clear glass, a pill left behind showed through it (kayg's screenshot). Back once the closing morph ends. */
+  ${R} ${ACTIONS_SEL}[data-cf-am-open]::before { visibility: hidden; }
 }
 `;
 
