@@ -167,6 +167,14 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   pointer-events: none;
 }
 
+/* Optical spacing in compact buttons (bb's gap-1: model pill, chips, toolbar buttons). The
+   boxes are evenly spaced, but a leading icon fills its box to the edge while text has side
+   bearings, and a chevron's glyph sits inset in its box. So icon → text reads tighter and
+   text → chevron looser than text → text; 2px either way makes all three read the same. */
+${R} button.gap-1 > [data-icon-root]:first-child:not(:only-child),
+${R} button.gap-1 > .contents > :has(> [data-provider-logo]):first-child { margin-inline-end: 0.125rem; }
+${R} button.gap-1 > [data-icon="ChevronDown"]:last-child:not(:first-child) { margin-inline-start: -0.125rem; }
+
 /* Strips stacked above the composer (bb's git status, plugin notices) are solid panels in
    bb; here they share the composer's glass. Text only, so a plain backdrop-filter is fine. */
 ${R} [data-app-composer] section.bg-surface-raised-solid {
