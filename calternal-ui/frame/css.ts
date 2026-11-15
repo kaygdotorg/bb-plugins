@@ -314,8 +314,9 @@ ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
   translate: 0 -50%;
   height: var(--cf-tb-c);
   margin: 0 !important;
-  /* A toolbar (pills.ts): bb pads this row 15px; here the capsule's 3px padding and 2px gaps
-     make the inner pills concentric with it. Over the composer's glass it's a quiet tint. */
+  /* A toolbar (pills.ts): bb pads this row 15px; here the capsule's padding and gaps are the
+     shared toolbar tokens (desktop: none, its items are segments). Over the composer's glass
+     it's a quiet tint. */
   padding: var(--cf-tb-pad) !important;
   border-radius: 999px;
   background: var(--cf-pill-quiet);
@@ -336,14 +337,14 @@ ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { 
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { order: 2; }
 ${R} [data-app-composer][data-cf-merged] :is([data-cf-env], button[aria-label^="Thread details"]) { order: 3; }
 /* Phones show "Thread details: <branch>" instead of the environment: the branch icon only. */
-${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { width: var(--cf-seg-w); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] > span { display: none !important; }
 /* Environment: the folder icon only; the name and branch live in its tooltip. */
 ${R} [data-app-composer][data-cf-merged] [data-cf-env] [data-option-display] { display: none !important; }
-${R} [data-app-composer][data-cf-merged] [data-cf-env] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] [data-cf-env] { width: var(--cf-seg-w); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] [data-cf-env] > * { justify-content: center; padding: 0 !important; margin: 0 !important; }
 /* Permission: an icon per mode instead of the label and chevron; Full Access in amber. */
-${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: var(--cf-seg-w); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] > * { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"]::before {
   content: "";
@@ -360,7 +361,7 @@ ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: va
 /* Context ring: the percentage only when it's nearly full. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
-${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); margin: 0 !important; padding: 0 !important; justify-content: center; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { width: var(--cf-seg-w); height: var(--cf-tbp-c); margin: 0 !important; padding: 0 !important; justify-content: center; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] { width: auto; gap: 0.375rem !important; padding-inline: 0.5rem !important; }
 /* "New thread here", added to the + menu after it opened: one line like its neighbours. */
 ${R} [data-cf-new-thread] { white-space: nowrap; }

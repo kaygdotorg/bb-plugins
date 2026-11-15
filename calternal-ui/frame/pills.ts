@@ -3,21 +3,50 @@
  * reference: values and rules are taken over, the code is our own CSS over bb's buttons.
  *
  *   - A pill is a round button: 0.97 press, 9% ink hover tint, the warm tooltip, one icon size.
- *   - Separate actions are separate pills. Only a toolbar groups its buttons, as pills within
- *     one pill: the outer capsule is full-round, the inner pills sit 3px inside it with 2px
- *     between them, so the two are concentric.
+ *   - Separate actions are separate pills. Only a toolbar groups its buttons, as segments of one
+ *     full-round capsule (SEGMENT below); a segment's highlight is concentric with the capsule.
  *   - A pill or toolbar that floats over the page wears the one floating glass; one inside a
  *     surface that already is glass (the composer) is a quiet 6.5% ink tint instead.
- *   - Sizes are calternal's at 100% interface size and scale with it (--cf-ui-scale): a toolbar
- *     32px with 26px pills, a pill alone 30px, icons 20px; on phones 44px and 22px.
+ *   - Sizes (desktop) are Apple's macOS 26/27 toolbar metrics at 100% interface size, scaled with it
+ *     (--cf-ui-scale): one control height, 36px, for every top-row and composer control (a lone
+ *     circle is 36x36, a toolbar 36 tall); inside a toolbar the items are plain 38px segments with
+ *     no inner circle, and hover/press draw a highlight pill inside the segment (3px in from top and
+ *     bottom, 2px from its sides); icons 16px (macOS 27 glyphs measured 14-16); 8px between separate controls and between groups;
+ *     text pills (title, model, usage) 36 tall with 12px side padding. Phones (< 768px) use iOS 27's
+ *     navigation-bar metrics in the same model: 44px circles and capsules, 48px segments, 20px
+ *     glyphs, 8px gaps (pills-phone.ts adds the 20px side inset). Every pill file consumes these
+ *     tokens, so one change here moves them all.
  *
  * The glass is a ::before layer (never a backdrop-filter on the button or its ancestors: that
  * would make a backdrop root, see AGENTS.md).
  */
 import { R } from "./selectors";
 
-/** calternal's px at 100% interface size, scaled with it. */
+/** px at 100% interface size, scaled with it. */
 export const s = (px: number) => `calc(${px}px * var(--cf-ui-scale, 1))`;
+
+/**
+ * A toolbar item: a plain segment of its capsule, the capsule's full height. Its hover/press
+ * highlight is its own background, clipped to the padding box: a transparent border insets it
+ * --cf-seg-iy from top and bottom and --cf-seg-ix from the sides. The radius is chosen so that the
+ * inner (padding-box) corner is a true pill: outer horizontal radius = h/2 - iy + ix, vertical = h/2.
+ * No pseudo-element: bb's permission button already draws its icon on ::before, and the sidebar
+ * uses ::after for hit areas.
+ */
+export const SEGMENT = `
+  box-sizing: border-box;
+  width: var(--cf-seg-w);
+  min-width: var(--cf-seg-w);
+  height: var(--cf-tb-pill);
+  padding: 0;
+  margin: 0;
+  flex: none;
+  justify-content: center;
+  border: solid transparent !important;
+  border-width: var(--cf-seg-iy) var(--cf-seg-ix) !important;
+  background-clip: padding-box !important;
+  border-radius: calc(var(--cf-tb-pill) / 2 - var(--cf-seg-iy) + var(--cf-seg-ix)) / calc(var(--cf-tb-pill) / 2) !important;
+`;
 
 /** The floating glass as a layer: put these declarations on a ::before of a stacking context. */
 export const GLASS_LAYER = `
@@ -49,13 +78,30 @@ ${R} {
   --cf-pill-shadow: 0 0 0 1px rgb(31 27 23 / 0.05), 0 10px 28px -8px rgb(60 40 20 / 0.26), 0 2px 4px -1px rgb(60 40 20 / 0.08);
   --cf-pill-quiet: color-mix(in oklab, var(--foreground) 6.5%, transparent);
   --cf-pill-hover: color-mix(in oklab, var(--foreground) 9%, transparent);
-  /* Sizes (desktop). */
-  --cf-tb: ${s(32)};
-  --cf-tb-pad: ${s(3)};
-  --cf-tb-gap: ${s(2)};
-  --cf-tb-pill: calc(var(--cf-tb) - 2 * var(--cf-tb-pad));
-  --cf-pill: ${s(30)};
-  --cf-pill-icon: ${s(20)};
+  /* Sizes (desktop): Apple's macOS 26/27 toolbar metrics (see the header comment). */
+  --cf-ctl: ${s(36)};          /* the one control height: lone circles, toolbars, text pills */
+  --cf-ctl-gap: ${s(8)};       /* between separate controls and between groups */
+  --cf-tb: var(--cf-ctl);      /* a toolbar capsule */
+  --cf-tb-pad: 0px;            /* its padding: segments fill it */
+  --cf-tb-gap: 0px;            /* between its segments */
+  --cf-tb-pill: calc(var(--cf-tb) - 2 * var(--cf-tb-pad)); /* a segment's height */
+  --cf-seg-w: ${s(38)};        /* a segment's width */
+  --cf-seg-iy: ${s(3)};        /* its highlight's inset from the capsule's top and bottom */
+  --cf-seg-ix: ${s(2)};        /* and from the segment's sides */
+  --cf-pill: var(--cf-ctl);    /* a pill alone (a circle) */
+  --cf-pill-icon: ${s(16)};    /* Apple's toolbar glyphs measured 14-16 */
+  --cf-text-h: var(--cf-ctl);  /* a pill with words */
+  --cf-text-pad: ${s(12)};
+}
+/* Phones: iOS 27's navigation bar, measured in the simulator (Files, Settings, Safari): 44px round
+   buttons (44.7pt), 44px capsules whose items are ~48px segments (back/forward 96.7pt for two),
+   20px glyphs, 8px gaps. The segment highlight is the desktop one. */
+@media (max-width: 767px) {
+  ${R} {
+    --cf-ctl: ${s(44)};
+    --cf-seg-w: ${s(48)};
+    --cf-pill-icon: ${s(20)};
+  }
 }
 ${R}.dark {
   --cf-pill-tint: 30 28 26;
@@ -82,29 +128,25 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) :is([data-thread-h
   display: contents;
 }
 
-/* The card's top-right corner is the device radius (62px): at bb's own right padding the
-   capsule came within ~5px of the curve while sitting 10px below the top. A 30px inset gives it
-   about the same clearance from the curve as from the top edge. Desktop only (phones: TopPills). */
+/* The card's top-right corner is the device radius (62px, squircle): at bb's own right padding the
+   capsule came within ~5px of the curve. The inset keeps the capsule's end as far from the curve
+   as its top is from the card's top edge. Desktop only (phones: TopPills). --cf-hd-inset is read
+   by title-pill.ts too, so both ends of the header clear their corner alike. */
 @media (min-width: 768px) {
-  ${R} main header [data-testid="app-page-header-content-row"]:has([data-thread-header-pane-actions]) { padding-right: ${s(12)}; } /* bb's row already ends ~18px in: 30 in total */
+  ${R} { --cf-hd-inset: ${s(16)}; } /* bb's row already ends ~18px in */
+  ${R} main header [data-testid="app-page-header-content-row"]:has([data-thread-header-pane-actions]) { padding-right: var(--cf-hd-inset); }
 }
 
-/* ── A pill: inside a toolbar it takes the toolbar's inner size. */
+/* ── A toolbar item: a segment (SEGMENT). One with words grows to fit them. */
 ${R} main header div:has(> [data-thread-header-pane-actions]) button {
-  height: var(--cf-tb-pill);
-  min-width: var(--cf-tb-pill);
-  margin: 0 !important;
-  padding: 0 0.625rem;
-  border: 0 !important;
-  border-radius: 999px !important;
-  background: transparent;
+${SEGMENT}  margin: 0 !important;
+  background-color: transparent;
   box-shadow: none !important;
   color: var(--foreground);
 }
-/* Icon-only buttons are circles. */
-${R} main header div:has(> [data-thread-header-pane-actions]) button:is(:has(> svg:only-child), :has(> span.size-4:only-child)) {
-  width: var(--cf-tb-pill);
-  padding: 0;
+${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:has(> svg:only-child), :has(> span.size-4:only-child)) {
+  width: auto;
+  padding: 0 0.625rem;
 }
 
 /* ── The thread's ⋯ on its own: only on phones (pills-phone.ts builds on this). On desktop it is the
@@ -132,18 +174,19 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) button :is(svg, sp
   height: var(--cf-pill-icon);
 }
 ${R} main header div:has(> [data-thread-header-pane-actions]) button {
-  transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 150ms ease, color 150ms ease;
+  transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease;
 }
 @media (hover: hover) {
   ${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):hover {
-    background: var(--cf-pill-hover);
+    background-color: var(--cf-pill-hover);
   }
 }
 ${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):active {
   scale: 0.97;
+  background-color: var(--cf-pill-hover);
 }
 @media (max-width: 767px) {
-  ${R} main header button[aria-label="Thread actions"] { transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), color 150ms ease; }
+  ${R} main header button[aria-label="Thread actions"] { transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease; }
   ${R} main header button[aria-label="Thread actions"]:not(:disabled):active { scale: 0.97; }
 }
 @media (prefers-reduced-motion: reduce) {

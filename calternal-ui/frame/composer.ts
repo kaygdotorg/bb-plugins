@@ -42,6 +42,10 @@ export function mountComposer(): () => void {
 
   let composer: HTMLElement | null = null;
   let frame = 0;
+  // After dispose, nothing may run again: a pass already queued for the next frame would
+  // re-observe the row and re-add the model chip, leaving a zombie generation behind each
+  // plugin reload (two chips on kayg's phone, 2026-11-15).
+  let disposed = false;
   const resize = new ResizeObserver(() => schedule());
   const mutations = new MutationObserver((records) => {
     // Typing is hot: edits inside the editor never trigger a pass.
@@ -62,6 +66,7 @@ export function mountComposer(): () => void {
 
   function pass() {
     frame = 0;
+    if (disposed) return;
     const next = document.querySelector<HTMLElement>(COMPOSER);
     if (next !== composer) {
       mutations.disconnect();
@@ -117,12 +122,25 @@ export function mountComposer(): () => void {
       followUp.style.setProperty("--cf-foot-y", px(modelBox.top + modelBox.height / 2 - base.top));
       // Never over the right-hand buttons (the mic): cap the width to the free space.
       const right = row.lastElementChild?.getBoundingClientRect();
-      if (right) followUp.style.setProperty("--cf-foot-w", px(Math.max(0, right.left - modelBox.right - 2 * gap)));
+      const free = right ? Math.max(0, right.left - modelBox.right - 2 * gap) : Infinity;
+      if (right) followUp.style.setProperty("--cf-foot-w", px(free));
+      // Everything in the row gets its own space. The phone's attachment chip (attachments.ts)
+      // sits after the toolbar (the model pill's end margin makes the toolbar's room); when the
+      // toolbar does not fit whole beside it, the toolbar steps aside (as it does while the
+      // keyboard is up) instead of being clipped or drawn over the chip.
+      const chip = row.querySelector<HTMLElement>("[data-cf-attach-chip]");
+      const chipRoom = chip && chip.offsetWidth > 0 ? chip.offsetWidth + gap : 0;
+      const need = footer.scrollWidth; // its natural width (it clips to --cf-foot-w)
+      const shown = getComputedStyle(footer).display !== "none" && need > 0;
+      const fits = need <= free - chipRoom + 0.5;
+      composer.toggleAttribute("data-cf-foot-off", shown && !fits);
+      followUp.style.setProperty("--cf-foot-room", px(shown && fits ? need + gap : 0));
       composer.setAttribute("data-cf-merged", "");
       resize.observe(row);
       resize.observe(model!); // its width changes with the keyboard (phones) and the model name
     } else {
       composer.removeAttribute("data-cf-merged");
+      composer.removeAttribute("data-cf-foot-off");
     }
 
     // Collapsed on a phone: add the model icon (remembered from the expanded composer) to
@@ -170,7 +188,7 @@ export function mountComposer(): () => void {
   }
 
   function schedule() {
-    if (!frame) frame = requestAnimationFrame(pass);
+    if (!frame && !disposed) frame = requestAnimationFrame(pass);
   }
 
   /** "New thread here" joins the + menu when it opens (bb's own button stays the action). */
@@ -206,6 +224,9 @@ export function mountComposer(): () => void {
   document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
   schedule();
   return () => {
+    disposed = true;
+    cancelAnimationFrame(frame);
+    frame = 0;
     window.clearInterval(timer);
     window.removeEventListener("resize", schedule);
     document.removeEventListener("pointerdown", onPointerDown, { capture: true });
@@ -213,9 +234,10 @@ export function mountComposer(): () => void {
     resize.disconnect();
     modelChip.remove();
     voice.dispose();
-    document.querySelectorAll("[data-cf-merged], [data-cf-collapsed]").forEach((el) => {
+    document.querySelectorAll("[data-cf-merged], [data-cf-collapsed], [data-cf-foot-off]").forEach((el) => {
       el.removeAttribute("data-cf-merged");
       el.removeAttribute("data-cf-collapsed");
+      el.removeAttribute("data-cf-foot-off");
     });
   };
 }

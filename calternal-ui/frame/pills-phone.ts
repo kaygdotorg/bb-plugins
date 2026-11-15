@@ -4,14 +4,15 @@
  * On a phone (<768px) the chat header is no band, only floating glass over the page, 44px tall on one centre line:
  *   - back: bb's drawer button (a fixed overlay outside the header), a round glass pill on the left;
  *   - the title: a glass capsule, centred on the screen, padded 16px, truncating;
- *   - a toolbar on the right: the ⋯ thread actions and the right-panel button as pills within one glass capsule
- *     (44px outer, 38px inner, 3px padding, 2px gap). bb keeps ⋯ beside the title in its DOM, so ⋯ is flattened out
- *     of its wrappers and the toolbar's glass (a ::before of the right-hand container) reaches left to take it in.
+ *   - a toolbar on the right: the ⋯ thread actions and the right-panel button as two segments of one glass capsule
+ *     (44px tall, 48px segments: iOS 27's metrics, pills.ts). bb keeps ⋯ beside the title in its DOM, so ⋯ is
+ *     flattened out of its wrappers and the toolbar's glass (a ::before of the right-hand container) reaches left
+ *     to take it in.
  * Side insets are equal; the top inset leaves the pills clear of the 62px screen corner the pane takes on when it slides
  * aside (--cf-device-radius). The wrappers are flattened with display: contents (bb's DOM stays as it is).
  */
 import { R } from "./selectors";
-import { GLASS_LAYER, s } from "./pills";
+import { GLASS_LAYER, SEGMENT, s } from "./pills";
 
 const ROW = `${R} main header [data-testid="app-page-header-content-row"]`;
 const TOGGLE = `${R} [data-testid="app-sidebar-trigger-overlay"]`;
@@ -21,10 +22,8 @@ const ACTIONS = `button[aria-label="Thread actions"]`;
 export const PILL_PHONE_CSS = `
 @media (max-width: 767px) {
   ${R} {
-    --cf-tb: ${s(44)};
-    --cf-pill: ${s(44)};
-    --cf-pill-icon: ${s(22)};
-    /* Equal inset left and right; the top inset keeps the pills off the screen's rounded corner. */
+    /* Heights, segments and glyphs are pills.ts's phone tokens (44, 48, 20).
+       Equal inset left and right (iOS 27: 20px); the top inset keeps the pills off the screen's rounded corner. */
     --cf-ph-side: ${s(20)};
     --cf-ph-top: ${s(12)};
     --cf-ph-row: calc(var(--cf-tb) + 2 * var(--cf-ph-top));
@@ -35,7 +34,7 @@ export const PILL_PHONE_CSS = `
   ${R} main header { padding: 0; }
   ${ROW} {
     height: var(--cf-ph-row);
-    padding-left: calc(var(--cf-ph-side) + var(--cf-tb) + ${s(8)}) !important;
+    padding-left: calc(var(--cf-ph-side) + var(--cf-pill) + var(--cf-ctl-gap)) !important;
     padding-right: var(--cf-ph-side) !important;
     gap: 0;
   }
@@ -48,17 +47,30 @@ export const PILL_PHONE_CSS = `
   ${TOGGLE} button {
     position: relative;
     isolation: isolate;
-    width: var(--cf-tb);
-    height: var(--cf-tb);
+    width: var(--cf-pill);
+    height: var(--cf-pill);
     padding: 0;
     border-radius: 999px;
     color: var(--foreground);
-    transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), color 150ms ease;
+    transition: scale 150ms var(--cf-ease-out), color 150ms ease;
   }
   ${TOGGLE} button::before {
 ${GLASS_LAYER}}
   ${TOGGLE} button :is(svg, span.size-4) { width: var(--cf-pill-icon); height: var(--cf-pill-icon); }
   ${TOGGLE} button:not(:disabled):active { scale: 0.97; }
+  /* While the drawer is open the toggle is pointless (a swipe closes it): like Claude's iOS app, the
+     drawer's top row is the wordmark at the 20px inset (brand.ts) and the back/forward toolbar. The
+     button stays in the DOM, visually hidden and out of the layout, for assistive tech. */
+  ${R}:has(main[data-sidebar="inset"][data-sidebar-shelf]:not([data-sidebar-shelf="closed"])) ${TOGGLE.replace(R + " ", "")} button {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 
   /* ── The title: a glass capsule on the screen's centre. Its wrappers (and the ⋯ span) are flattened. */
   ${ROW} > div:first-child,
@@ -72,9 +84,9 @@ ${GLASS_LAYER}}
     display: flex;
     align-items: center;
     isolation: isolate;
-    height: var(--cf-tb);
-    /* Both sides reserve the toolbar's room, so the capsule stays centred. */
-    max-width: calc(100% - 2 * (var(--cf-ph-side) + ${s(84)} + ${s(8)}));
+    height: var(--cf-text-h);
+    /* Both sides reserve the toolbar's room (two segments), so the capsule stays centred. */
+    max-width: calc(100% - 2 * (var(--cf-ph-side) + 2 * var(--cf-seg-w) + 2 * var(--cf-tb-pad) + var(--cf-tb-gap) + var(--cf-ctl-gap)));
     padding: 0 ${s(16)};
     border-radius: 999px;
     /* Words sit on this glass, and page text passes under it: a denser tint than the icon pills' keeps >= 4.5:1. */
@@ -91,19 +103,18 @@ ${GLASS_LAYER}}
     color: var(--foreground);
   }
 
-  /* ── The toolbar: ⋯ and the right-hand buttons as pills within one glass capsule. The container's glass reaches
-     left over ⋯ (2px gap + 38px pill + 3px padding). */
-  ${ROW} { --cf-tb-reach: calc(var(--cf-tb-pill) + var(--cf-tb-gap) + var(--cf-tb-pad)); }
+  /* ── The toolbar: ⋯ and the right-hand buttons as segments of one glass capsule. The container's glass reaches
+     left over ⋯ (one segment, plus the toolbar's gap and padding, both 0 with segments). */
+  ${ROW} { --cf-tb-reach: calc(var(--cf-seg-w) + var(--cf-tb-gap) + var(--cf-tb-pad)); }
   ${ROW} > ${TOOLBAR} { margin-left: auto; }
   ${ROW}:has(${ACTIONS}) > ${TOOLBAR} { padding-left: 0; }
   ${ROW}:has(${ACTIONS}) > ${TOOLBAR}::before { left: calc(-1 * var(--cf-tb-reach)); }
   ${ROW} ${ACTIONS} {
-    z-index: 1;
-    width: var(--cf-tb-pill);
-    height: var(--cf-tb-pill);
-    margin: 0 var(--cf-tb-gap) 0 0;
-    margin-left: auto;
+${SEGMENT}    z-index: 1;
+    margin: 0 var(--cf-tb-gap) 0 auto;
+    background-color: transparent;
   }
+  ${ROW} ${ACTIONS}:not(:disabled):active { background-color: var(--cf-pill-hover); }
   ${ROW} ${ACTIONS}::before { content: none; }
   ${ROW} ${ACTIONS} :is(svg, span.size-4) { width: var(--cf-pill-icon); height: var(--cf-pill-icon); }
   /* The thread's actions are the toolbar's first pill: it carries the toolbar's left padding. */

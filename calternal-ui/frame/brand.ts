@@ -10,9 +10,10 @@
  * Alignment: script fonts carry their ink very unevenly in the line box (tall loops, low
  * baselines, swashes), so no fixed offset centres every font. Once the font has loaded, the
  * ink box of the actual text is measured (canvas measureText) and the wordmark is shifted so
- * the INK's centre sits on the row's centre line (where the pills are centred) and the ink
- * starts one pill gap after the toggle pill. The line box is tall enough that swashes and
- * descenders are never clipped.
+ * the INK's centre sits on the row's centre line (the back/forward toolbar's centre) and the ink
+ * starts one pill gap after the toggle pill. On phones the toggle is hidden while the drawer is
+ * open (pills-phone.ts), so the ink starts at the 20px side inset instead, like Claude's iOS app.
+ * The line box is tall enough that swashes and descenders are never clipped.
  */
 import { R } from "./selectors";
 import { s } from "./pills";
@@ -25,12 +26,15 @@ let el: HTMLSpanElement | null = null;
 /** The toggle pill's right edge (it is a fixed overlay at the row's left) plus one pill gap. */
 const TOGGLE = '[data-sidebar="trigger"]';
 const GAP = 8;
+/** Phones: the side inset (pills-phone.ts --cf-ph-side). */
+const PHONE = "(max-width: 767px)";
+const PHONE_INSET = 20;
 
 const CSS = `
 ${R} ${ROW} { justify-content: space-between; }
 ${R} [data-cf-brand] {
   /* Starts after the toggle pill; brand.ts nudges it by the font's ink (--cf-brand-dx/dy). */
-  margin-left: var(--cf-brand-left, ${s(48)});
+  margin-left: var(--cf-brand-left, ${s(54)}); /* toggle inset 10 + 36px pill + 8px gap */
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -80,18 +84,26 @@ async function align() {
   const lineH = parseFloat(cs.lineHeight) || fontBox;
   const baseline = (lineH - fontBox) / 2 + m.fontBoundingBoxAscent;
   const inkMid = baseline + (inkTop + inkBottom) / 2;
-  node.style.setProperty("--cf-brand-dy", `${(lineH / 2 - inkMid).toFixed(2)}px`);
+  // Onto the back/forward toolbar's centre line when it is there, else the row's.
+  const rowEl0 = node.parentElement;
+  const line = rowEl0?.querySelector(":scope > div:has(> button)")?.getBoundingClientRect() ?? rowEl0?.getBoundingClientRect();
+  const dyNow = parseFloat(node.style.getPropertyValue("--cf-brand-dy")) || 0;
+  const top = node.getBoundingClientRect().top - dyNow; // the element's top without our nudge
+  const dy = line && line.height > 0 ? line.top + line.height / 2 - (top + inkMid) : lineH / 2 - inkMid;
+  node.style.setProperty("--cf-brand-dy", `${dy.toFixed(2)}px`);
   // Horizontal: the ink's left edge one gap after the toggle pill.
   // The row's content box starts after its own padding; the sidebar may still be sliding in
   // on load, so this runs again when the row settles (mountBrand observes it).
   const toggle = document.querySelector<HTMLElement>(TOGGLE)?.getBoundingClientRect();
   const rowEl = node.parentElement;
-  if (toggle && rowEl && toggle.width > 0) {
+  const phone = matchMedia(PHONE).matches;
+  if (rowEl && (phone || (toggle && toggle.width > 0))) {
     const row = rowEl.getBoundingClientRect();
     const contentLeft = row.left + (parseFloat(getComputedStyle(rowEl).paddingLeft) || 0);
     const inkLeft = (parseFloat(cs.paddingLeft) || 0) - m.actualBoundingBoxLeft; // ink start inside the element
     const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ui-scale")) || 1;
-    node.style.setProperty("--cf-brand-left", `${(toggle.right + GAP * scale - contentLeft - inkLeft).toFixed(2)}px`);
+    const start = phone ? row.left + PHONE_INSET * scale : toggle!.right + GAP * scale;
+    node.style.setProperty("--cf-brand-left", `${(start - contentLeft - inkLeft).toFixed(2)}px`);
   }
 }
 
@@ -109,9 +121,13 @@ export function mountBrand(): () => void {
 
   // Re-measure when the row moves or resizes (the sidebar sliding in, a resize, a wider font).
   const settle = new ResizeObserver(() => void align());
+  let watched: Element | null = null;
   const attach = () => {
     const row = document.querySelector<HTMLElement>(ROW);
     if (!row) return;
+    // The toggle pill's size comes from the pill tokens: when it changes, so does the wordmark's start.
+    const toggle = document.querySelector(TOGGLE);
+    if (toggle && toggle !== watched) { if (watched) settle.unobserve(watched); watched = toggle; settle.observe(toggle); }
     if (el && row.contains(el)) return;
     el ??= document.createElement("span");
     el.setAttribute("data-cf-brand", "");
@@ -119,6 +135,7 @@ export function mountBrand(): () => void {
     row.prepend(el);
     settle.disconnect();
     settle.observe(row);
+    if (watched) settle.observe(watched);
     render();
     window.setTimeout(() => void align(), 600); // after the sidebar's slide-in on load
   };
@@ -128,11 +145,14 @@ export function mountBrand(): () => void {
   const realign = () => void align();
   document.fonts.addEventListener("loadingdone", realign);
   window.addEventListener("resize", realign, { passive: true });
+  const phone = matchMedia(PHONE);
+  phone.addEventListener("change", realign);
   return () => {
     window.clearInterval(timer);
     settle.disconnect();
     document.fonts.removeEventListener("loadingdone", realign);
     window.removeEventListener("resize", realign);
+    phone.removeEventListener("change", realign);
     el?.remove();
     el = null;
     style.remove();

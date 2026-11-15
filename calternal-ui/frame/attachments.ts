@@ -24,6 +24,7 @@ export function mountAttachments(): () => void {
   chip.setAttribute("data-cf-attach-chip", "");
   let composer: HTMLElement | null = null;
   let frame = 0;
+  let disposed = false; // a render queued before dispose must not re-add the chip (a zombie after each plugin reload)
 
   chip.addEventListener("click", (e) => {
     e.preventDefault();
@@ -36,6 +37,7 @@ export function mountAttachments(): () => void {
 
   const render = () => {
     frame = 0;
+    if (disposed) return;
     composer = document.querySelector<HTMLElement>("[data-app-composer]");
     const strip = composer && media.matches ? findStrip(composer) : null;
     const tiles = strip ? [...strip.querySelectorAll<HTMLElement>(ITEM)] : [];
@@ -60,7 +62,7 @@ export function mountAttachments(): () => void {
     const left = composer.querySelector('[data-promptbox-standard-actions][data-promptbox-expanded-only]');
     if (left && chip.parentElement !== left) left.append(chip);
   };
-  const schedule = () => { if (!frame) frame = requestAnimationFrame(render); };
+  const schedule = () => { if (!frame && !disposed) frame = requestAnimationFrame(render); };
 
   // One observer on the composer; edits inside the text editor are ignored (typing is hot).
   const observer = new MutationObserver((records) => {
@@ -78,6 +80,9 @@ export function mountAttachments(): () => void {
   const timer = window.setInterval(attach, 2000); // the composer is re-created on navigation
   media.addEventListener("change", schedule);
   return () => {
+    disposed = true;
+    cancelAnimationFrame(frame);
+    frame = 0;
     window.clearInterval(timer);
     observer.disconnect();
     media.removeEventListener("change", schedule);

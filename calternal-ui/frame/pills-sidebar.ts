@@ -11,10 +11,12 @@
  *     anchored from the first toolbar item to the right edge, so it grows with the "…" on hover.
  *     The usage item keeps its li at the left; cliproxy-usage's overlay on it is the separate usage pill.
  *   - bb measures footer item widths to decide what overflows: every li stays one width (the
- *     toolbar pill's), and the gap is the toolbar's gap, which bb reads from the row.
+ *     toolbar segment's), and the gap is the toolbar's gap, which bb reads from the row.
+ *   - Sizes are pills.ts's shared tokens: desktop 36px controls, 38px segments, 16px icons; phones
+ *     44px, 48px segments, 20px glyphs; 8px between groups on both.
  */
 import { R } from "./selectors";
-import { GLASS_LAYER, s } from "./pills";
+import { GLASS_LAYER, SEGMENT, s } from "./pills";
 
 void GLASS_LAYER;
 
@@ -34,23 +36,16 @@ const ALL_BTN = `:is(${TOP} > div > button, ${TOGGLE}, ${ITEM} > :is(button, a))
 export const PILL_SIDEBAR_CSS = `
 ${R} {
   --cf-sb-tb: var(--cf-tb);
-  --cf-sb-in: var(--cf-tb-pill);
+  --cf-sb-in: var(--cf-tb-pill);   /* a segment's height */
+  --cf-sb-seg: var(--cf-seg-w);    /* and width */
   --cf-sb-pill: var(--cf-pill);
   --cf-sb-icon: var(--cf-pill-icon);
-  --cf-sb-hy: 3px; /* the toolbar's pills extend their hit area over the capsule's padding and gaps: hover never drops between them */
-  --cf-sb-hx: 1px;
+  --cf-sb-hy: 0px; /* segments fill their capsule, so no hit-area extension is needed */
+  --cf-sb-hx: 0px;
   --cf-sb-pad: var(--cf-tb-pad);
-}
-/* Phones: 44px, 22px icons. The toolbar's pills are 38px, so each gets an invisible 44px target. */
-@media (max-width: 767px) {
-  ${R} {
-    --cf-sb-tb: 44px;
-    --cf-sb-in: 38px;
-    --cf-sb-pill: 44px;
-    --cf-sb-icon: 22px;
-    --cf-sb-hx: 3px;
-    --cf-sb-pad: 3px;
-  }
+  --cf-sb-gap: var(--cf-tb-gap);
+  --cf-sb-iy: var(--cf-seg-iy);
+  --cf-sb-ix: var(--cf-seg-ix);
 }
 
 /* ── The sidebar toggle: a pill of its own. */
@@ -65,23 +60,14 @@ ${TOGGLE} {
   color: var(--foreground);
 }
 
-/* ── Top row: back/forward as one toolbar (pills within a pill). */
+/* ── Top row: back/forward as one toolbar (segments of one capsule). */
 ${TOP} > div:has(> button) {
   height: var(--cf-sb-tb);
-  padding: ${s(3)};
-  gap: var(--cf-tb-gap);
+  padding: var(--cf-sb-pad);
+  gap: var(--cf-sb-gap);
   border-radius: 999px;
   background: var(--cf-pill-quiet);
   box-sizing: border-box;
-}
-@media (max-width: 767px) { ${TOP} > div:has(> button) { padding: 3px; } }
-${TOP} > div > button {
-  width: var(--cf-sb-in);
-  height: var(--cf-sb-in);
-  min-width: var(--cf-sb-in);
-  padding: 0;
-  margin: 0;
-  border-radius: 999px;
 }
 
 /* ── Footer: the inner row stays bb's full-width row (bb measures it), laid out with the toolbar
@@ -94,7 +80,7 @@ ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"] {
   height: var(--cf-sb-tb);
   padding-block: var(--cf-sb-pad);
   padding-inline: 0 var(--cf-sb-pad);
-  gap: var(--cf-tb-gap);
+  gap: var(--cf-sb-gap);
 }
 ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"]::before {
   content: "";
@@ -111,8 +97,8 @@ ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"]::before {
 }
 ${ITEM}[data-footer-item="plugin:calternal-ui/new-thread"] { anchor-name: --cf-sb-start; }
 ${ITEM} {
-  width: var(--cf-sb-in);
-  min-width: var(--cf-sb-in);
+  width: var(--cf-sb-seg);
+  min-width: var(--cf-sb-seg);
   height: var(--cf-sb-in);
 }
 /* The usage item stays first in the row; its overlay is the separate pill, as tall as the toolbar. */
@@ -128,11 +114,11 @@ ${FOOT} [data-cliproxy-footer] {
   /* From the row's left to the toolbar's left edge (anchored, so it follows the toolbar as it
      grows), never wider than its content. Replaces cliproxy-usage's own room estimate. */
   position-anchor: --cf-sb-start;
-  left: ${s(3)};
-  right: calc(anchor(left, 0px) + var(--cf-sb-pad) + ${s(8)});
+  left: ${s(3)}; /* the row starts 3px left of the toggle pill: this lines the two up */
+  right: calc(anchor(left, 0px) + var(--cf-sb-pad) + var(--cf-ctl-gap));
   width: auto;
   max-width: max-content;
-  padding-inline: ${s(12)};
+  padding-inline: var(--cf-text-pad);
   gap: ${s(11)};
   border-radius: 999px;
   background: var(--cf-pill-quiet);
@@ -157,17 +143,15 @@ ${R}.dark ${FOOT.replace(R + ' ', '')} [data-cliproxy-footer] > [data-cliproxy-t
 ${FOOT} [data-cliproxy-footer]:hover { background: var(--cf-pill-hover); }
 ${FOOT} [data-cliproxy-footer]:active { scale: 0.97; }
 
-/* ── Every pill: one icon size, centred, the hover tint, the press. */
+/* ── Every toolbar item: a segment (pills.ts SEGMENT), one icon size, centred, the highlight, the press. */
 ${TB_BTN} {
+${SEGMENT}  --cf-seg-w: var(--cf-sb-seg);
+  --cf-tb-pill: var(--cf-sb-in);
+  --cf-seg-iy: var(--cf-sb-iy);
+  --cf-seg-ix: var(--cf-sb-ix);
   position: relative;
-  width: var(--cf-sb-in);
-  height: var(--cf-sb-in);
-  min-width: var(--cf-sb-in);
-  padding: 0;
-  margin: 0;
-  justify-content: center;
+  background-color: transparent;
   overflow: visible; /* bb clips its buttons; the hit-area extension below must not be */
-  border-radius: 999px !important;
 }
 ${TB_BTN}::after {
   content: "";
@@ -184,9 +168,9 @@ ${ALL_BTN} :is(svg, span.size-4) {
   height: var(--cf-sb-icon);
 }
 @media (hover: hover) {
-  ${ALL_BTN}:not([aria-disabled="true"]):hover { background: var(--cf-pill-hover); }
+  ${ALL_BTN}:not([aria-disabled="true"]):hover { background-color: var(--cf-pill-hover); }
 }
-${ALL_BTN}:not([aria-disabled="true"]):active { scale: 0.97; }
+${ALL_BTN}:not([aria-disabled="true"]):active { scale: 0.97; background-color: var(--cf-pill-hover); }
 @media (prefers-reduced-motion: reduce) { ${ALL_BTN} { transition: none; } }
 
 /* The "…" reveal (css.ts "Quiet sidebar"): same slide, at the toolbar's pill width and gap, so
@@ -196,13 +180,13 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
   ${MORE} {
     width: 0;
     min-width: 0 !important;
-    margin-inline-start: calc(-1 * var(--cf-tb-gap));
+    margin-inline-start: calc(-1 * var(--cf-sb-gap));
     opacity: 0;
     translate: -0.375rem 0;
   }
   ${MORE_SHOWN} {
-    width: var(--cf-sb-in);
-    min-width: var(--cf-sb-in) !important;
+    width: var(--cf-sb-seg);
+    min-width: var(--cf-sb-seg) !important;
     margin-inline-start: 0;
     opacity: 1;
     translate: 0 0;
@@ -238,11 +222,21 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
   }
   ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"]::before {
     left: auto;
-    width: calc(var(--cf-sb-n) * var(--cf-sb-in) + (var(--cf-sb-n) - 1) * var(--cf-tb-gap) + 2 * var(--cf-sb-pad));
+    width: calc(var(--cf-sb-n) * var(--cf-sb-seg) + (var(--cf-sb-n) - 1) * var(--cf-sb-gap) + 2 * var(--cf-sb-pad));
   }
   ${FOOT} [data-cliproxy-footer] {
     right: auto;
-    max-width: calc(100% - var(--cf-sb-n) * var(--cf-sb-in) - (var(--cf-sb-n) - 1) * var(--cf-tb-gap) - 2 * var(--cf-sb-pad) - ${s(8)});
+    max-width: calc(100% - var(--cf-sb-n) * var(--cf-sb-seg) - (var(--cf-sb-n) - 1) * var(--cf-sb-gap) - 2 * var(--cf-sb-pad) - var(--cf-ctl-gap));
+  }
+}
+
+/* Phones: the drawer's footer keeps the same 20px side inset as its top row (the wordmark's ink
+   starts at 20; iOS 27 uses 20pt). bb pads the footer 8px; the usage pill and the toolbar's end
+   then sat 10px and 8px from the edges. */
+@media (max-width: 767px) {
+  ${R} [data-sidebar="sidebar"] [data-sidebar="footer"] {
+    padding-left: 17px !important;  /* + the usage pill's own 3px offset = 20 */
+    padding-right: 20px !important;
   }
 }
 `;

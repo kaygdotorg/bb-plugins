@@ -52,8 +52,6 @@ const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export const TITLE_PILL_CSS = `
 @media (min-width: 768px) {
-  ${R} { --cf-tp-pad: ${s(12)}; }
-
   /* ── The pill: the title alone, equal padding both sides. Words sit on this glass and page text
      passes under it, so the tint is denser than the icon pills' (as the phone capsule's), for >= 4.5:1. */
   ${PILL} {
@@ -61,15 +59,15 @@ export const TITLE_PILL_CSS = `
     isolation: isolate;
     display: flex;
     align-items: center;
-    height: var(--cf-pill);
-    padding: 0 var(--cf-tp-pad);
+    height: var(--cf-text-h);
+    padding: 0 var(--cf-text-pad);
     border-radius: 999px;
-    /* The card's top-left corner is the 62px device radius: 12px more than bb's inset, as the toolbar's right (pills.ts). */
-    margin-left: ${s(12)};
+    /* The card's top-left corner is the 62px device radius: the same inset past bb's as the toolbar's right (pills.ts). */
+    margin-left: var(--cf-hd-inset);
     cursor: default;
     user-select: none;
     --cf-pill-alpha: 0.8;
-    transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: scale 150ms var(--cf-ease-out);
   }
   ${PILL}::before {
 ${GLASS_LAYER}}
