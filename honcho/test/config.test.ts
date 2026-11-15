@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { redact } from "../lib/redact";
 import { configKeys, listConfigKeys, readConfig } from "../lib/config";
 const directories: string[] = [];
 afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }); });
@@ -45,5 +46,15 @@ describe("live config", () => {
   });
   it("enumerates arbitrary hosts and nested credential spellings", () => {
     expect(configKeys({ apiKey: "one", hosts: { other: { api_key: "two", nested: { token: "three" } } } })).toEqual(["one", "two", "three"]);
+  });
+  it("puts every key in the file, including hosts.codex.apiKey, in the redaction deny set", async () => {
+    const path = await file({ apiKey: "top-synthetic-key", hosts: { claude_code: { apiKey: "claude-synthetic-key" }, codex: { apiKey: "codex-synthetic-key" } } });
+    const { keys } = await readConfig({}, path);
+    const text = "a top-synthetic-key b claude-synthetic-key c codex-synthetic-key";
+    expect(redact(text, { deny: keys })).toEqual({ text: "a [REDACTED] b [REDACTED] c [REDACTED]", count: 3 });
+  });
+  it("uses hosts.claude_code values before top-level ones, field by field", async () => {
+    const path = await file({ baseUrl: "http://top.test", workspace: "top", apiKey: "top", hosts: { claude_code: { workspace: "host" } } });
+    expect((await readConfig({}, path)).config).toMatchObject({ baseUrl: "http://top.test", workspace: "host", apiKey: "top" });
   });
 });

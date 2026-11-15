@@ -26,3 +26,11 @@ it("sets observation only on per-session peer relationships", () => {
   expect(sessionPeers("hermy", ["claude-code", "codex"])).toEqual({ hermy: { observe_me: true, observe_others: false }, claude_code: { observe_me: false, observe_others: false }, codex: { observe_me: false, observe_others: false } });
   expect(() => sessionPeers("codex", ["codex"])).toThrow();
 });
+
+it("lowercases scope slugs and keeps observation off the peer itself", () => {
+  expect(scopeSlug("Honcho_Plugin.V2")).toBe("honcho_plugin-v2");
+  expect(sessionScope({ project: "Client Repo" })).toBe("client-repo");
+  const peers = sessionPeers("hermy", ["claude-code"]);
+  expect(peers.claude_code).toEqual({ observe_me: false, observe_others: false });
+  expect(peers.hermy.observe_me).toBe(true);
+});

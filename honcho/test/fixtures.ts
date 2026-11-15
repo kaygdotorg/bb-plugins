@@ -26,15 +26,25 @@ export function command(seq: number, command: string): Completed {
 export function tool(seq: number, name: string, args: Record<string, unknown> = {}, server = "bb"): Completed {
   return completed(seq, { type: "toolCall", id: `item_${seq}`, server, tool: name, arguments: args, status: "completed", result: "synthetic output must never be captured" });
 }
+export function accepted(seq: number, requestId: string): CaptureEvent {
+  return { ...base(seq), scope: { kind: "turn", turnId: "turn_fixture" }, type: "turn/input/accepted", data: { providerThreadId: "provider_fixture", clientRequestId: requestId } };
+}
+export function identity(seq: number, providerThreadId: string): CaptureEvent {
+  return { ...base(seq), type: "thread/identity", data: { providerThreadId } };
+}
+/** Shape follows the live system/operation events (operation, status, message, operationId, metadata). */
+export function editMessage(seq: number): CaptureEvent {
+  return { ...base(seq), type: "system/operation", data: { operation: "edit_message", status: "completed", message: "Edited a message", operationId: `op_fixture${seq}`, metadata: {} } };
+}
 export const syntheticThread: CaptureEvent[] = [
-  prompt(1, "please test the library"),
-  { ...base(2), type: "provider.env-resolved", data: { providerThreadId: "provider_fixture", entries: [{ name: "SYNTHETIC_KEY", value: "never captured", source: "shell" }] } },
-  { ...base(3), type: "item/started", data: { providerThreadId: "provider_fixture", item: { type: "agentMessage", id: "item_3", text: "" } } },
-  { ...base(4), type: "item/agentMessage/delta", data: { providerThreadId: "provider_fixture", itemId: "item_3", delta: "partial" } },
-  agent(5, "i will run the tests"),
-  completed(6, { type: "reasoning", id: "item_6", summary: [], content: ["never capture reasoning"] }),
-  command(7, "rg test lib"), command(8, "npm test"),
-  tool(9, "chat", { query: "never capture memory query" }, "plugin_honcho_honcho"),
-  completed(10, { type: "fileChange", id: "item_10", status: "completed", approvalStatus: null, changes: [{ path: "lib/example.ts", kind: "update", diff: "never capture raw diff" }] }),
-  agent(11, "tests pass"),
+  prompt(1, "please test the library"), accepted(2, "creq_fixture1"), identity(3, "provider_fixture"),
+  { ...base(4), type: "provider.env-resolved", data: { providerThreadId: "provider_fixture", entries: [{ name: "SYNTHETIC_KEY", value: "never captured", source: "shell" }] } },
+  { ...base(5), type: "item/started", data: { providerThreadId: "provider_fixture", item: { type: "agentMessage", id: "item_5", text: "" } } },
+  { ...base(6), type: "item/agentMessage/delta", data: { providerThreadId: "provider_fixture", itemId: "item_5", delta: "partial" } },
+  agent(7, "i will run the tests"),
+  completed(8, { type: "reasoning", id: "item_8", summary: [], content: ["never capture reasoning"] }),
+  command(9, "rg test lib"), command(10, "npm test"),
+  tool(11, "chat", { query: "never capture memory query" }, "plugin_honcho_honcho"),
+  completed(12, { type: "fileChange", id: "item_12", status: "completed", approvalStatus: null, changes: [{ path: "lib/example.ts", kind: "update", diff: "never capture raw diff" }] }),
+  agent(13, "tests pass"),
 ];

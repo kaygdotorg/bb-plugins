@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { transformEvents, type CaptureEvent, type TransformContext } from "../lib/transform";
-import { agent, command, completed, prompt, syntheticThread, tool } from "./fixtures";
+import { isEditMessage, providerThreadIdOf, transformEvents, type CaptureEvent, type TransformContext } from "../lib/transform";
+import { accepted, agent, command, completed, editMessage, identity, prompt, syntheticThread, tool } from "./fixtures";
 const context: TransformContext = { userPeer: "hermy", providerId: "codex", senderProviders: { thr_sender: "claude-code" } };
 const transform = (events: CaptureEvent[], extra: Partial<TransformContext> = {}) => transformEvents(events, {
   ...context, acceptedRequestIds: new Set(events.flatMap(e => e.type === "client/turn/requested" ? [e.data.requestId] : [])), ...extra,
@@ -85,5 +85,33 @@ describe("capture", () => {
     const messages = transform([agent(1, text), agent(2, "next")]).messages;
     expect(messages.map(m => m.content.length)).toEqual([24999, 3, 4]);
     expect(messages.slice(0, 2).map(m => m.content).join("")).toBe(text);
+  });
+  it("takes the user text from client/turn/requested confirmed by an in-log turn/input/accepted", () => {
+    const result = transformEvents(syntheticThread, { userPeer: "hermy", providerId: "codex" });
+    expect(result.pendingRequests).toEqual([]);
+    expect(result.messages.map(m => [m.peer_id, m.metadata?.bb_seq])).toEqual([["hermy", 1], ["codex", 7], ["codex", 10], ["codex", 12], ["codex", 13]]);
+    // The same prompt without its acceptance event stays pending and is not captured.
+    expect(transformEvents(syntheticThread.filter(e => e.type !== "turn/input/accepted"), { userPeer: "hermy", providerId: "codex" })).toMatchObject({ messages: expect.not.arrayContaining([expect.objectContaining({ peer_id: "hermy" })]), pendingRequests: [{ requestId: "creq_fixture1", seq: 1 }] });
+  });
+  it("never credits an agent-initiated prompt to the user", () => {
+    const tell = prompt(1, "plain text with no sender", { source: "tell", initiator: "agent" });
+    expect(transform([tell])).toMatchObject({ messages: [], unresolvedSenders: ["parent"] });
+    expect(transform([tell], { parentProviderId: "claude-code" }).messages.map(m => m.peer_id)).toEqual(["claude_code"]);
+  });
+  it("ignores delegation, web fetch and reasoning items and does not read userMessage echoes", () => {
+    const events = [
+      completed(1, { type: "delegation", id: "d", childRef: "thr_child", label: "child", status: "completed", background: false, summary: "never captured" } as never),
+      completed(2, { type: "webFetch", id: "w", url: "https://synthetic.test", prompt: "never", pattern: null, resultText: "never" } as never),
+      completed(3, { type: "reasoning", id: "r", summary: [], content: ["never"] }),
+    ];
+    expect(transform(events).messages).toEqual([]);
+  });
+  it("recognises edit_message operations and thread identities", () => {
+    expect(isEditMessage(editMessage(5))).toBe(true);
+    expect(isEditMessage({ ...editMessage(5), data: { ...(editMessage(5).data as object), operation: "environment_directory_update" } } as CaptureEvent)).toBe(false);
+    expect(isEditMessage(agent(1, "x"))).toBe(false);
+    expect(providerThreadIdOf(identity(1, "provider_a"))).toBe("provider_a");
+    expect(providerThreadIdOf(accepted(2, "x"))).toBeUndefined();
+    expect(transform([editMessage(5), identity(6, "p")]).messages).toEqual([]);
   });
 });

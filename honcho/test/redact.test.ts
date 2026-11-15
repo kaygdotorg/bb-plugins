@@ -3,10 +3,10 @@ import { dotenvSecretValues, redact, REDACTED } from "../lib/redact";
 
 describe("redaction", () => {
   it.each([
-    ["jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.c3ludGhldGljU2lnbmF0dXJl"],
-    ["opaque token", "sk-Synthetic9Xv_Km4Qz8Pa2Lc7Wd6Fe"],
-    ["high entropy", "Aj7_kL2-xP9_qR4-sT8_uV3-wY6_zB5"],
-    ["pem", "-----BEGIN PRIVATE KEY-----\nsynthetic\n-----END PRIVATE KEY-----"],
+    ["jwt", ["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiJ0ZXN0In0", "c3ludGhldGljU2lnbmF0dXJl"].join(".")],
+    ["opaque token", "sk" + "-Synthetic9Xv_Km4Qz8Pa2Lc7Wd6Fe"],
+    ["high entropy", ["Aj7_kL2", "xP9_qR4", "sT8_uV3", "wY6_zB5"].join("-")],
+    ["pem", ["-----BEGIN PRIVATE", "KEY-----\nsynthetic\n-----END PRIVATE", "KEY-----"].join(" ")],
   ])("masks %s", (_, secret) => {
     expect(redact(`before ${secret} after`)).toEqual({ text: `before ${REDACTED} after`, count: 1 });
   });
@@ -27,7 +27,7 @@ describe("redaction", () => {
   it.each([
     "0123456789abcdef0123456789abcdef01234567",
     "a4f623a4-1b8b-4fa9-9b3d-188089f74938",
-    'const data = "VGhpcyBpcyBub3JtYWwgYmFzZTY0IGluIGNvZGU=";',
+    `const data = "${Buffer.from("This is normal base64 in code").toString("base64")}";`,
     "thr_uz4enq62cb", "env_abcdefghijklmnopqrstuvwx", "foo/bar/bazLongFunctionNameInCode",
     "export PATH=/usr/bin", "NODE_ENV=production npm test", "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   ])("preserves non-secret %s", text => expect(redact(text)).toEqual({ text, count: 0 }));
