@@ -42,6 +42,12 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Your messages have iMessage tails:** an SVG-masked `::after` beside the bubble (never over it, so translucent fills don't double), with the bubble's border removed and its bottom-right corner tightened.
 - **Nothing is drawn behind the composer.** Both a masked blur band and a colour fade there read as a block; kayg wants neither.
 - **The composer's glass is a `form::before` layer, not a backdrop-filter on the form.** With the filter on the form, Chromium re-composited its content on every keystroke and attachment thumbnails flickered. Apply the same rule to any glass that holds images or text being edited.
+- **Warm tooltips (`frame/tooltip.ts`)** are our own implementation of the warm-tooltip idea (sveltebits is a visual reference only; never copy its code):
+  - One shared delay (450ms cold). After a close, the next tooltip opens instantly for 700ms, and an open one glides to the next trigger, with 80ms of grace across gaps.
+  - Labels come from `aria-label`/`title`, with `aria-keyshortcuts` as a shortcut chip. Only controls whose *rendered* text doesn't already say it get one: bb's icon buttons carry 1px screen-reader labels, which don't count.
+  - bb's own tooltips are hidden, and native `title`s are moved to `data-cf-title`.
+  - Only the trigger's own blur or scroll closes it: bb shifts focus and a live thread scrolls constantly. Mouse and keyboard only; touch never shows them.
+- **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
 - **Swipe actions (`frame/swipe.ts`)** run bb's own actions:
   - Thread row: left archives (the row's own Archive button), right toggles pin (the context menu, opened silently; on touch it's an action sheet).
