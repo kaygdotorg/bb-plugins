@@ -16,6 +16,7 @@ import { installClock } from "./clock";
 import { mountBrand } from "./brand";
 import { mountInputMode } from "./input-mode";
 import { mountPhoneMenu } from "./phone-menu";
+import { mountSidebarTop } from "./sidebar-top";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -43,12 +44,14 @@ export function mountFrame(): () => void {
   const unmountBrand = mountBrand();
   const unmountInputMode = mountInputMode();
   const unmountPhoneMenu = mountPhoneMenu();
+  const unmountSidebarTop = mountSidebarTop();
 
   return () => {
     uninstallClock();
     unmountBrand();
     unmountInputMode();
     unmountPhoneMenu();
+    unmountSidebarTop();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();

@@ -1,8 +1,8 @@
 /**
  * The wordmark at the top of the sidebar (Settings → Wordmark): a short text in a Google
  * Font, "bb" in Dancing Script by default. It sits in bb's top reserve row
- * (`[data-testid="app-sidebar-top-reserve-row"]`), to the right of the sidebar toggle pill and
- * left of the back/forward toolbar. The font is installed locally like the other fonts (its
+ * (`[data-testid="app-sidebar-top-reserve-row"]`), leading; the sidebar toggle trails at the row's
+ * right end (sidebar-top.ts, which also hides bb's back/forward there). The font is installed locally like the other fonts (its
  * @font-face comes with font_faces), so there's no Google request at runtime.
  *
  * bb re-renders the row on navigation, so the element is re-attached on a light 1s check.
@@ -10,9 +10,9 @@
  * Alignment: script fonts carry their ink very unevenly in the line box (tall loops, low
  * baselines, swashes), so no fixed offset centres every font. Once the font has loaded, the
  * ink box of the actual text is measured (canvas measureText) and the wordmark is shifted so
- * the INK's centre sits on the row's centre line (the back/forward toolbar's centre) and the ink
- * starts one pill gap after the toggle pill. On phones the toggle is hidden while the drawer is
- * open (pills-phone.ts), so the ink starts at the 20px side inset instead, like Claude's iOS app.
+ * the INK's centre sits on the toggle pill's centre line, and the ink starts on the sidebar's
+ * text column (where "Threads" starts: the leading edge, like a macOS sidebar title). On phones the ink starts at the
+ * 20px side inset instead, like Claude's iOS app.
  * The line box is tall enough that swashes and descenders are never clipped.
  */
 import { R } from "./selectors";
@@ -23,9 +23,11 @@ const ROW = '[data-sidebar="sidebar"] [data-testid="app-sidebar-top-reserve-row"
 let brand = { text: "", font: "" };
 let el: HTMLSpanElement | null = null;
 
-/** The toggle pill's right edge (it is a fixed overlay at the row's left) plus one pill gap. */
+/** The toggle pill: its centre is the row's centre line. */
 const TOGGLE = '[data-sidebar="trigger"]';
-const GAP = 8;
+/** The leading column: where the sidebar's group labels ("Threads") start their text. */
+const LEAD = '[data-sidebar="sidebar"] [data-sidebar="group-label"]';
+const LEAD_FALLBACK = 17.6; // the row inset 8.8 + the label's padding 8.8
 /** Phones: the side inset (pills-phone.ts --cf-ph-side). */
 const PHONE = "(max-width: 767px)";
 const PHONE_INSET = 20;
@@ -33,8 +35,8 @@ const PHONE_INSET = 20;
 const CSS = `
 ${R} ${ROW} { justify-content: space-between; }
 ${R} [data-cf-brand] {
-  /* Starts after the toggle pill; brand.ts nudges it by the font's ink (--cf-brand-dx/dy). */
-  margin-left: var(--cf-brand-left, ${s(54)}); /* toggle inset 10 + 36px pill + 8px gap */
+  /* Leading; brand.ts nudges it by the font's ink (--cf-brand-left/dy). */
+  margin-left: var(--cf-brand-left, ${s(8)});
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -84,25 +86,29 @@ async function align() {
   const lineH = parseFloat(cs.lineHeight) || fontBox;
   const baseline = (lineH - fontBox) / 2 + m.fontBoundingBoxAscent;
   const inkMid = baseline + (inkTop + inkBottom) / 2;
-  // Onto the back/forward toolbar's centre line when it is there, else the row's.
+  // Onto the toggle pill's centre line when it is shown (desktop), else the row's.
   const rowEl0 = node.parentElement;
-  const line = rowEl0?.querySelector(":scope > div:has(> button)")?.getBoundingClientRect() ?? rowEl0?.getBoundingClientRect();
+  const t0 = document.querySelector<HTMLElement>(TOGGLE)?.getBoundingClientRect();
+  const line = t0 && t0.height > 0 ? t0 : rowEl0?.getBoundingClientRect();
   const dyNow = parseFloat(node.style.getPropertyValue("--cf-brand-dy")) || 0;
   const top = node.getBoundingClientRect().top - dyNow; // the element's top without our nudge
   const dy = line && line.height > 0 ? line.top + line.height / 2 - (top + inkMid) : lineH / 2 - inkMid;
   node.style.setProperty("--cf-brand-dy", `${dy.toFixed(2)}px`);
-  // Horizontal: the ink's left edge one gap after the toggle pill.
+  // Horizontal: the ink's left edge on the text column (phones: the side inset).
   // The row's content box starts after its own padding; the sidebar may still be sliding in
   // on load, so this runs again when the row settles (mountBrand observes it).
-  const toggle = document.querySelector<HTMLElement>(TOGGLE)?.getBoundingClientRect();
+  const label = document.querySelector<HTMLElement>(LEAD);
+  const labelBox = label?.getBoundingClientRect();
   const rowEl = node.parentElement;
   const phone = matchMedia(PHONE).matches;
-  if (rowEl && (phone || (toggle && toggle.width > 0))) {
+  if (rowEl) {
     const row = rowEl.getBoundingClientRect();
     const contentLeft = row.left + (parseFloat(getComputedStyle(rowEl).paddingLeft) || 0);
     const inkLeft = (parseFloat(cs.paddingLeft) || 0) - m.actualBoundingBoxLeft; // ink start inside the element
     const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ui-scale")) || 1;
-    const start = phone ? row.left + PHONE_INSET * scale : toggle!.right + GAP * scale;
+    const start = phone ? row.left + PHONE_INSET * scale
+      : label && labelBox && labelBox.width > 0 ? labelBox.left + (parseFloat(getComputedStyle(label).paddingLeft) || 0)
+      : row.left + LEAD_FALLBACK * scale;
     node.style.setProperty("--cf-brand-left", `${(start - contentLeft - inkLeft).toFixed(2)}px`);
   }
 }
@@ -125,7 +131,7 @@ export function mountBrand(): () => void {
   const attach = () => {
     const row = document.querySelector<HTMLElement>(ROW);
     if (!row) return;
-    // The toggle pill's size comes from the pill tokens: when it changes, so does the wordmark's start.
+    // The toggle pill's size comes from the pill tokens: when it changes, so does the centre line.
     const toggle = document.querySelector(TOGGLE);
     if (toggle && toggle !== watched) { if (watched) settle.unobserve(watched); watched = toggle; settle.observe(toggle); }
     if (el && row.contains(el)) return;

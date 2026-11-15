@@ -16,7 +16,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 - **Pills:** buttons are round pills, and related buttons sit together in one capsule.
 - **Glass:** the pills use clear glass with the same blur as iOS, so you can still see what's behind them.
 - **The thread title is a pill:** click it for the thread menu, double-click it to rename the thread.
-- **Wordmark:** the top of the sidebar shows your own name for bb ("bb" by default), in a handwriting font you choose.
+- **Wordmark:** the top of the sidebar shows your own name for bb ("bb" by default), in a handwriting font you choose. The sidebar button sits at the other end of that row, like in Apple's apps.
 
 **The composer**
 - **One tidy row:** model, context, permission and environment.
