@@ -77,7 +77,7 @@ export function WallpaperLibrary({ state, rpc, commit }: { state: FrameState; rp
               <Icon name="X" className="size-3.5" />
             </button>
             {entry.source === "unsplash" ? (
-              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-popover/80 px-1 text-[10px] text-muted-foreground">Unsplash</span>
+              <span className="pointer-events-none absolute bottom-1 left-1 rounded-md bg-popover/80 px-1 text-[10px] text-muted-foreground">Unsplash</span>
             ) : null}
           </div>
         ))}

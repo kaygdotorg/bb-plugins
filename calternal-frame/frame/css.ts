@@ -31,7 +31,12 @@ ${R} {
   --cf-gap: 8px;
   /* The iPhone 16 Pro Max's display corner (~62pt): sheets and the sliding pane follow it. */
   --cf-device-radius: 62px;
-  --cf-radius: 14px;
+  /* One radius scale for everything. bb derives md / lg / xl from --radius (-2, 0, +4px),
+     so 10px gives controls 8, panels 10, and surfaces 14; the plugin's own surfaces (card,
+     menus, popovers, desktop sheets) use that same 14. Phones are the one exception: the
+     sliding pane and inset sheets follow the screen's corner (--cf-device-radius). */
+  --radius: 10px;
+  --cf-radius: calc(var(--radius) + 4px);
   /* Shared glass for floating panes (composer, inset sheets): one look, defined once. */
   --cf-glass-fill: color-mix(in oklab, var(--cf-bg) 38%, transparent);
   --cf-glass-blur: blur(24px) saturate(170%);
@@ -42,6 +47,7 @@ ${R} {
   background: var(--cf-side) !important;
 }
 ${R}.dark {
+  --radius: 10px;
   --cf-edge: rgb(255 255 255 / 0.09);
   /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
   --cf-shadow: 0 6px 14px -7px rgb(0 0 0 / 0.55);
@@ -101,7 +107,7 @@ ${R} .ProseMirror-hideselection ::selection { background-color: transparent; }
 ${R} { accent-color: var(--cf-accent); caret-color: var(--cf-accent); }
 
 ${R} :is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) {
-  border-radius: 7px !important;
+  border-radius: calc(var(--cf-radius) - 6px) !important;
 }
 ${R} :is([role="menu"], [role="listbox"]) [role="separator"] { margin-inline: 2px; }
 
@@ -158,9 +164,9 @@ ${R}[data-cf-silent-menu] :is([role="menu"], [data-persistent-drawer-content], [
 
 /* Menus, popovers, context menus: frosted and tinted, not flat grey. */
 ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) {
-  /* Concentric corners: outer radius = item radius + padding (12 = 7 + 5). */
-  border-radius: 12px !important;
-  padding: 5px !important;
+  /* Concentric corners: outer radius = item radius + padding (14 = 8 + 6). */
+  border-radius: var(--cf-radius) !important;
+  padding: 6px !important;
   /* Hover and highlight inside menus read as the accent, not grey. */
   --state-hover: color-mix(in oklab, var(--cf-accent) 26%, transparent);
   --accent: color-mix(in oklab, var(--cf-accent) 26%, transparent);
