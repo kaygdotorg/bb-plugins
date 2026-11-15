@@ -315,7 +315,7 @@ export default async function plugin(bb: BbPluginApi) {
     const response = await fetch(endpoint, {
       method,
       headers: {
-        authorization: `Bearer ${config.managementKey.trim()}`,
+        authorization: `Bearer ${(config.managementKey ?? "").trim()}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
