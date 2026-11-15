@@ -47,10 +47,10 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     for (const thread of await bb.sdk.threads.list()) {
       try {
         for (let after = scanned.get(thread.id) ?? 0; ;) {
-          const page = await bb.sdk.threads.events.list({ threadId: thread.id, afterSeq: String(after), limit: "200", order: "asc", types: ["system/interaction/lifecycle"] });
+          const page = await bb.sdk.threads.events.list({ threadId: thread.id, afterSeq: String(after), limit: "100", order: "asc", types: ["system/interaction/lifecycle"] });
           for (const event of page) for (const p of secretRequestPaths(event)) secretPaths.add(p);
           if (page.length) { after = page[page.length - 1].seq; scanned.set(thread.id, after); }
-          if (page.length < 200) break;
+          if (page.length < 100) break;
         }
       } catch { /* unreadable thread: skip */ }
     }

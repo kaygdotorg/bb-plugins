@@ -37,6 +37,7 @@ export async function setup(createFakePluginHost: CreateHost, threads: FakeThrea
       list: async (args: { offset?: number; limit?: number; archived?: boolean } = {}) => summaries.filter(s => args.archived === false ? !s.archivedAt : true).slice(args.offset ?? 0, (args.offset ?? 0) + (args.limit ?? 50)),
       get: async ({ threadId }: { threadId: string }) => summaries.find(s => s.id === threadId),
       events: { list: async (args: { threadId: string; afterSeq?: string; limit?: string; types?: string[] }) => {
+        if (Number(args.limit ?? 0) > 100) throw new Error("Thread event limit cannot exceed 100"); // as real bb
         const thread = threads.find(t => t.id === args.threadId)!;
         return events(thread).filter(e => e.seq > Number(args.afterSeq ?? -1) && (!args.types || args.types.includes(e.type))).slice(0, Number(args.limit ?? 100));
       } },

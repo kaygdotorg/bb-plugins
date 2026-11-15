@@ -28,8 +28,8 @@ export type BackfillHandle = BackfillService & {
 
 const DEFAULT_RATE = 300;
 const BATCH = 100;
-const EVENT_PAGE = 500;
-const THREAD_PAGE = 200;
+const EVENT_PAGE = 100; // bb rejects thread event pages above 100
+const THREAD_PAGE = 100;
 const EVENT_TYPES = ["client/turn/requested", "turn/input/accepted", "item/completed"] as const;
 
 interface ScanResult {

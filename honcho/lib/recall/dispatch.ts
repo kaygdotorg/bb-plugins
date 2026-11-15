@@ -72,7 +72,7 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
       count = formatted ? formatted.split("\n- ").length - 1 : 0;
       memory = formatted ? redactor(formatted).text : "";
     } catch (error) {
-      deps.activity.record({ kind: "failure", threadId, summary: "per-turn recall search failed", error: error instanceof HonchoError ? error.kind : "error" });
+      deps.activity.record({ kind: "failure", threadId, summary: "per-turn recall search failed", error: error instanceof HonchoError ? `${error.kind}${error.status ? ` ${error.status}` : ""}` : `${(error as Error)?.name ?? "error"} ${String((error as Error)?.message ?? "").slice(0, 160)}` });
     }
     // Only the hash of the normalized prompt goes to the host. An empty entry tells the hook to stop waiting.
     await shared.host.call("recall.write", { threadId, hash: promptHash(text), memory }, { hostId, signal: AbortSignal.timeout(15_000) });

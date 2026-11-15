@@ -24,7 +24,7 @@ type EventType = CaptureEvent["type"];
 const READ_TYPES = ["client/turn/requested", "turn/input/accepted", "client/turn/rejected", "item/completed", "turn/completed",
   "system/operation", "thread/identity", "provider.env-resolved"] as const satisfies readonly EventType[];
 const GATE_TYPES = ["provider.env-resolved", "turn/completed", "thread/identity"] as const satisfies readonly EventType[];
-const PAGE = 500;
+const PAGE = 100; // bb rejects thread event pages above 100
 const BATCH = 100;
 /** Purge-on-delete scans at most this many pages of 100 derived conclusions: Honcho can't filter by source id. */
 const PURGE_SCAN_PAGES = 50;
@@ -234,7 +234,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     const now = clock.now();
     const retry = outbox.fail(st.id, kind, now);
     if (retry.attempts === 1) deps.activity.record({ kind: "failure", threadId: st.id, summary: `upload failed (${kind}), retrying with backoff`, error: kind });
-    bb.log.warn(`honcho capture: ${st.id} failed (${kind}), attempt ${retry.attempts}`);
+    // Non-honcho errors (bb sdk, facts lookups) say why, so a stuck thread is diagnosable; the
+    // message is cut short and carries no request bodies.
+    const why = error instanceof HonchoError ? "" : `: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}`.slice(0, 200);
+    bb.log.warn(`honcho capture: ${st.id} failed (${kind}), attempt ${retry.attempts}${why}`);
     // Exponential backoff from the outbox, with jitter so threads don't retry in lockstep.
     schedule(st.id, Math.max(0, retry.nextAt - now) * (0.5 + random() * 0.5));
   }
@@ -258,9 +261,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     }
     const events = await readEvents(thread.id, st.gateScanSeq, GATE_TYPES);
     for (const e of events) {
+      // provider.env-resolved carries a providerThreadId too, so this can't be an else-if chain.
       const providerThread = providerThreadIdOf(e);
       if (providerThread) outbox.addProviderThread(thread.id, providerThread);
-      else if (e.type === "turn/completed") st.lastTurnCompleted = e.seq;
+      if (e.type === "turn/completed") st.lastTurnCompleted = e.seq;
       else if (e.type === "provider.env-resolved") {
         const entries = Array.isArray(data(e).entries) ? data(e).entries as Array<{ name?: unknown }> : [];
         if (entries.some(entry => entry?.name === SWITCHOVER_ENV)) {

@@ -107,7 +107,7 @@ export class MemoryCache {
       this.lastFailed = false;
     } catch (error) {
       this.lastFailed = true;
-      this.log?.(`honcho recall refresh failed: ${error instanceof HonchoError ? error.kind : "error"}`);
+      this.log?.(`honcho recall refresh failed: ${error instanceof HonchoError ? `${error.kind}${error.status ? ` ${error.status}` : ""}` : `${(error as Error)?.name ?? "error"} ${String((error as Error)?.message ?? "").slice(0, 160)}`}`);
       throw error;
     }
   }

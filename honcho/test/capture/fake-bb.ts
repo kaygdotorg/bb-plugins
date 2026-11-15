@@ -111,6 +111,8 @@ export function fakeBb(clock: FakeClock) {
         },
         events: {
           async list(args: Row) {
+            // Real bb rejects pages above 100 (HTTP 400 "Thread event limit cannot exceed 100").
+            if (Number(args.limit ?? 0) > 100) throw new Error("Thread event limit cannot exceed 100");
             listCalls.push(args);
             let rows = [...(logs.get(args.threadId) ?? [])];
             if (args.types) rows = rows.filter(e => args.types.includes(e.type));
