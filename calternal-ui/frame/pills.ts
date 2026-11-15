@@ -102,33 +102,44 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) button:is(:has(> s
   padding: 0;
 }
 
-/* ── A pill on its own: Thread actions (⋯) beside the title, a separate action. */
-${R} main header button[aria-label="Thread actions"] {
-  position: relative;
-  isolation: isolate;
-  width: var(--cf-pill);
-  height: var(--cf-pill);
-  border-radius: 999px;
-  color: var(--foreground);
+/* ── The thread's ⋯ on its own: only on phones (pills-phone.ts builds on this). On desktop it is the
+   trailing glyph of the title pill (title-pill.ts). */
+@media (max-width: 767px) {
+  ${R} main header button[aria-label="Thread actions"] {
+    position: relative;
+    isolation: isolate;
+    width: var(--cf-pill);
+    height: var(--cf-pill);
+    border-radius: 999px;
+    color: var(--foreground);
+  }
+  ${R} main header button[aria-label="Thread actions"]::before {
+${GLASS_LAYER}  }
+  ${R} main header button[aria-label="Thread actions"] :is(svg, span.size-4) {
+    width: var(--cf-pill-icon);
+    height: var(--cf-pill-icon);
+  }
 }
-${R} main header button[aria-label="Thread actions"]::before {
-${GLASS_LAYER}}
 
-/* ── Every pill: one icon size, the hover tint, the press. */
-${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]) :is(svg, span.size-4) {
+/* ── Every toolbar pill: one icon size, the hover tint, the press. (⋯ on phones: below.) */
+${R} main header div:has(> [data-thread-header-pane-actions]) button :is(svg, span.size-4) {
   width: var(--cf-pill-icon);
   height: var(--cf-pill-icon);
 }
-${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]) {
+${R} main header div:has(> [data-thread-header-pane-actions]) button {
   transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 150ms ease, color 150ms ease;
 }
 @media (hover: hover) {
-  ${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]):not(:disabled):hover {
+  ${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):hover {
     background: var(--cf-pill-hover);
   }
 }
-${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]):not(:disabled):active {
+${R} main header div:has(> [data-thread-header-pane-actions]) button:not(:disabled):active {
   scale: 0.97;
+}
+@media (max-width: 767px) {
+  ${R} main header button[aria-label="Thread actions"] { transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), color 150ms ease; }
+  ${R} main header button[aria-label="Thread actions"]:not(:disabled):active { scale: 0.97; }
 }
 @media (prefers-reduced-motion: reduce) {
   ${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]) { transition: none; }

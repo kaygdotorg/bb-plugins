@@ -11,6 +11,7 @@ import { applyCachedAccent, clearAccent } from "./accent";
 import { mountTouch } from "./touch";
 import { mountTooltips } from "./tooltip";
 import { mountComposer } from "./composer";
+import { mountTitlePill } from "./title-pill";
 import { installClock } from "./clock";
 
 export function mountFrame(): () => void {
@@ -35,10 +36,12 @@ export function mountFrame(): () => void {
   const unmountTouch = mountTouch();
   const unmountTooltips = mountTooltips();
   const unmountComposer = mountComposer();
+  const unmountTitlePill = mountTitlePill();
 
   return () => {
     uninstallClock();
     unmountComposer();
+    unmountTitlePill();
     unmountTouch();
     unmountTooltips();
     style.remove();

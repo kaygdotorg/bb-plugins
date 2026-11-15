@@ -4,7 +4,7 @@
  * Expanded (desktop; phones while typing), three rows:
  *   text area
  *   attachments
- *   [+] [model + reasoning] [context ring] [permission icon] [environment icon] ··· [mic] [send]
+ *   [+] [model + reasoning] [toolbar: context ring, permission, environment] ··· [mic] [send]   (all pills)
  * bb's own row under the composer (environment, branch, new-thread, permission, context) is
  * pinned into the composer's bottom row, right after the model button: positioned over that
  * row's free space and re-measured with one ResizeObserver. Its labels become icons with warm
@@ -108,19 +108,19 @@ export function mountComposer(): () => void {
     const modelBox = model?.getBoundingClientRect();
     if (footer && !collapsed && !recording && modelBox && modelBox.width > 0) {
       const base = followUp.getBoundingClientRect();
-      // Every icon here is a 2rem box with its glyph centred, so glyph-to-glyph gaps equal the
-      // + → model gap (1rem). The model button's right edge is its chevron's visual end plus
-      // half that gap, so the first box starts right there. Vertically it shares the model
-      // button's box, not the row's (the row is not symmetric).
+      // The footer is a toolbar capsule (pills-composer.ts): it starts one pill gap after the
+      // model pill (the gap the left group already uses, so + → model → toolbar are equal), and
+      // its centre line is the model pill's, so everything shares one line.
       const px = (n: number) => `${n.toFixed(1)}px`;
-      followUp.style.setProperty("--cf-foot-x", px(modelBox.right - base.left));
-      followUp.style.setProperty("--cf-foot-y", px(modelBox.top - base.top));
-      followUp.style.setProperty("--cf-foot-h", px(modelBox.height));
+      const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
+      followUp.style.setProperty("--cf-foot-x", px(modelBox.right + gap - base.left));
+      followUp.style.setProperty("--cf-foot-y", px(modelBox.top + modelBox.height / 2 - base.top));
       // Never over the right-hand buttons (the mic): cap the width to the free space.
       const right = row.lastElementChild?.getBoundingClientRect();
-      if (right) followUp.style.setProperty("--cf-foot-w", px(Math.max(0, right.left - modelBox.right - 4)));
+      if (right) followUp.style.setProperty("--cf-foot-w", px(Math.max(0, right.left - modelBox.right - 2 * gap)));
       composer.setAttribute("data-cf-merged", "");
       resize.observe(row);
+      resize.observe(model!); // its width changes with the keyboard (phones) and the model name
     } else {
       composer.removeAttribute("data-cf-merged");
     }

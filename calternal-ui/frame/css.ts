@@ -16,6 +16,7 @@ import { PILL_CSS } from "./pills";
 import { PILL_SIDEBAR_CSS } from "./pills-sidebar";
 import { PILL_COMPOSER_CSS } from "./pills-composer";
 import { PILL_PHONE_CSS } from "./pills-phone";
+import { TITLE_PILL_CSS } from "./title-pill";
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
 
 export const CSS = `
@@ -212,8 +213,15 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
 ${R}[data-cf-wide] main [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto,
 ${R}[data-cf-wide] main div.max-w-\\[760px\\]:has(> [data-app-composer]) {
   max-width: none;
-  padding-left: 3.25rem;
-  padding-right: 1.5rem;
+}
+/* The left gutter is room for the table-of-contents rail: desktop only (phones have no rail,
+   and the gutter cost the phone composer ~50px). */
+@media (min-width: 768px) {
+  ${R}[data-cf-wide] main [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto,
+  ${R}[data-cf-wide] main div.max-w-\\[760px\\]:has(> [data-app-composer]) {
+    padding-left: 3.25rem;
+    padding-right: 1.5rem;
+  }
 }
 
 /* bb's thread table of contents (the tick rail): on the left, out of the way, shown only
@@ -299,10 +307,15 @@ ${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
   position: absolute;
   left: var(--cf-foot-x);
-  top: var(--cf-foot-y);
-  height: var(--cf-foot-h);
+  top: var(--cf-foot-y); /* the model pill's centre line */
+  translate: 0 -50%;
+  height: var(--cf-tb-c);
   margin: 0 !important;
-  padding: 0 !important; /* bb pads this row 15px; the icons' own boxes do the spacing */
+  /* A toolbar (pills.ts): bb pads this row 15px; here the capsule's 3px padding and 2px gaps
+     make the inner pills concentric with it. Over the composer's glass it's a quiet tint. */
+  padding: var(--cf-tb-pad) !important;
+  border-radius: 999px;
+  background: var(--cf-pill-quiet);
   min-height: 0 !important;
   max-height: none !important;
   width: auto !important;
@@ -311,7 +324,7 @@ ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] {
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 0; /* each icon is a 2rem box: glyph gaps come out at 1rem, like + → model */
+  gap: var(--cf-tb-gap);
 }
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] > div { display: contents; }
 ${R} [data-app-composer][data-cf-merged] [data-follow-up-composer-footer] :is([data-promptbox-hide-branch-compact], button[aria-label="New thread in this environment"]) { display: none !important; }
@@ -320,19 +333,19 @@ ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { 
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { order: 2; }
 ${R} [data-app-composer][data-cf-merged] :is([data-cf-env], button[aria-label^="Thread details"]) { order: 3; }
 /* Phones show "Thread details: <branch>" instead of the environment: the branch icon only. */
-${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Thread details"] > span { display: none !important; }
 /* Environment: the folder icon only; the name and branch live in its tooltip. */
 ${R} [data-app-composer][data-cf-merged] [data-cf-env] [data-option-display] { display: none !important; }
-${R} [data-app-composer][data-cf-merged] [data-cf-env] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] [data-cf-env] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] [data-cf-env] > * { justify-content: center; padding: 0 !important; margin: 0 !important; }
 /* Permission: an icon per mode instead of the label and chevron; Full Access in amber. */
-${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: 2rem; height: 2rem; padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
+${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); padding: 0 !important; justify-content: center; gap: 0 !important; color: var(--muted-foreground); }
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"] > * { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label="Permission mode"]::before {
   content: "";
-  width: 1rem;
-  height: 1rem;
+  width: var(--cf-ci);
+  height: var(--cf-ci);
   background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -344,7 +357,7 @@ ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: va
 /* Context ring: the percentage only when it's nearly full. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
-${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { width: 2rem; height: 2rem; margin: 0 !important; padding: 0 !important; justify-content: center; }
+${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] { width: var(--cf-tbp-c); height: var(--cf-tbp-c); margin: 0 !important; padding: 0 !important; justify-content: center; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] { width: auto; gap: 0.375rem !important; padding-inline: 0.5rem !important; }
 /* "New thread here", added to the + menu after it opened: one line like its neighbours. */
 ${R} [data-cf-new-thread] { white-space: nowrap; }
@@ -355,14 +368,14 @@ ${R} [data-cf-model-chip] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: calc(var(--radius) - 2px);
+  width: var(--cf-cp);
+  height: var(--cf-cp);
+  border-radius: 999px;
   color: var(--muted-foreground);
   background: transparent;
   border: 0;
 }
-${R} [data-cf-model-chip] > * { width: 1rem; height: 1rem; }
+${R} [data-cf-model-chip] > * { width: var(--cf-ci); height: var(--cf-ci); }
 
 /* Voice input (frame/voice.ts). While bb records, the merged icon row steps aside (it was
    drawn over the waveform), and the waveform becomes an accent-tinted pill that grows out
@@ -370,7 +383,7 @@ ${R} [data-cf-model-chip] > * { width: 1rem; height: 1rem; }
    CSS colour. */
 ${R} [data-app-composer][data-cf-voice] [data-follow-up-composer-footer] { display: none !important; }
 ${R} [data-cf-voice-pill] {
-  height: 2rem;
+  height: var(--cf-cp);
   gap: 0.5rem;
   padding-inline: 0.875rem 0.75rem;
   border-radius: 999px;
@@ -809,6 +822,7 @@ ${PILL_CSS}
 ${PILL_SIDEBAR_CSS}
 ${PILL_COMPOSER_CSS}
 ${PILL_PHONE_CSS}
+${TITLE_PILL_CSS}
 `;
 
 /**
