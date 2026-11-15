@@ -131,15 +131,18 @@ describe("connection", () => {
     let current = harness();
     const slot = await page("connection", {
       ...base, "harness.state": () => current,
-      "harness.connect": () => (current = installed), "harness.handOver": () => (current = installed), "harness.undo": () => (current = harness()),
+      "harness.connect": () => (current = installed), "harness.handOver": () => (current = installed), "harness.undo": () => current,
     });
     fireEvent.click(await slot.findByText("connect harnesses", { selector: "button" }));
     await waitFor(() => expect(calls(slot, "harness.connect")).toHaveLength(1));
     fireEvent.click(slot.getByText("hand over to bb", { selector: "button" }));
     await waitFor(() => expect(calls(slot, "harness.handOver")).toHaveLength(1));
     expect(calls(slot, "harness.undo")).toHaveLength(0);
-    fireEvent.click(await slot.findByText("undo"));
+    fireEvent.click(await slot.findByLabelText("undo hand over"));
     await waitFor(() => expect(calls(slot, "harness.undo")).toHaveLength(1));
+    fireEvent.click(await slot.findByLabelText("undo connect"));
+    await waitFor(() => expect(calls(slot, "harness.undo")).toHaveLength(2));
+    expect(calls(slot, "harness.undo").map((c) => c.input)).toEqual([{ step: "handOver" }, { step: "connect" }]);
   });
 
   it("dry-runs the backfill before it can start, then shows progress", async () => {

@@ -88,11 +88,14 @@ export interface HarnessState {
   backups: string[];
 }
 
+export type HarnessUndoStep = "connect" | "handOver";
+
 export interface HarnessService {
   state(machineId?: string): Promise<HarnessState>;
   connect(machineId?: string): Promise<HarnessState>; // installs the bb-gated hooks
   handOver(machineId?: string): Promise<HarnessState>; // disables claude-honcho / codex honcho, with backup
-  undo(machineId?: string): Promise<HarnessState>;
+  /** Restores bb's backups for one step; no step undoes both connect and hand over. */
+  undo(machineId?: string, step?: HarnessUndoStep): Promise<HarnessState>;
 }
 
 // ---------- backfill ----------
@@ -154,7 +157,7 @@ export interface RpcMethods {
   "harness.state": [{ machineId?: string }, HarnessState];
   "harness.connect": [{ machineId?: string }, HarnessState];
   "harness.handOver": [{ machineId?: string }, HarnessState];
-  "harness.undo": [{ machineId?: string }, HarnessState];
+  "harness.undo": [{ machineId?: string; step?: HarnessUndoStep }, HarnessState];
   "backfill.dryRun": [{ projectId?: string; since?: string }, BackfillPlan];
   "backfill.start": [{ projectId?: string; since?: string }, { ok: true }];
   "backfill.progress": [{}, Awaited<ReturnType<BackfillService["progress"]>>];

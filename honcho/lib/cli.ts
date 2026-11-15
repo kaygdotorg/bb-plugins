@@ -119,7 +119,7 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
       "harness state": harnessCommand("Show claude/codex hook and hand-over state", "state"),
       "harness connect": harnessCommand("Install the bb-gated Honcho hooks", "connect"),
       "harness hand-over": harnessCommand("Turn off claude-honcho and codex honcho inside bb, with a backup", "handOver"),
-      "harness undo": harnessCommand("Undo the last hand-over from its backup", "undo"),
+      "harness undo": harnessCommand("Undo connect and hand over from bb's backups", "undo"),
     },
   }));
 }

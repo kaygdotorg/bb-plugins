@@ -202,7 +202,10 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
     "harness.state": ({ machineId }) => harness.state(machineId),
     "harness.connect": async ({ machineId }) => { const s = await harness.connect(machineId); changed("harness"); return s; },
     "harness.handOver": async ({ machineId }) => { const s = await harness.handOver(machineId); changed("harness"); return s; },
-    "harness.undo": async ({ machineId }) => { const s = await harness.undo(machineId); changed("harness"); return s; },
+    "harness.undo": async ({ machineId, step }) => {
+      if (step !== undefined && step !== "connect" && step !== "handOver") throw new experimental_PluginRpcRefusal({ code: "invalid", message: "step is connect or handOver." });
+      const s = await harness.undo(machineId, step); changed("harness"); return s;
+    },
 
     "backfill.dryRun": (input) => backfill.dryRun(input),
     "backfill.start": async (input) => { await backfill.start(input); changed("backfill"); return ok; },

@@ -73,7 +73,8 @@ function Harness() {
   const [fresh, setFresh] = useState<HarnessState | null>(null);
   useEffect(() => { if (state.data) setFresh(null); }, [state.data]);
   const s = fresh ?? state.data;
-  const call = (name: "harness.connect" | "harness.handOver" | "harness.undo") => void run(name, async () => { setFresh(await rpc.call(name, {})); await state.refetch(); });
+  const call = (name: "harness.connect" | "harness.handOver") => void run(name, async () => { setFresh(await rpc.call(name, {})); await state.refetch(); });
+  const undo = (step: "connect" | "handOver") => void run(`undo-${step}`, async () => { setFresh(await rpc.call("harness.undo", { step })); await state.refetch(); });
   const yes = (on: boolean, word: string, off: string) => <Badge tone={on ? "good" : "neutral"}>{on ? word : off}</Badge>;
   return (
     <Section title="harnesses" hint={s ? `this machine · ${s.machineId}` : undefined}>
@@ -85,18 +86,21 @@ function Harness() {
             title="connect harnesses"
             text="installs the bb hook so claude code and codex get memory from bb. it does nothing outside bb threads."
             badges={<>{yes(s.claude.hookInstalled, "claude hook on", "claude hook off")}{yes(s.codex.hookInstalled, "codex hook on", "codex hook off")}{s.codex.trusted === false ? <Badge tone="warn" title="codex hasn't trusted the hook yet">codex untrusted</Badge> : null}</>}
-            action={<Button disabled={busy !== null} onClick={() => call("harness.connect")}>connect harnesses</Button>}
+            action={<>
+              <Button variant="ghost" aria-label="undo connect" disabled={busy !== null || (!s.claude.hookInstalled && !s.codex.hookInstalled)} onClick={() => undo("connect")}>undo</Button>
+              <Button disabled={busy !== null} onClick={() => call("harness.connect")}>connect harnesses</Button>
+            </>}
           />
           <Step
             title="hand over to bb"
             text="turns off the cli honcho plugins on this machine, so bb is the only thing writing to honcho. configs are backed up first."
             badges={<>{yes(s.claude.handedOver, "claude handed over", "claude cli active")}{yes(s.codex.handedOver, "codex handed over", "codex cli active")}</>}
-            action={<Button disabled={busy !== null} onClick={() => call("harness.handOver")}>hand over to bb</Button>}
+            action={<>
+              <Button variant="ghost" aria-label="undo hand over" disabled={busy !== null || (!s.claude.handedOver && !s.codex.handedOver)} onClick={() => undo("handOver")}>undo</Button>
+              <Button disabled={busy !== null} onClick={() => call("harness.handOver")}>hand over to bb</Button>
+            </>}
           />
-          <div className="flex items-center gap-2 px-3 py-2">
-            <p className="flex-1 text-2xs text-muted-foreground">undo reverts both steps and restores the backups{s.backups.length ? ` (${plural(s.backups.length, "backup")})` : ""}.</p>
-            <Button variant="ghost" disabled={busy !== null || (!s.claude.hookInstalled && !s.codex.hookInstalled && !s.claude.handedOver && !s.codex.handedOver)} onClick={() => call("harness.undo")}>undo</Button>
-          </div>
+          <p className="px-3 py-2 text-2xs text-muted-foreground">each undo reverts its own step from bb's backups{s.backups.length ? ` (${plural(s.backups.length, "backup")})` : ""}.</p>
         </Card>
       )}
       {error ? <p className="text-2xs text-destructive">{error}</p> : null}
