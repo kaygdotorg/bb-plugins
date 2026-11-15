@@ -64,6 +64,13 @@ export function mountComposer(): () => void {
     setTimeout(() => composer?.querySelector<HTMLButtonElement>(MODEL)?.click(), 220);
   });
 
+  // Write only what changed. The observer below watches aria-label/title in the composer, and every
+  // setAttribute queues a mutation record even when the value is the same: unconditional writes made
+  // each pass schedule the next, a loop that forced a frame (style + layout reads) every frame on
+  // an idle page (desktop trace, 2026-11-15: ~97 identical writes/attribute in 2s).
+  const setAttr = (el: Element, name: string, value: string) => { if (el.getAttribute(name) !== value) el.setAttribute(name, value); };
+  const setVar = (el: HTMLElement, name: string, value: string) => { if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value); };
+
   function pass() {
     frame = 0;
     if (disposed) return;
@@ -118,12 +125,12 @@ export function mountComposer(): () => void {
       // its centre line is the model pill's, so everything shares one line.
       const px = (n: number) => `${n.toFixed(1)}px`;
       const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
-      followUp.style.setProperty("--cf-foot-x", px(modelBox.right + gap - base.left));
-      followUp.style.setProperty("--cf-foot-y", px(modelBox.top + modelBox.height / 2 - base.top));
+      setVar(followUp, "--cf-foot-x", px(modelBox.right + gap - base.left));
+      setVar(followUp, "--cf-foot-y", px(modelBox.top + modelBox.height / 2 - base.top));
       // Never over the right-hand buttons (the mic): cap the width to the free space.
       const right = row.lastElementChild?.getBoundingClientRect();
       const free = right ? Math.max(0, right.left - modelBox.right - 2 * gap) : Infinity;
-      if (right) followUp.style.setProperty("--cf-foot-w", px(free));
+      if (right) setVar(followUp, "--cf-foot-w", px(free));
       // Everything in the row gets its own space. The phone's attachment chip (attachments.ts)
       // sits after the toolbar (the model pill's end margin makes the toolbar's room); when the
       // toolbar does not fit whole beside it, the toolbar steps aside (as it does while the
@@ -134,8 +141,8 @@ export function mountComposer(): () => void {
       const shown = getComputedStyle(footer).display !== "none" && need > 0;
       const fits = need <= free - chipRoom + 0.5;
       composer.toggleAttribute("data-cf-foot-off", shown && !fits);
-      followUp.style.setProperty("--cf-foot-room", px(shown && fits ? need + gap : 0));
-      composer.setAttribute("data-cf-merged", "");
+      setVar(followUp, "--cf-foot-room", px(shown && fits ? need + gap : 0));
+      composer.toggleAttribute("data-cf-merged", true);
       resize.observe(row);
       resize.observe(model!); // its width changes with the keyboard (phones) and the model name
     } else {
@@ -151,7 +158,7 @@ export function mountComposer(): () => void {
         modelChip.dataset.icon = lastModel.icon;
         modelChip.innerHTML = lastModel.icon;
       }
-      modelChip.setAttribute("aria-label", lastModel.label);
+      setAttr(modelChip, "aria-label", lastModel.label);
       // First in the right-hand group, so the line reads [model] [mic] [send].
       const group = submit.parentElement!;
       if (group.firstElementChild !== modelChip) group.prepend(modelChip);
@@ -170,17 +177,18 @@ export function mountComposer(): () => void {
     const branch = footer.querySelector<HTMLElement>("[data-promptbox-hide-branch-compact]")?.textContent?.trim();
     if (envBox && env) {
       const name = (env.getAttribute("title") ?? env.textContent ?? "").replace(/^Environment:\s*/, "").trim();
-      envBox.setAttribute("data-cf-env", "");
-      envBox.dataset.cfTitle = branch ? `${name} · ${branch}` : name;
-      envBox.setAttribute("role", envBox.getAttribute("role") ?? "img");
-      envBox.setAttribute("aria-label", envBox.dataset.cfTitle);
+      const title = branch ? `${name} · ${branch}` : name;
+      envBox.toggleAttribute("data-cf-env", true);
+      setAttr(envBox, "data-cf-title", title);
+      if (!envBox.hasAttribute("role")) envBox.setAttribute("role", "img");
+      setAttr(envBox, "aria-label", title);
     }
     const permission = footer.querySelector<HTMLElement>('button[aria-label="Permission mode"]');
     const permissionTitle = permission?.querySelector("[title]")?.getAttribute("title")
       ?? permission?.querySelector("[data-cf-title]")?.getAttribute("data-cf-title") ?? "";
     if (permission && permissionTitle) {
-      permission.dataset.cfTitle = permissionTitle;
-      permission.dataset.cfPerm = permissionKind(permissionTitle);
+      setAttr(permission, "data-cf-title", permissionTitle);
+      setAttr(permission, "data-cf-perm", permissionKind(permissionTitle));
     }
     const context = footer.querySelector<HTMLElement>('button[aria-label^="Context window"]');
     const pct = Number(/(\d+)%/.exec(context?.getAttribute("aria-label") ?? "")?.[1] ?? 0);

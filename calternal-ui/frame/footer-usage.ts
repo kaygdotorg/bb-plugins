@@ -57,7 +57,8 @@ export function mountFooterUsage(): () => void {
     const spans = [...pill.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.hasAttribute("data-cliproxy-provider"));
     if (spans.length < 2) { pill.removeAttribute("data-cf-usage-compact"); spans.forEach((s) => s.removeAttribute("data-cf-usage-keep")); return; }
     const cs = getComputedStyle(document.documentElement);
-    const pad = parseFloat(getComputedStyle(first.parentElement!.parentElement!).getPropertyValue("--cf-sb-pad")) || 3;
+    const capsule = first.parentElement?.parentElement;
+    const pad = capsule ? parseFloat(getComputedStyle(capsule).getPropertyValue("--cf-sb-pad")) || 3 : 3;
     const gap = parseFloat(cs.getPropertyValue("--cf-ctl-gap")) || 8;
     const room = first.getBoundingClientRect().left - pad - gap - pill.getBoundingClientRect().left;
     // The full pill's natural width, from the entries' own widths (scrollWidth ignores the
@@ -80,10 +81,16 @@ export function mountFooterUsage(): () => void {
 
   const resize = new ResizeObserver(schedule);
   let watched: Element | null = null;
+  let seen = "";
+  /** The 1s check costs no layout: it measures only when something it depends on changed: the
+   *  footer element, the chat's provider, or the usage text (new numbers change the widths). */
   const attach = () => {
     const foot = document.querySelector(FOOT);
-    if (foot && foot !== watched) { resize.disconnect(); resize.observe(foot); watched = foot; }
-    schedule(); // also picks up a new chat's provider and new usage numbers
+    let changed = false;
+    if (foot && foot !== watched) { resize.disconnect(); resize.observe(foot); watched = foot; changed = true; }
+    const sig = `${chatProvider()}|${document.querySelector(PILL)?.textContent ?? ""}`;
+    if (sig !== seen) { seen = sig; changed = true; }
+    if (changed) schedule();
   };
   attach();
   const timer = window.setInterval(attach, 1000);

@@ -124,16 +124,24 @@ export function mountSidebarTop(): () => void {
   // starts in the same frame as bb's; a rAF later would let the old position render one frame.
   const states = new MutationObserver(() => { cancelAnimationFrame(frame); place(); });
   let observed: Element | null = null;
+  let overlaySeen: Element | null = null;
+  let page = "";
+  /** The 1s check costs no layout: it re-places only when bb swapped an element or the page changed
+   *  (Settings has no top row). Everything else is event-driven (state flips, resizes). */
   const attach = () => {
     const sidebar = document.querySelector(SIDEBAR);
+    const overlay = document.querySelector(OVERLAY);
+    let changed = overlay !== overlaySeen || location.pathname !== page;
+    overlaySeen = overlay; page = location.pathname;
     if (sidebar && sidebar !== observed) {
       resize.disconnect(); states.disconnect();
       resize.observe(sidebar);
       const stateful = sidebar.closest("[data-state]");
       if (stateful) states.observe(stateful, { attributes: true, attributeFilter: ["data-state"] });
       observed = sidebar;
+      changed = true;
     }
-    schedule();
+    if (changed) schedule();
   };
   attach();
   const timer = window.setInterval(attach, 1000); // bb re-renders the shell on navigation

@@ -144,7 +144,15 @@ ${R}, ${R}.dark {
   --state-hover: color-mix(in oklab, var(--cf-accent) 12%, transparent);
   --state-active: color-mix(in oklab, var(--cf-accent) 22%, transparent);
 }
-${R} ::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
+/* Selection: on the root only. Chrome (131+) inherits ::selection from the root; a universal
+   \`html ::selection\` made it compute a selection style for EVERY element, doubling each whole-page
+   restyle bb does (sidebar toggle, menus, tooltips: ~2,100 -> ~1,100 elements, desktop trace
+   2026-11-15). WebKit doesn't inherit it but computes it lazily, so Safari keeps the universal
+   rule (the Apple Pay property is a WebKit-only feature test). */
+${R}::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
+@supports (-apple-pay-button-style: inherit) {
+  ${R} ::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
+}
 ${R} .ProseMirror-hideselection ::selection { background-color: transparent; }
 ${R} { accent-color: var(--cf-accent); caret-color: var(--cf-accent); }
 
