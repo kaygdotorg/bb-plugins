@@ -46,6 +46,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - One shared delay (450ms cold). After a close, the next tooltip opens instantly for 700ms, and an open one glides to the next trigger, with 80ms of grace across gaps.
   - Labels come from `aria-label`/`title`, with `aria-keyshortcuts` as a shortcut chip. Only controls whose *rendered* text doesn't already say it get one: bb's icon buttons carry 1px screen-reader labels, which don't count.
   - bb's own tooltips are hidden, and native `title`s are moved to `data-cf-title`.
+  - It points at the nearest element with a box: bb sometimes puts a `title` on a `display: contents` span (the model pill), whose rect is 0,0.
   - Only the trigger's own blur or scroll closes it: bb shifts focus and a live thread scrolls constantly. Mouse and keyboard only; touch never shows them.
 - **Composer (`frame/composer.ts`):** one bottom row, `[+] [model] [context ring] [permission] [environment] ··· [mic] [send]`.
   - bb's row under the composer is *positioned* into the free space after the model button (`--cf-foot-x/y/h/w`, one `ResizeObserver`), never moved. Its wrappers are `display: contents`, so `order` applies to their children.
@@ -54,6 +55,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - "Collapsed" means bb's attribute *and* no visible model button: desktop composers get `data-promptbox-collapsed` after Escape while showing everything.
   - Phones, collapsed: bb renders neither the footer nor the model button. The model icon (bb's `[data-provider-logo]` span, not an svg) is cached in localStorage and shown before the mic; tapping it expands the composer, then opens the picker.
 - **Tooltips skip triggers whose menu is open** (`aria-expanded="true"` or `data-state="open"`). A warm tooltip opens on the next frame; a press in that frame cancels it, or it pops up over the menu the press opened.
+- **Spacing is optical, not box-based.** In compact `gap-1` buttons a leading icon gets +2px and a trailing chevron −2px, so icon → text, text → text and text → chevron all read about 6px.
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear. So do lists nested in a menu, picker or dialog (no second glass layer). Modal dialogs (the desktop search palette) get the same glass; phone sheets keep theirs.
 - **Outside the card, bb's light surfaces are opaque white.** Audit light mode separately: the strip above the composer (`section.bg-surface-raised-solid`) uses the composer glass, mention pills get a faint tint (bb also paints them with a gradient), and amber text uses `--cf-warn-ink`, darker in light mode.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.

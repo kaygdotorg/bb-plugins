@@ -60,6 +60,16 @@ function labelOf(el: HTMLElement): { text: string; keys: string | null } | null 
   return { text: inLabel ? text.slice(0, inLabel.index).trim() : text, keys };
 }
 
+/**
+ * The element to point at. bb sometimes puts the title on a `display: contents` span (the
+ * model button), which has no box: its rect is 0,0 and the tooltip would sit top-left.
+ */
+function anchorOf(el: HTMLElement): HTMLElement {
+  let at: HTMLElement | null = el;
+  while (at && at.getBoundingClientRect().width === 0) at = at.parentElement;
+  return at ?? el;
+}
+
 /** Moves a native title aside so the browser never shows its own popup next to ours. */
 function stashTitle(el: HTMLElement) {
   const title = el.getAttribute("title");
@@ -92,7 +102,7 @@ export function mountTooltips(): () => void {
   let openFrame = 0; // the pending open; a press in the same frame must cancel it
 
   const place = (el: HTMLElement, glide: boolean) => {
-    const r = el.getBoundingClientRect();
+    const r = anchorOf(el).getBoundingClientRect();
     const w = tip.offsetWidth, h = tip.offsetHeight;
     const side: Side = r.top - GAP - h < MARGIN ? "bottom" : "top";
     const x = Math.min(Math.max(r.left + r.width / 2 - w / 2, MARGIN), window.innerWidth - MARGIN - w);
