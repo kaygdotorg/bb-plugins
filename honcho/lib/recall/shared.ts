@@ -5,6 +5,7 @@ import { scopeSlug } from "../mapping.js";
 import { createScopeResolver, type ThreadRef } from "../capture/scope.js";
 import { recallHostContract, type RecallHostContract } from "./host-contract.js";
 import { RecallStore, type ConclusionMark } from "./store.js";
+import { PrivacyGate } from "./privacy.js";
 import type { RecallPorts } from "./ports.js";
 
 export type KeyLevel = "workspace-or-admin" | "restricted" | "unknown";
@@ -70,6 +71,14 @@ export class ScopeResolver {
     try { return this.settle(input, key, await run); }
     catch { return this.sync(input).scope; }
   }
+  /** The resolver's scope for a thread ref (no project-name fallback: the caller handles failure). */
+  async forThread(thread: ThreadRef): Promise<string> {
+    const known = this.known(thread.id);
+    if (known) return known;
+    const scope = await this.lookup(thread);
+    this.byThread.set(thread.id, scope);
+    return scope;
+  }
   remember(threadId: string, scope: string): void { this.byThread.set(threadId, scope); }
   private settle(input: ScopeInput, key: string, scope: string): string {
     this.byThread.set(key, scope);
@@ -121,6 +130,7 @@ export interface RecallShared {
   store: RecallStore;
   keyLevel: KeyLevelProbe;
   scopes: ScopeResolver;
+  gate: PrivacyGate;
   host: ExperimentalHostClient<RecallHostContract> | null;
   ports: RecallPorts;
   peerName: string | null;
@@ -142,6 +152,7 @@ export function recallShared(bb: BbPluginApi, deps: Deps, ports: RecallPorts = {
     keyLevel: new KeyLevelProbe(deps),
     // Without a resolver from server.ts (unit tests), capture's resolver over this bb.
     scopes: new ScopeResolver(portsRef, thread => (portsRef.resolveScope ?? (fallback ??= createScopeResolver(bb)))(thread)),
+    gate: new PrivacyGate(bb, deps, portsRef),
     host, ports: portsRef, peerName: null,
     async client() {
       const [client, config] = await Promise.all([deps.client(), deps.config()]);

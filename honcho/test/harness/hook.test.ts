@@ -4,7 +4,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { installHookFiles, layout, resolveHarnessPaths } from "../../lib/harness/ops";
+import { normalizePromptText, promptHash } from "../../lib/recall/cache-file";
 
 let root: string;
 let hookSh: string;
@@ -36,9 +38,13 @@ function run(mode: string, stdin: string, env: Record<string, string | undefined
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
-function writeCache(thread: string, entries: unknown[]) {
-  writeFileSync(join(recallDir, `${thread}.json`), JSON.stringify({ v: 1, entries }));
+/** Entries are written as the recall writer does: the hash of the normalized dispatched text, never the text. */
+type TestEntry = { counter: number; text: string; createdAt: number; memory: string };
+function writeCache(thread: string, entries: TestEntry[]) {
+  const v2 = entries.map(({ text, ...rest }) => ({ ...rest, hash: promptHash(normalizePromptText(text)) }));
+  writeFileSync(join(recallDir, `${thread}.json`), JSON.stringify({ v: 2, entries: v2 }));
 }
+const injected = (stdout: string) => stdout ? JSON.parse(stdout).hookSpecificOutput.additionalContext : null;
 
 const promptInput = (prompt: string) => JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "s", prompt });
 
@@ -67,9 +73,63 @@ describe("prompt mode", () => {
       { counter: 1, text: "older   prompt", createdAt: Date.now(), memory: "older memory" },
       { counter: 2, text: "fix the   build", createdAt: Date.now(), memory: "kayg prefers small commits" },
     ]);
-    const r = run("prompt", promptInput("[bb envelope]\n fix the\n build please"), baseEnv());
+    const r = run("prompt", promptInput(" fix the\n build "), baseEnv());
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "kayg prefers small commits" } });
+  });
+
+  it("never serves an earlier prompt whose text is only contained in this one", () => {
+    writeCache(THREAD, [{ counter: 1, text: "ok", createdAt: Date.now(), memory: "memory for ok" }]);
+    expect(run("prompt", promptInput("look at the failing build"), baseEnv()).stdout).toBe("");
+    expect(run("prompt", promptInput("ok, now look at the failing build"), baseEnv()).stdout).toBe("");
+    expect(run("prompt", promptInput("[bb envelope]\n ok"), baseEnv()).stdout).toBe("");
+    expect(injected(run("prompt", promptInput("ok"), baseEnv()).stdout)).toBe("memory for ok");
+  });
+
+  it("strips only bb's own wrappers: agent envelope, attachment lines, plugin mention context", () => {
+    writeCache(THREAD, [{ counter: 1, text: "deploy the api", createdAt: Date.now(), memory: "deploy memory" }]);
+    const ok = (prompt: string) => expect(injected(run("prompt", promptInput(prompt), baseEnv()).stdout)).toBe("deploy memory");
+    const miss = (prompt: string) => expect(run("prompt", promptInput(prompt), baseEnv()).stdout).toBe("");
+    ok("[bb message from thread:thr_sender1]\n\ndeploy the api");
+    ok("[bb message from thread:thr_sender1;reply=off]\n\ndeploy the api");
+    ok("deploy the api\n[Attached image: https://example.test/a.png]");
+    ok("deploy the api\n[Attached file \"notes.md\" (text/markdown, 12 bytes). It is on disk at /tmp/x/notes.md \u2014 use the Read tool to view it.]");
+    ok("deploy the api\n[Attached file \"notes.md\": /tmp/x/notes.md]");
+    ok("deploy the api\nContext for @Runbook (resolved by plugin \"docs\"):\n\nsteps one two three");
+    ok("[bb message from thread:thr_s]\n\ndeploy the api\n[Attached image: https://example.test/a.png]\nContext for @Doc (resolved by plugin \"docs\"):\n\nbody");
+    // Anything else around the text is a different prompt.
+    miss("please deploy the api");
+    miss("deploy the api now");
+    miss("[bb automation due:auto_1]\ndeploy the api"); // the automation prefix is part of the dispatched text itself
+    miss("deploy the api\n[Attached thing: x]");
+    miss("note\n[bb message from thread:thr_s]\n\ndeploy the api");
+  });
+
+  it("grouped queued rows: matches the joined text bb dispatched, misses when per-row envelopes sit inside it", () => {
+    // bb dispatches grouped rows as one input, the groups separated by a "\n\n" text block.
+    writeCache(THREAD, [{ counter: 1, text: "first row\n\n\n\nsecond row", createdAt: Date.now(), memory: "grouped memory" }]);
+    expect(injected(run("prompt", promptInput("first row\n\n\nsecond row"), baseEnv()).stdout)).toBe("grouped memory");
+    expect(run("prompt", promptInput("first row"), baseEnv()).stdout).toBe("");
+    expect(run("prompt", promptInput("second row"), baseEnv()).stdout).toBe("");
+    // Agent-sent groups get an envelope per row; only a leading one is stripped, so this misses (conservative).
+    const agent = "[bb message from thread:thr_s]\n\nfirst row\n\n\n[bb message from thread:thr_s]\n\nsecond row";
+    expect(run("prompt", promptInput(agent), baseEnv()).stdout).toBe("");
+  });
+
+  it("an empty matching entry is terminal: nothing is injected and the hook exits without waiting the budget", () => {
+    // An empty newer entry for the same prompt wins over an older one with memory.
+    writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 2, entries: [
+      { counter: 1, hash: promptHash("same prompt"), createdAt: Date.now(), memory: "older memory" },
+      { counter: 3, hash: promptHash("same prompt"), createdAt: Date.now() - 1000, memory: "" },
+    ] }));
+    const r = spawnSync("sh", [hookSh, "prompt"], { input: promptInput("same prompt"), env: baseEnv({ BB_HONCHO_HOOK_BUDGET_MS: "5000" }) as NodeJS.ProcessEnv, encoding: "utf8", timeout: 4000 });
+    // Had it waited out the 5000 ms budget, spawnSync's 4000 ms timeout would have killed it (status null).
+    expect([r.status, r.stdout]).toEqual([0, ""]);
+  });
+
+  it("ignores a v1 (plaintext) cache", () => {
+    writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 1, entries: [{ counter: 1, text: "fix the build", createdAt: Date.now(), memory: "v1" }] }));
+    expect(run("prompt", promptInput("fix the build"), baseEnv()).stdout).toBe("");
   });
 
   it("prefers the newest of several matching entries", () => {
@@ -77,7 +137,13 @@ describe("prompt mode", () => {
       { counter: 3, text: "same text", createdAt: Date.now(), memory: "first" },
       { counter: 4, text: "same text", createdAt: Date.now(), memory: "second" },
     ]);
-    expect(JSON.parse(run("prompt", promptInput("same text"), baseEnv()).stdout).hookSpecificOutput.additionalContext).toBe("second");
+    expect(injected(run("prompt", promptInput("same text"), baseEnv()).stdout)).toBe("second");
+    // Counter ranks first, createdAt only breaks ties.
+    writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 2, entries: [
+      { counter: 9, hash: promptHash("same text"), createdAt: Date.now() - 5000, memory: "higher counter" },
+      { counter: 8, hash: promptHash("same text"), createdAt: Date.now(), memory: "newer clock" },
+    ] }));
+    expect(injected(run("prompt", promptInput("same text"), baseEnv()).stdout)).toBe("higher counter");
   });
 
   it("outputs nothing on a miss", () => {
@@ -96,8 +162,8 @@ describe("prompt mode", () => {
     expect(run("prompt", promptInput("fix the build"), baseEnv()).stdout).toBe("");
   });
 
-  it("ignores entries with empty text, and unsafe thread ids", () => {
-    writeCache(THREAD, [{ counter: 8, text: "   ", createdAt: Date.now(), memory: "matches everything" }]);
+  it("ignores entries without a valid hash, and unsafe thread ids", () => {
+    writeFileSync(join(recallDir, `${THREAD}.json`), JSON.stringify({ v: 2, entries: [{ counter: 8, text: "anything", createdAt: Date.now(), memory: "no hash" }] }));
     expect(run("prompt", promptInput("anything"), baseEnv()).stdout).toBe("");
     expect(run("prompt", promptInput("anything"), baseEnv({ BB_THREAD_ID: "../escape" })).stdout).toBe("");
   });
@@ -143,6 +209,11 @@ describe("pretool mode", () => {
     const env = baseEnv(); delete (env as Record<string, string | undefined>).BB_HONCHO;
     expect(run("pretool", JSON.stringify({ tool_name: "mcp__plugin_honcho_honcho__chat" }), env).stdout).toBe("");
   });
+});
+
+it("the hook body parses (node --check)", () => {
+  const r = spawnSync(process.execPath, ["--check", fileURLToPath(new URL("../../hooks/bb-honcho-hook.mjs", import.meta.url))], { encoding: "utf8" });
+  expect([r.status, r.stderr]).toEqual([0, ""]);
 });
 
 it("exits 0 when the node half is missing", () => {

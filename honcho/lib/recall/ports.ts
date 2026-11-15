@@ -26,6 +26,10 @@ export interface RecallPorts {
   /** The plugin's one host client (built from the full host contract in
    * lib/host-contract.ts). Default: a client over the recall ops alone. */
   host?: ExperimentalHostClient<RecallHostContract> | null;
+  /** Capture's deny-list check (`capture.isDenied`). Default: the same facts and lists over this bb. */
+  isDenied?(thread: ThreadRef): Promise<boolean>;
+  /** bb-secrets values, added to the redaction deny set (lib/secrets.ts). */
+  secretValues?(): string[] | Promise<string[]>;
 }
 
 export interface RecallSettings {

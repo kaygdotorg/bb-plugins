@@ -41,6 +41,8 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     settings: view.recall, host,
     scopeFor: threadId => capture.knownScope(threadId),
     resolveScope: thread => capture.scopeFor(thread),
+    // Recall and the tools skip deny-listed threads exactly as capture does.
+    isDenied: thread => capture.isDenied(thread),
   } });
   registerTools(bb, deps);
   registerConfigure(bb, deps, recall);

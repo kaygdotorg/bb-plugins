@@ -105,12 +105,12 @@ describe("plugin factory", () => {
     expect([...r.providerEnvResolvers.keys()].sort()).toEqual(["claude-code", "codex", "pi"]);
     expect(r.services).toEqual([]);
     expect(r.schedules).toEqual([]);
-    expect(r.threadEventHandlers).toMatchObject({ "thread.created": 1, "thread.idle": 1, "thread.archived": 1, "thread.deleted": 1 });
+    expect(r.threadEventHandlers).toMatchObject({ "thread.created": 1, "thread.idle": 1, "thread.archived": 1, "thread.deleted": 2 }); // capture deletes the session, recall the cache file
     expect(r.threadEventHandlers["thread.active"]).toBe(2); // capture schedules, recall refreshes
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.write"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.write"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {
