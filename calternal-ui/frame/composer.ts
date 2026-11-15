@@ -15,6 +15,7 @@
  * expanded composer (localStorage); tapping it expands the composer and opens bb's picker.
  */
 import { createVoicePill } from "./voice";
+import { FOCUS_EVENT, OPEN_EVENT } from "./keyboard-follow";
 
 const COMPOSER = '[data-app-composer][data-app-composer-role="primary"]';
 const FOOTER = "[data-follow-up-composer-footer]";
@@ -48,6 +49,7 @@ export function mountComposer(): () => void {
   let closing: { form: HTMLElement; composer: HTMLElement; anim: Animation; fade: Animation | null; at: number; from: number; to: number } | null = null;
   const MORPH_MS = 350;
   const MORPH_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+  let signalledAt = -Infinity; // the last open keyboard-follow.ts signalled (OPEN_EVENT)
   const phone = matchMedia("(max-width: 767px)");
   const animates = () => document.documentElement.getAttribute("data-cf-input") !== "keys" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** The form's size, seen after layout and before paint (a ResizeObserver): bb lays out the new rows a frame
@@ -81,8 +83,17 @@ export function mountComposer(): () => void {
     e.preventDefault();
     e.stopPropagation();
     const editor = composer?.querySelector<HTMLElement>('[contenteditable="true"]');
-    editor?.focus();
-    setTimeout(() => composer?.querySelector<HTMLButtonElement>(MODEL)?.click(), 220);
+    if (!editor) return;
+    // On a phone keyboard-follow.ts focuses it so the composer rides up with the keyboard (it cancels the event).
+    if (window.dispatchEvent(new CustomEvent(FOCUS_EVENT, { detail: editor, cancelable: true }))) editor.focus();
+    // bb renders the model button once the composer has expanded (after the keyboard on a phone).
+    let tries = 0;
+    const pick = () => {
+      const model = composer?.querySelector<HTMLButtonElement>(MODEL);
+      if (model) model.click();
+      else if (++tries < 40 && !disposed) setTimeout(pick, 50);
+    };
+    setTimeout(pick, 220);
   });
 
   // Write only what changed. The observer below watches aria-label/title in the composer, and every
@@ -297,13 +308,17 @@ export function mountComposer(): () => void {
    * (CSS, [data-cf-opening]) and the height grows toward the expanded height last seen; when bb's rows
    * arrive, morphHeight carries on from there. If no focus follows (the touch was a scroll), it eases back.
    */
-  function beginOpen(e: TouchEvent | FocusEvent) {
+  function beginOpen(e: TouchEvent | FocusEvent | Event) {
     if (!phone.matches || !animates()) return;
     if ("touches" in e && e.touches.length !== 1) return;
     const target = e.target as Element;
-    if (!("touches" in e) && !target.closest?.('[contenteditable="true"]')) return;
+    const signalled = e.type === OPEN_EVENT; // keyboard-follow.ts: a tap whose focus waits for the keyboard
+    if (!("touches" in e) && !signalled && !target.closest?.('[contenteditable="true"]')) return;
+    // The editor's own focus after a signalled open: that open is already under way.
+    if (!signalled && performance.now() - signalledAt < 1500) return;
     const host = target.closest<HTMLElement>("[data-app-composer][data-cf-collapsed]");
-    if (!host || target.closest("button, a, [role=button]")) return;
+    if (!host || (!signalled && target.closest("button, a, [role=button]"))) return;
+    if (signalled) signalledAt = performance.now();
     const form = host.querySelector<HTMLElement>("form[data-promptbox]");
     if (!form || opening) return;
     const from = form.getBoundingClientRect().height;
@@ -333,7 +348,8 @@ export function mountComposer(): () => void {
     };
     if ("touches" in e) document.addEventListener("touchmove", onMove, { capture: true, passive: true });
     document.addEventListener("touchend", stop, true);
-    window.setTimeout(() => { stop(); back(); }, 2000);
+    // A signalled open hands focus over only after the keyboard's viewport resize (up to 2.5s under load).
+    window.setTimeout(() => { stop(); back(); }, signalled ? 3000 : 2000);
   }
 
   /**
@@ -448,6 +464,9 @@ export function mountComposer(): () => void {
   // after the keyboard starts); started at the touch it was over before the keyboard had moved.
   const onFocusIn = (e: FocusEvent) => window.setTimeout(() => beginOpen(e), 50);
   document.addEventListener("focusin", onFocusIn, true);
+  // A tap on the one-line composer on a phone (keyboard-follow.ts): the editor takes focus only once the keyboard
+  // is up, so the morph starts here, with the keyboard.
+  document.addEventListener(OPEN_EVENT, beginOpen);
   document.addEventListener("focusout", beginClose, true);
   schedule();
   return () => {
@@ -459,6 +478,7 @@ export function mountComposer(): () => void {
     window.removeEventListener("resize", schedule);
     document.removeEventListener("pointerdown", onPointerDown, { capture: true });
     document.removeEventListener("focusin", onFocusIn, true);
+    document.removeEventListener(OPEN_EVENT, beginOpen);
     document.removeEventListener("focusout", beginClose, true);
     closing?.anim.cancel();
     opening?.anim.cancel();

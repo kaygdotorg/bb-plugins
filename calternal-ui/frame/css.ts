@@ -775,6 +775,13 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
    covers the drawer); the drawer and its contents sit flat on the backdrop. */
 @media (max-width: 767px) {
   ${R} { font-size: calc(16px * var(--cf-ui-scale, 1)) !important; }
+  /* keyboard-follow.ts: while the composer rides up with the keyboard, the shell keeps its old size over bb's
+     inline top/height and its bottom inset (the composer is translated; the real layout returns at the end). */
+  ${R} [data-app-content-shell][data-cf-kb-hold] {
+    top: var(--cf-kb-hold-top) !important;
+    height: var(--cf-kb-hold-h) !important;
+    --bb-content-bottom-inset: var(--cf-kb-hold-pb) !important;
+  }
   ${SHELL} [data-sidebar="panel"], ${FLAT} {
     --sidebar: transparent;
     background: transparent !important;
