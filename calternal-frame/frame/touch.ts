@@ -7,9 +7,11 @@
  *  - Pull down to search: from the top of the sidebar, from the chat's title bar, or in a
  *    chat scrolled all the way up.
  *  - While the keyboard is up for the composer, a keyboard-down button sits in its icon row.
+ *  - Swipe actions (swipe.ts) and the phone attachment chip (attachments.ts).
  * Listeners are passive where possible and attached to single elements, never the DOM tree.
  */
 import { mountSwipes } from "./swipe";
+import { mountAttachments } from "./attachments";
 
 const SHELF = 'main[data-sidebar="inset"]';
 const SIDEBAR = '[data-sidebar="sidebar"]';
@@ -211,6 +213,6 @@ function keyboardButton(): () => void {
 export function mountTouch(): () => void {
   // Any touch-capable device (iPhone, iPad, touch laptops); mouse-only desktops skip all of it.
   if (navigator.maxTouchPoints === 0) return () => {};
-  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes()];
+  const disposers = [watchDrawer(), watchViewport(), pullToSearch(), keyboardButton(), mountSwipes(), mountAttachments()];
   return () => { for (const dispose of disposers) dispose(); };
 }

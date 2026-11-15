@@ -140,6 +140,19 @@ ${R} [data-cf-swipe-label][data-ready][data-tone="danger"] { color: var(--destru
 ${R} [data-cf-kb] { display: none; }
 ${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }
 
+/* Times revealed by a right-to-left swipe on the chat (frame/swipe.ts): one fixed layer
+   over the chat, labels at its right edge, uncovered as the conversation slides left. */
+${R} [data-cf-time-layer] { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+${R} [data-cf-time] {
+  position: absolute;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  opacity: 0;
+  white-space: nowrap;
+  transition: opacity 160ms;
+}
+
 /* Context menus opened by a swipe to run an action stay invisible. */
 ${R}[data-cf-silent-menu] :is([role="menu"], [data-persistent-drawer-content], [data-persistent-drawer-backdrop]) { opacity: 0 !important; }
 
@@ -375,10 +388,45 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   ${R} [data-cf-pull][data-state="ready"] { color: var(--cf-accent); }
   ${R} [data-cf-pull][data-state="ready"]::after { content: "Release to search"; }
   /* While typing (keyboard up), the composer stays small enough to keep the chat in view:
-     small attachment thumbnails, and the text area capped to a share of the visible height
+     attachments are a chip (attachments.ts), and the text area is capped to a share of the visible height
      (--cf-vvh is the visual viewport height, set by frame/touch.ts). */
-  ${R}[data-cf-keyboard] [data-app-composer] [data-promptbox-expanded-only] img { height: 2rem; width: 3rem; }
   ${R}[data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
+  /* Composer attachments on phones (frame/attachments.ts): bb's grid collapses into a chip
+     in the button row; open, the grid becomes one horizontal swipeable strip. */
+  ${R} [data-app-composer][data-cf-attach="collapsed"] [data-cf-attach-strip] { display: none !important; }
+  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    padding-bottom: 0.125rem;
+  }
+  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] > * { flex: none; scroll-snap-align: start; }
+  ${R} [data-app-composer][data-cf-attach="open"] [data-cf-attach-strip] img { height: 2.75rem; width: 4rem; }
+  ${R} [data-cf-attach-chip] {
+    margin-inline: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.75rem;
+    padding: 0 0.5rem 0 0.25rem;
+    border-radius: 999px;
+    border: 1px solid var(--cf-edge);
+    background: color-mix(in oklab, var(--foreground) 6%, transparent);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  ${R} [data-cf-attach-chip] img {
+    height: 1.25rem;
+    width: 1.25rem;
+    border-radius: 0.3rem;
+    object-fit: cover;
+    box-shadow: 0 0 0 1.5px var(--cf-bg);
+  }
+  ${R} [data-cf-attach-chip] img + img { margin-left: -0.6rem; }
+  ${R} [data-cf-attach-chip][aria-expanded="true"] { color: var(--cf-accent); border-color: color-mix(in oklab, var(--cf-accent) 45%, transparent); }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
     ${R} [data-cf-nav] > button { height: 2.25rem; font-size: 0.875rem; }
