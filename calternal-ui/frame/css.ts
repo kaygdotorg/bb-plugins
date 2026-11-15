@@ -12,6 +12,7 @@
  * / `[data-panel]` inside it. Everything is gated on `html[data-calternal-ui]`
  * so removing that attribute restores bb exactly.
  */
+import { PILL_CSS } from "./pills";
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
 
 export const CSS = `
@@ -801,6 +802,7 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     ${R} [data-cf-nav] > button { height: 2.25rem; } /* text size: text-sm, like bb's thread rows */
   }
 ${cardInterior(MAIN)}}
+${PILL_CSS}
 `;
 
 /**
