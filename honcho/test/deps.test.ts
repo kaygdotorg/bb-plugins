@@ -25,9 +25,11 @@ async function setup(file: unknown, settings: Record<string, string> = {}) {
 const rejectsWith = async (promise: Promise<unknown>, kind: string) => { await expect(promise).rejects.toBeInstanceOf(HonchoError); await expect(promise).rejects.toMatchObject({ kind }); };
 
 describe("createDeps", () => {
-  it("defines the connection settings, with the key as a secret", async () => {
+  it("defines every plugin setting in one place, with the key as a secret", async () => {
     const { harness } = await setup({});
-    expect(Object.keys(harness.registrations.settingsDescriptors).sort()).toEqual(["apiKey", "baseUrl", "peerName", "preset", "workspace"]);
+    expect(Object.keys(harness.registrations.settingsDescriptors).sort()).toEqual([
+      "apiKey", "backfillMessagesPerMinute", "baseUrl", "captureRequiresSwitchover", "codexUseBbTools", "hookBudgetMs", "peerName", "preset", "workspace",
+    ]);
     expect(harness.registrations.settingsDescriptors.apiKey).toMatchObject({ type: "string", secret: true });
     expect(harness.registrations.settingsDescriptors.preset).toMatchObject({ type: "select", options: ["cloud", "self-hosted"] });
   });

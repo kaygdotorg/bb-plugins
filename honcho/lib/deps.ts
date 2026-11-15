@@ -4,21 +4,13 @@ import { RingActivityLog } from "./activity.js";
 import { configSignature, defaultConfigPath, readConfig, type ConfigOverrides, type ConfigResult } from "./config.js";
 import { HonchoClient, HonchoError } from "./honcho-client.js";
 import { openOutbox, type Outbox } from "./outbox.js";
+import { defineSettings, type HonchoSettings } from "./settings.js";
 
 export const CLOUD_URL = "https://api.honcho.dev";
 export const CONFIG_CACHE_MS = 5_000;
 
-/** bb setting overrides. Empty values inherit from ~/.honcho/config.json; the file stays the zero-config source. */
-export function defineSettings(bb: Pick<BbPluginApi, "settings">) {
-  return bb.settings.define({
-    preset: { type: "select", label: "Connection", description: "Honcho cloud (key required) or a self-hosted server (key optional). Empty: inferred from the URL.", options: ["cloud", "self-hosted"] },
-    baseUrl: { type: "string", label: "Server URL", description: "Overrides the url in ~/.honcho/config.json. Ignored for the cloud preset." },
-    workspace: { type: "string", label: "Workspace", description: "Overrides the workspace in ~/.honcho/config.json." },
-    peerName: { type: "string", label: "User peer", description: "Overrides the user peer in ~/.honcho/config.json." },
-    apiKey: { type: "string", label: "API key", description: "Overrides the key in ~/.honcho/config.json.", secret: true },
-  });
-}
-export type HonchoSettings = ReturnType<typeof defineSettings>;
+// All settings (connection overrides included) are defined once, in lib/settings.ts.
+export { defineSettings, type HonchoSettings } from "./settings.js";
 
 export interface DepsOptions {
   /** The handle from defineSettings(bb); define once per plugin load. */
