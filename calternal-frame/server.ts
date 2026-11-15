@@ -8,7 +8,6 @@ import { createStore } from "./server/store";
 import { createWallpapers, unsplashId, uploadId } from "./server/wallpapers";
 import { createUnsplash } from "./server/unsplash";
 import { createFonts } from "./server/fonts";
-import { createUsage } from "./server/usage";
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -27,7 +26,6 @@ export default async function plugin(bb: BbPluginApi) {
   const wallpapers = createWallpapers(store);
   const unsplash = createUnsplash(unsplashKey);
   const fonts = createFonts(store, bb.log);
-  const usage = createUsage(bb);
   wallpapers.migrateLegacy();
 
   const state = (): FrameState => ({
@@ -61,7 +59,6 @@ export default async function plugin(bb: BbPluginApi) {
         fonts: { ...current.fonts, ...patch.fonts },
         uiScale: patch.uiScale ?? current.uiScale,
         accent: patch.accent ?? current.accent,
-        usage: { ...current.usage, ...patch.usage },
       });
       return state();
     },
@@ -99,7 +96,6 @@ export default async function plugin(bb: BbPluginApi) {
 
     google_fonts: () => fonts.catalogue(),
     font_faces: async () => ({ css: await fonts.faces() }),
-    usage_summary: ({ refresh }) => usage(refresh),
     message_times: async ({ threadId }) => {
       // bb's own timeline read; its row ids match the chat's [data-timeline-row-id].
       const timeline = await bb.sdk.threads.timeline({ threadId });

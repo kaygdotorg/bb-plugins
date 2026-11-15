@@ -43,7 +43,6 @@ export function createStore(bb: BbPluginApi) {
       fonts: { ...d.fonts, ...p.fonts },
       uiScale: p.uiScale ?? d.uiScale,
       accent: p.accent ?? d.accent,
-      usage: { ...d.usage, ...p.usage },
     };
   }
 

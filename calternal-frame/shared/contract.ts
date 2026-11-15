@@ -14,18 +14,6 @@ const fontSchema = z.object({ on: z.boolean(), family: z.string().max(120) });
 const fontsSchema = z.object({ ui: fontSchema, chat: fontSchema, code: fontSchema, terminal: fontSchema });
 const creditSchema = z.object({ name: z.string(), profile: z.string(), photo: z.string() }).nullable();
 
-/** The pooled Claude/Codex bars in the sidebar footer. */
-const usagePrefsSchema = z.object({
-  enabled: z.boolean(),
-  /** Unused since the footer shows percentages only (kept so stored prefs still parse). */
-  showPercent: z.boolean(),
-  /** Show the provider's icon instead of its name. */
-  showIcons: z.boolean(),
-  /** Which quota window the bar shows; "auto" prefers the 5-hour session, then weekly. */
-  window: z.enum(["auto", "session", "weekly"]),
-});
-export type UsagePrefs = z.infer<typeof usagePrefsSchema>;
-
 export const prefsSchema = z.object({
   /** An https:// image URL; ignored while an uploaded or Unsplash wallpaper exists. */
   wallpaperUrl: z.string(),
@@ -40,7 +28,6 @@ export const prefsSchema = z.object({
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }),
   /** Interface size in %: scales bb's rem-based text and controls together. */
   uiScale: z.number().min(75).max(150),
-  usage: usagePrefsSchema,
 });
 export type FramePrefs = z.infer<typeof prefsSchema>;
 export type SurfacePrefs = z.infer<typeof surfaceSchema>;
@@ -54,7 +41,6 @@ const prefsPatchSchema = z.object({
   fonts: fontsSchema.partial().optional(),
   uiScale: z.number().min(75).max(150).optional(),
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }).optional(),
-  usage: usagePrefsSchema.partial().optional(),
 });
 export type FramePrefsPatch = z.infer<typeof prefsPatchSchema>;
 
@@ -84,44 +70,6 @@ export type UnsplashPhoto = z.infer<typeof unsplashPhotoSchema>;
 
 const googleFontSchema = z.object({ family: z.string(), category: z.string() });
 export type GoogleFont = z.infer<typeof googleFontSchema>;
-
-const windowSchema = z.object({
-  /** Pooled share used, 0–1: the mean across accounts reporting this window. */
-  used: z.number(),
-  accounts: z.number(),
-  /** Soonest reset among those accounts, ISO, or "". */
-  resetsAt: z.string(),
-});
-const providerUsageSchema = z.object({
-  provider: z.enum(["claude", "codex"]),
-  accounts: z.number(),
-  session: windowSchema.nullable(),
-  weekly: windowSchema.nullable(),
-});
-const usageSummarySchema = z.object({
-  status: z.enum(["ok", "unavailable"]),
-  message: z.string().nullable(),
-  providers: z.array(providerUsageSchema),
-});
-export type UsageSummary = z.infer<typeof usageSummarySchema>;
-
-/** Only the fields of cliproxy-usage's snapshot this plugin reads. */
-export const cliproxySnapshotSchema = z.object({
-  status: z.string(),
-  message: z.string().nullable(),
-  accounts: z.array(z.object({
-    provider: z.string(),
-    state: z.string(),
-    groups: z.array(z.object({
-      name: z.string(),
-      buckets: z.array(z.object({
-        window: z.string(),
-        remainingFraction: z.number(),
-        resetTime: z.string(),
-      })),
-    })),
-  })),
-});
 
 export const libraryEntrySchema = z.object({
   id: z.string(),
@@ -170,7 +118,6 @@ export const rpcContract = defineRpcContract({
   google_fonts: { input: z.object({}), output: z.array(googleFontSchema) },
   /** @font-face CSS for the enabled font overrides, with the font files inlined from local storage. */
   font_faces: { input: z.object({}), output: z.object({ css: z.string() }) },
-  usage_summary: { input: z.object({ refresh: z.boolean() }), output: usageSummarySchema },
   /** When each conversation row of a thread was created (ms), keyed by bb's timeline row id. */
   message_times: {
     input: z.object({ threadId: z.string().regex(/^thr_[\w-]+$/) }),
@@ -178,5 +125,3 @@ export const rpcContract = defineRpcContract({
   },
 });
 
-export type UsageWindow = z.infer<typeof windowSchema>;
-export type CliproxySnapshot = z.infer<typeof cliproxySnapshotSchema>;

@@ -44,7 +44,7 @@ ${R} {
   --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
   --cf-edge: rgb(255 255 255 / 0.55);
   --cf-shadow: 0 6px 14px -7px rgb(60 40 20 / 0.28);
-  /* Warning text (usage at 75%+, Full Access): bb's amber is too light to read on a light
+  /* Warning text (Full Access): bb's amber is too light to read on a light
      glass, so light mode inks it darker. */
   --cf-warn-ink: oklch(0.55 0.15 50);
   background: var(--cf-side) !important;
@@ -233,7 +233,6 @@ ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="edit"]::before { -
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="plan"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 9.9-1'/%3E%3C/svg%3E"); }
 ${R} [data-app-composer][data-cf-merged] button[data-cf-perm="full"] { color: var(--cf-warn-ink); }
-${R} [data-cf-tone="warn"] { color: var(--cf-warn-ink); }
 /* Context ring: the percentage only when it's nearly full. */
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"] span { display: none !important; }
 ${R} [data-app-composer][data-cf-merged] button[aria-label^="Context window"][data-cf-hot] span { display: inline !important; margin-inline-end: 0.25rem; }
