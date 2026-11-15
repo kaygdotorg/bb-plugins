@@ -54,7 +54,12 @@ export function createStore(bb: BbPluginApi) {
    * The database is a few MB at most, so this takes milliseconds.
    */
   const vacuum = () => {
-    try { db.exec("VACUUM"); } catch { /* busy: the next removal retries */ }
+    try {
+      db.exec("VACUUM");
+      // bb's databases use WAL: VACUUM's compact copy lands in the log, and the file only
+      // shrinks at a checkpoint. Truncate now so the space is back as soon as you click.
+      db.pragma("wal_checkpoint(TRUNCATE)");
+    } catch { /* busy: the next removal retries */ }
   };
 
   return { db, get, set, remove, touch, prefs, savePrefs, updatedAt, vacuum };
