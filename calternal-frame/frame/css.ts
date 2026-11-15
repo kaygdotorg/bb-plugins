@@ -29,6 +29,8 @@ ${R} {
      The plugin's 100% is bb's 110%: bb's own 16px reads small on a glass layout. */
   font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
   --cf-gap: 8px;
+  /* The iPhone 16 Pro Max's display corner (~62pt): sheets and the sliding pane follow it. */
+  --cf-device-radius: 62px;
   --cf-radius: 14px;
   /* Shared glass for floating panes (composer, inset sheets): one look, defined once. */
   --cf-glass-fill: color-mix(in oklab, var(--cf-bg) 38%, transparent);
@@ -286,7 +288,10 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   /* At rest the pane is a full-screen sheet. When it slides aside for the drawer or the
      right panel, it becomes the floating card: rounded, with the card's edge and shadow. */
   ${MAIN}:is([data-sidebar-shelf]:not([data-sidebar-shelf="closed"]), [data-panel-shelf]:not([data-panel-shelf="closed"])) {
-    border-radius: 28px;
+    /* Like Claude's iOS app: the pane takes the screen's own corner radius, so it reads as
+       the display itself sliding aside. Squircle corners where supported (Chromium). */
+    border-radius: var(--cf-device-radius);
+    corner-shape: squircle;
     box-shadow: 0 0 0 1px var(--cf-edge), 0 18px 48px -12px rgb(0 0 0 / 0.55);
   }
   ${MAIN}::before {
@@ -320,7 +325,6 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
      with the screen's. --cf-device-radius is the iPhone 16 Pro Max display radius (~62pt);
      sheet radius = device radius - inset. Frosted like the menus. */
   ${R} [data-persistent-drawer-content] {
-    --cf-device-radius: 62px;
     --cf-sheet-inset: 8px;
     --background: transparent;
     left: var(--cf-sheet-inset) !important;
@@ -359,14 +363,22 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     border-radius: 999px;
     font-size: 0.75rem;
     color: var(--muted-foreground);
-    background: color-mix(in oklab, var(--popover) 80%, transparent);
+    background: var(--cf-glass-fill);
+    -webkit-backdrop-filter: var(--cf-glass-blur);
+    backdrop-filter: var(--cf-glass-blur);
+    box-shadow: 0 0 0 1px var(--cf-edge), var(--cf-glass-shadow);
     opacity: 0;
     pointer-events: none;
-    z-index: 5;
+    z-index: 20;
   }
   ${R} [data-cf-pull]::after { content: "Pull to search"; }
   ${R} [data-cf-pull][data-state="ready"] { color: var(--cf-accent); }
   ${R} [data-cf-pull][data-state="ready"]::after { content: "Release to search"; }
+  /* While typing (keyboard up), the composer stays small enough to keep the chat in view:
+     small attachment thumbnails, and the text area capped to a share of the visible height
+     (--cf-vvh is the visual viewport height, set by frame/touch.ts). */
+  ${R}[data-cf-keyboard] [data-app-composer] [data-promptbox-expanded-only] img { height: 2rem; width: 3rem; }
+  ${R}[data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
     ${R} [data-cf-nav] > button { height: 2.25rem; font-size: 0.875rem; }
