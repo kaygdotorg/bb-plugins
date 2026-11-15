@@ -30,3 +30,5 @@ bb plugin install . --yes
 - **Usage in the sidebar footer:** install the sibling [cliproxy-usage](../cliproxy-usage/) plugin.
 
 See [AGENTS.md](AGENTS.md) for how it works and the rules to keep.
+
+Changes per release: [CHANGELOG.md](CHANGELOG.md).

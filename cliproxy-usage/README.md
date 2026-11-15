@@ -23,3 +23,5 @@ Under **Settings → Plugins → CLIProxyAPI Usage**:
 - **Footer:** on or off, which window (session, weekly, or session then weekly), which providers, icons or names, and the amber and red thresholds.
 
 See [AGENTS.md](AGENTS.md) for how it works.
+
+Changes per release: [CHANGELOG.md](CHANGELOG.md).
