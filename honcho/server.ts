@@ -3,7 +3,7 @@ import { createBackfillService } from "./lib/backfill/index.js";
 import { createCaptureService } from "./lib/capture/index.js";
 import { registerCli } from "./lib/cli.js";
 import { createDeps } from "./lib/deps.js";
-import { createHarnessService, registerProviderEnv, type HarnessCaller } from "./lib/harness/index.js";
+import { createHarnessService, registerAcpProviderEnv, registerProviderEnv, type HarnessCaller } from "./lib/harness/index.js";
 import { createHostClient } from "./lib/host-contract.js";
 import { createRecallService, registerConfigure, registerDispatchPrefetch } from "./lib/recall/index.js";
 import { readPrivacy, registerRpc } from "./lib/rpc-server.js";
@@ -56,6 +56,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const call: HarnessCaller = (op, input, hostId) => host.call(op, input as never, { hostId }) as never;
   const harness = createHarnessService(bb, { activity: deps.activity, call });
   registerProviderEnv(bb, { activity: deps.activity, call, hookBudgetMs: view.hookBudgetMs });
+  registerAcpProviderEnv(bb);
 
   // 5. Backfill, with capture's scope resolver and deny list so both agree.
   const backfill = createBackfillService(bb, {

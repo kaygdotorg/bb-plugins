@@ -72,8 +72,8 @@ describe("provider env", () => {
     const h = makeHome(); homes.push(h);
     const { call, calls } = hostFor(h);
     const { bb, resolvers } = fakeBb([]);
-    registerProviderEnv(bb, { call, acpProviderIds: ["acp-fake"] });
-    expect([...resolvers.keys()].sort()).toEqual(["acp-fake", "claude-code", "codex", "pi"]);
+    registerProviderEnv(bb, { call });
+    expect([...resolvers.keys()].sort()).toEqual(["claude-code", "codex", "pi"]);
     const ctx = { threadId: "thr_1", projectId: "p", hostId: "host_a" };
     const env = async (id: string) => Object.fromEntries(((await resolvers.get(id)!(ctx)) as ExperimentalPluginProviderEnvEntry[]).map((e) => [e.name, e.value]));
 
@@ -84,7 +84,6 @@ describe("provider env", () => {
     const codex = await env("codex");
     expect(codex.HONCHO_CONFIG_DIR).toBe(`${h.dataDir}/harness/codex-honcho`);
     expect(await env("pi")).toEqual({ BB_HONCHO: "1" });
-    expect(await env("acp-fake")).toEqual({ BB_HONCHO: "1" });
     expect(calls).toEqual(["harnessEnv@host_a"]); // cached per host
     for (const value of [...Object.values(claude), ...Object.values(codex)]) expect(String(value)).not.toMatch(/fake-token|hch-/);
   });
