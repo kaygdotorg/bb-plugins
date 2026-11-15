@@ -87,8 +87,9 @@ ${BACKDROP}::before {
   content: "";
   position: absolute;
   inset: -140px; /* the blur fades at its edges; keep those off-screen */
-  background: var(--cf-wall, none) center / cover no-repeat;
-  filter: var(--cf-side-blur);
+  /* The pre-blurred wallpaper (frame/preblur.ts) when ready: no live filter then. */
+  background: var(--cf-wall-side, var(--cf-wall, none)) center / cover no-repeat;
+  filter: var(--cf-side-filter, var(--cf-side-blur));
 }
 ${BACKDROP}::after {
   content: "";
@@ -555,8 +556,8 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     z-index: -2;
     pointer-events: none;
     /* fixed: lines the card's copy of the wallpaper up with the window's. */
-    background: var(--cf-wall, none) center / cover no-repeat fixed;
-    filter: var(--cf-card-blur);
+    background: var(--cf-wall-card, var(--cf-wall, none)) center / cover no-repeat fixed;
+    filter: var(--cf-card-filter, var(--cf-card-blur));
   }
   :is(${CARD})::after {
     content: "";
@@ -603,8 +604,8 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     inset: -160px; /* > 2 × the largest blur: a blur fades its own edges to transparent */
     z-index: -2;
     pointer-events: none;
-    background: var(--cf-side) var(--cf-wall, none) center / cover no-repeat;
-    filter: var(--cf-card-blur);
+    background: var(--cf-side) var(--cf-wall-card, var(--cf-wall, none)) center / cover no-repeat;
+    filter: var(--cf-card-filter, var(--cf-card-blur));
   }
   ${MAIN}::after {
     content: "";

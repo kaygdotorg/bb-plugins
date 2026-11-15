@@ -1,6 +1,7 @@
 /** The wallpaper behind everything: a CSS variable on <html>, cached for instant reloads. */
 import { CACHE, cache } from "./events";
 import { sampleWallpaper } from "./color";
+import { preblurSource } from "./preblur";
 
 const root = () => document.documentElement.style;
 
@@ -17,6 +18,7 @@ function setTone(tone: string | null) {
 export function applyWallpaper(src: string | null) {
   if (src) root().setProperty("--cf-wall", cssUrl(src));
   else root().removeProperty("--cf-wall");
+  preblurSource(src);
   cache.set(CACHE.wallpaper, src);
   if (!src) { setTone(null); cache.set(CACHE.tone, null); return; }
   void sampleWallpaper(src).then((colours) => {
@@ -28,10 +30,12 @@ export function applyWallpaper(src: string | null) {
 export function applyCachedWallpaper() {
   const src = cache.get(CACHE.wallpaper);
   if (src) root().setProperty("--cf-wall", cssUrl(src));
+  preblurSource(src ?? null);
   setTone(cache.get(CACHE.tone));
 }
 
 export function clearWallpaper() {
   root().removeProperty("--cf-wall");
+  preblurSource(null);
   root().removeProperty("--cf-wall-tone");
 }

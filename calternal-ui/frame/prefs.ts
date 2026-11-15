@@ -6,6 +6,7 @@
 import type { FramePrefs } from "../shared/contract";
 import { CACHE, cache } from "./events";
 import { R } from "./selectors";
+import { preblurBlurs } from "./preblur";
 
 type Surface = FramePrefs["sidebar"];
 export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale">;
@@ -68,6 +69,8 @@ export function setUiScale(percent: number) {
 export function applyPrefs(prefs: AppliedPrefs, save = true) {
   const vars = { ...surfaceVars("side", "--cf-side", prefs.sidebar), ...surfaceVars("card", "--cf-bg", prefs.chat) };
   for (const [name, value] of Object.entries(vars)) root().setProperty(name, value);
+  const blurOf = (s: Surface) => (s.blur.on ? s.blur.value : 0);
+  preblurBlurs(blurOf(prefs.sidebar), blurOf(prefs.chat));
   setUiScale(prefs.uiScale);
   setText(styleElement("cf-fonts"), fontCss(prefs.fonts));
   if (save) cache.set(CACHE.prefs, JSON.stringify(prefs));

@@ -93,7 +93,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 ## Performance
 
-- The backdrop and card blurs paint static images. Never animate anything behind glass.
+- **Blurs are pre-rendered** (`frame/preblur.ts`): once per wallpaper and blur setting, into a small canvas (1/8 of the viewport at 75px) with saturation baked in, shown as a plain background (`--cf-wall-side` / `--cf-wall-card`, live filter `none`). A live `filter: blur(75px)` re-rasterised on every repaint. Safari (no canvas filters) keeps the live filter. Never animate anything behind glass.
 - The wallpaper is decoded once (`frame/color.ts`, memoised) for both the sidebar tone and the accent.
 - The always-on sync uses `frame_light`, a few KB. It fetches the wallpaper (~1 MB) only when `wallpaperId` changes, and fonts only when the set of enabled families changes. That matters when bb is used remotely.
 - Style text is only rewritten when it changes, and the last look is cached in localStorage so a reload paints immediately.
