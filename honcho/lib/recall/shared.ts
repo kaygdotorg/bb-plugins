@@ -8,6 +8,9 @@ import { RecallStore, type ConclusionMark } from "./store.js";
 import { PrivacyGate } from "./privacy.js";
 import type { RecallPorts } from "./ports.js";
 
+/** kv: the hosts a thread's recall file was written on (thread.deleted, recall.served). */
+export const recallHostsKey = (threadId: string) => `recall:hosts:${threadId}`;
+
 export type KeyLevel = "workspace-or-admin" | "restricted" | "unknown";
 const KEY_LEVEL_TTL_MS = 10 * 60_000;
 

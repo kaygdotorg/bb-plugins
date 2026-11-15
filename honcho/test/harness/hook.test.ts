@@ -1,7 +1,7 @@
 // Runs the real sh guard and node hook, from the bb-owned copy connect installs.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -235,4 +235,64 @@ it("exits 0 when the node half is missing", () => {
   spawnSync("cp", [hookSh, lonely]);
   const r = spawnSync("sh", [lonely, "prompt"], { input: promptInput("x"), env: baseEnv() as NodeJS.ProcessEnv, encoding: "utf8" });
   expect([r.status, r.stdout]).toEqual([0, ""]);
+});
+
+describe("served note", () => {
+  const served = (thread: string) => join(recallDir, `${thread}.served.jsonl`);
+  const lines = (thread: string) => readFileSync(served(thread), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+
+  it("is written on an injected hit, with hash, counter and time only", () => {
+    const thread = "thr_served_hit";
+    const text = "what did we decide about the cache";
+    writeCache(thread, [{ counter: 3, text, createdAt: Date.now(), memory: "<honcho_memory>x</honcho_memory>" }]);
+    const before = Date.now();
+    const r = run("prompt", promptInput(text), baseEnv({ BB_THREAD_ID: thread }));
+    expect(injected(r.stdout)).toBe("<honcho_memory>x</honcho_memory>");
+    const [note, ...rest] = lines(thread);
+    expect(rest).toEqual([]);
+    expect(note).toEqual({ v: 1, hash: promptHash(normalizePromptText(text)), counter: 3, at: expect.any(Number) });
+    expect(note.at).toBeGreaterThanOrEqual(before);
+    expect(readFileSync(served(thread), "utf8")).not.toContain("cache");
+  });
+
+  it("is never written on a miss, a skip, or an empty match", () => {
+    const miss = "thr_served_miss";
+    writeCache(miss, [{ counter: 1, text: "other prompt", createdAt: Date.now(), memory: "m" }]);
+    run("prompt", promptInput("this prompt"), baseEnv({ BB_THREAD_ID: miss }));
+    const skip = "thr_served_skip";
+    writeFileSync(join(recallDir, `${skip}.json`), JSON.stringify({ v: 2, skip: true }));
+    run("prompt", promptInput("this prompt"), baseEnv({ BB_THREAD_ID: skip }));
+    const empty = "thr_served_empty";
+    writeCache(empty, [{ counter: 1, text: "this prompt", createdAt: Date.now(), memory: "" }]);
+    run("prompt", promptInput("this prompt"), baseEnv({ BB_THREAD_ID: empty }));
+    for (const thread of [miss, skip, empty]) expect(existsSync(served(thread))).toBe(false);
+  });
+
+  it("keeps the last 200 lines once the file passes 400", () => {
+    const thread = "thr_served_cap";
+    const text = "cap prompt";
+    writeCache(thread, [{ counter: 9, text, createdAt: Date.now(), memory: "m" }]);
+    const old = Array.from({ length: 400 }, (_, i) => JSON.stringify({ v: 1, hash: "a".repeat(64), counter: i, at: i }));
+    writeFileSync(served(thread), old.join("\n") + "\n");
+    run("prompt", promptInput(text), baseEnv({ BB_THREAD_ID: thread }));
+    const kept = lines(thread);
+    expect(kept).toHaveLength(200);
+    expect(kept.at(-1).counter).toBe(9);
+    expect(kept[0].counter).toBe(201);
+  });
+
+  it("still injects and exits 0 when the directory is read-only", () => {
+    const dir = join(root, "ro-recall");
+    const thread = "thr_served_ro";
+    mkdirSync(dir, { recursive: true });
+    const text = "read only prompt";
+    const v2 = [{ counter: 1, createdAt: Date.now(), memory: "ro memory", hash: promptHash(normalizePromptText(text)) }];
+    writeFileSync(join(dir, `${thread}.json`), JSON.stringify({ v: 2, entries: v2 }));
+    chmodSync(dir, 0o500);
+    try {
+      const r = run("prompt", promptInput(text), baseEnv({ BB_THREAD_ID: thread, BB_HONCHO_RECALL_DIR: dir }));
+      expect([r.code, injected(r.stdout)]).toEqual([0, "ro memory"]);
+      expect(existsSync(join(dir, `${thread}.served.jsonl`))).toBe(false);
+    } finally { chmodSync(dir, 0o700); }
+  });
 });

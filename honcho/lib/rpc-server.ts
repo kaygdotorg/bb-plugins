@@ -3,7 +3,7 @@
 
 import { defineRpcContract, experimental_PluginRpcRefusal, type BbPluginApi, type StandardSchemaV1 } from "@get-bb/plugin-sdk";
 import type {
-  ActivityKind, BackfillService, CaptureService, ConnectionView, Deps, HarnessService,
+  ActivityKind, BackfillService, CaptureService, ConnectionView, Deps, HarnessService, MemoryInjection,
   PrivacySettings, RecallService, RpcMethods,
 } from "./contract.js";
 import { z } from "zod";
@@ -15,7 +15,7 @@ import { PROVIDER_PEERS } from "./mapping.js";
 export interface Services {
   /** `privacyChanged` (capture) drops cached deny decisions and re-evaluates held threads. */
   capture: CaptureService & { privacyChanged?(): void };
-  recall: RecallService;
+  recall: RecallService & { injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]> };
   harness: HarnessService;
   backfill: BackfillService;
   deps: Deps & { isCloud(): Promise<boolean> };
@@ -63,6 +63,7 @@ export const rpcInputs = {
   "backfill.start": z.object({ projectId: text(200).optional(), since: z.string().max(100).optional() }),
   "backfill.progress": empty,
   "backfill.stop": empty,
+  "recall.injections": z.object({ threadId: text(200), since: z.number().finite().optional() }),
   "labels.get": z.object({ threadIds: z.array(text(200)).max(200).optional(), projectIds: z.array(text(200)).max(200).optional() }),
 } satisfies Record<keyof RpcMethods, z.ZodType>;
 
@@ -103,6 +104,7 @@ export const rpcContract = defineRpcContract({
   "backfill.start": method("backfill.start"),
   "backfill.progress": method("backfill.progress"),
   "backfill.stop": method("backfill.stop"),
+  "recall.injections": method("recall.injections"),
   "labels.get": method("labels.get"),
 });
 
@@ -314,6 +316,7 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
     "backfill.start": async (input) => { await backfill.start(input); changed("backfill"); return ok; },
     "backfill.progress": () => backfill.progress(),
     "backfill.stop": async () => { await backfill.stop(); changed("backfill"); return ok; },
+    "recall.injections": ({ threadId, since }) => recall.injections({ threadId, since }),
     "labels.get": async ({ threadIds = [], projectIds = [] }) => {
       const pick = async (ids: string[], read: (id: string) => Promise<string | null | undefined>) => {
         const out: Record<string, string | null> = {};

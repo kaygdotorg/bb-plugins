@@ -101,3 +101,35 @@ export async function deleteRecallFile(dir: string, threadId: string): Promise<b
     throw error;
   }
 }
+
+// ---------- served notes (written by the hook after it injected a hit) ----------
+
+/** `{"v":1,"hash","counter","at"}` per line: hash and time only, never prompt text. */
+export interface ServedNote { hash: string; counter: number; at: number }
+export function servedFilePath(dir: string, threadId: string): string {
+  if (!THREAD_ID_PATTERN.test(threadId)) throw new Error("Invalid thread id.");
+  return join(dir, `${threadId}.served.jsonl`);
+}
+
+/** Valid notes at or after `since`, oldest first. A missing or partly corrupt file reads as what is valid. */
+export async function readServedNotes(dir: string, threadId: string, since = 0): Promise<ServedNote[]> {
+  let source: string;
+  try { source = await readFile(servedFilePath(dir, threadId), "utf8"); } catch { return []; }
+  const out: ServedNote[] = [];
+  for (const line of source.split("\n")) {
+    if (!line) continue;
+    try {
+      const n = JSON.parse(line) as Partial<ServedNote> & { v?: number };
+      if (n?.v === 1 && typeof n.hash === "string" && PROMPT_HASH_PATTERN.test(n.hash) && Number.isSafeInteger(n.counter)
+        && typeof n.at === "number" && Number.isFinite(n.at) && n.at >= since) out.push({ hash: n.hash, counter: n.counter!, at: n.at });
+    } catch { /* skip a torn line */ }
+  }
+  return out;
+}
+
+export async function deleteServedFile(dir: string, threadId: string): Promise<boolean> {
+  try { await rm(servedFilePath(dir, threadId)); return true; } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}

@@ -18,7 +18,12 @@ export const recallHostContract = defineRpcContract({
     input: z.object({ threadId: z.string().regex(THREAD_ID_PATTERN) }).strict(),
     output: z.object({ path: z.string() }).strict(),
   },
-  /** Removes the thread's recall cache file (thread.deleted). */
+  /** The hook's served notes for a thread (hash, counter, time; no prompt text), at or after `since`. */
+  "recall.served": {
+    input: z.object({ threadId: z.string().regex(THREAD_ID_PATTERN), since: z.number().optional() }).strict(),
+    output: z.object({ notes: z.array(z.object({ hash: z.string(), counter: z.number().int(), at: z.number() }).strict()) }).strict(),
+  },
+  /** Removes the thread's recall cache file and served notes (thread.deleted). */
   "recall.delete": {
     input: z.object({ threadId: z.string().regex(THREAD_ID_PATTERN) }).strict(),
     output: z.object({ deleted: z.boolean() }).strict(),

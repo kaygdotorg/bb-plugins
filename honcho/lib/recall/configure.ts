@@ -1,5 +1,6 @@
 import type { BbPluginApi, PluginAgentConfiguration, PluginAgentConfigurationContext } from "@get-bb/plugin-sdk";
-import { buildInstructions } from "./format.js";
+import { redact } from "../redact.js";
+import { buildInstructions, neutralize, splitCard } from "./format.js";
 import { recallInternals, type RecallDeps, type RecallRuntime } from "./service.js";
 import { ScopeResolver } from "./shared.js";
 import { HONCHO_TOOL_NAMES } from "../tools/names.js";
@@ -24,6 +25,8 @@ export function selectTools(providerId: string, codexUseBbTools: boolean): strin
  */
 export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: RecallRuntime): void {
   const { shared, cache, settings, deps } = recallInternals(recall);
+  // configure is sync: the shared redactor (async) is kept from the previous call; the first falls back to built-in patterns.
+  let redactNow: (text: string) => string = text => redact(text).text;
   bb.agents.configure((ctx): PluginAgentConfiguration => {
     const tools = selectTools(ctx.provider.id, settings.codexUseBbTools());
     let instructions: string | undefined;
@@ -57,6 +60,16 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
         agentNotes, stale: snap.stale, refreshedAt: snap.lastSuccess,
       });
       if (instructions) {
+        try {
+          void shared.gate.redactor().then(r => { redactNow = text => r(text).text; }, () => undefined);
+          const split = splitCard(snap.card);
+          const lines = [
+            ...split.card, ...split.directives.map(d => `directive: ${d}`),
+            ...(entry?.summary?.trim() ? entry.summary.trim().split("\n") : []),
+            ...agentNotes.map(n => `[agent-written] ${n.content}`),
+          ].map(l => redactNow(neutralize(l).replace(/\s+/g, " ").trim()).slice(0, 600)).filter(Boolean).slice(0, 80);
+          shared.store.saveSessionInjection(ctx.thread.id, Date.now(), scope, lines);
+        } catch { /* the block is optional; never break a session build */ }
         deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `session memory injected (scope ${scope}${contextThreadId !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
       }
     } catch (error) {

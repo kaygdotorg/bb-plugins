@@ -1,14 +1,14 @@
 import type { BbPluginApi, MessageDispatchHookContext } from "@get-bb/plugin-sdk";
 import { HonchoError, type Message } from "../honcho-client.js";
 import { normalizePromptText, promptHash } from "./cache-file.js";
-import { formatTurnMemory } from "./format.js";
+import { formatTurn, type TurnItem } from "./format.js";
+import { recallHostsKey } from "./shared.js";
 import { recallInternals, type RecallDeps, type RecallRuntime } from "./service.js";
 
 /** Harnesses with a prompt hook that reads the recall cache file. */
 export const HOOK_PROVIDERS = ["claude-code", "codex"] as const;
 const SEARCH_LIMIT = 8;
-/** kv: the hosts a thread's recall file was written on, for thread.deleted. */
-export const recallHostsKey = (threadId: string) => `recall:hosts:${threadId}`;
+export { recallHostsKey };
 
 /**
  * Per-turn prefetch: answer `proceed` at once, then search Honcho off the
@@ -51,10 +51,13 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
     };
     let memory = "";
     let count = 0;
+    let items: Array<{ content: string; date: string | null; sourceThreadId: string | null }> = [];
+    let scopeName: string | null = null;
     try {
       const redactor = await shared.gate.redactor();
       const query = redactor(text).text;
       const scope = await shared.scopes.resolve(scopeInput);
+      scopeName = scope;
       const { client, peer } = await shared.client();
       const level = await shared.keyLevel.get();
       let results: Message[];
@@ -68,19 +71,26 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
         }
       }
       const exclude = new Set([threadId, ...(parentThreadId ? [parentThreadId] : [])]);
-      const formatted = formatTurnMemory(results, { peer, exclude });
-      count = formatted ? formatted.split("\n- ").length - 1 : 0;
-      memory = formatted ? redactor(formatted).text : "";
+      const formatted = formatTurn(results, { peer, exclude });
+      count = formatted.items.length;
+      memory = formatted.memory ? redactor(formatted.memory).text : "";
+      items = formatted.items.map((i: TurnItem) => ({ ...i, content: redactor(i.content).text }));
     } catch (error) {
       deps.activity.record({ kind: "failure", threadId, summary: "per-turn recall search failed", error: error instanceof HonchoError ? `${error.kind}${error.status ? ` ${error.status}` : ""}` : `${(error as Error)?.name ?? "error"} ${String((error as Error)?.message ?? "").slice(0, 160)}` });
     }
     // Only the hash of the normalized prompt goes to the host. An empty entry tells the hook to stop waiting.
-    await shared.host.call("recall.write", { threadId, hash: promptHash(text), memory }, { hostId, signal: AbortSignal.timeout(15_000) });
+    const hash = promptHash(text);
+    const written = await shared.host.call("recall.write", { threadId, hash, memory }, { hostId, signal: AbortSignal.timeout(15_000) });
+    // What this entry holds, for the "from honcho" block once the hook reports it served. Best effort.
+    if (memory && items.length) {
+      try { shared.store.saveTurnInjection(threadId, hash, written.counter, scopeName, items); } catch { /* the block is optional */ }
+    }
     await rememberHost(threadId, hostId).catch(() => undefined);
     if (count) deps.activity.record({ kind: "recall", threadId, summary: `per-turn memory: ${count} excerpt${count === 1 ? "" : "s"}` });
   }
 
   bb.events.on("thread.deleted", ({ thread }) => {
+    try { shared.store.deleteInjections(thread.id); } catch { /* retried by nothing: the table is capped */ }
     const run: Promise<void> = (async () => {
       const key = recallHostsKey(thread.id);
       const hosts = knownHosts.get(thread.id) ?? (await bb.storage.kv.get<string[]>(key)) ?? [];

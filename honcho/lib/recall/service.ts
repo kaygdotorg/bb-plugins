@@ -1,9 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ConclusionView, Deps, RecallService } from "../contract.js";
+import type { ConclusionView, Deps, MemoryInjection, RecallService } from "../contract.js";
 import type { Conclusion } from "../honcho-client.js";
 import { MemoryCache, REFRESH_INTERVAL_MS } from "./cache.js";
 import { clampHookBudget, RECALL_SETTING_DESCRIPTORS, type RecallPorts, type RecallSettings } from "./ports.js";
-import { recallShared, toView, type RecallShared } from "./shared.js";
+import { recallHostsKey, recallShared, toView, type RecallShared } from "./shared.js";
 
 export type RecallDeps = Deps & { recall?: RecallPorts };
 export type RecallRuntime = RecallService & {
@@ -17,7 +17,12 @@ export type RecallRuntime = RecallService & {
   /** Conclusions honcho_conclude saved from a thread; `attached: false` ones carry no session_id,
    * so deleting the thread's session leaves them and the delete path must purge them by id. */
   conclusionsForThread(threadId: string): Array<{ id: string; attached: boolean }>;
+  /** Everything that reached the agent in this thread, oldest first: per-turn hits the hook reported as
+   * served (joined to the stored excerpts) and session-build injections. `since` is epoch ms. */
+  injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]>;
 };
+
+const TITLE_TTL_MS = 5 * 60_000;
 
 export interface RecallInternals {
   shared: RecallShared;
@@ -61,7 +66,40 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
     return items.map(c => toView(c, marks.get(c.id)));
   };
 
+  const titles = new Map<string, { title: string | null; at: number }>();
+  const titleOf = async (threadId: string): Promise<string | null> => {
+    const hit = titles.get(threadId);
+    if (hit && Date.now() - hit.at < TITLE_TTL_MS) return hit.title;
+    let title: string | null = null;
+    try { title = (await bb.sdk.threads.get({ threadId }))?.title?.trim() || null; } catch { /* unknown or deleted thread */ }
+    titles.set(threadId, { title, at: Date.now() });
+    return title;
+  };
+
   const recall: RecallRuntime = {
+    async injections({ threadId, since = 0 }) {
+      const out: MemoryInjection[] = [];
+      const seen = new Set<string>();
+      const hosts = (await bb.storage.kv.get<string[]>(recallHostsKey(threadId)).catch(() => undefined)) ?? [];
+      for (const hostId of shared.host ? hosts : []) {
+        let notes: Array<{ hash: string; counter: number; at: number }>;
+        try { notes = (await shared.host!.call("recall.served", { threadId, since }, { hostId, signal: AbortSignal.timeout(10_000) })).notes; }
+        catch { continue; }
+        for (const note of notes) {
+          const key = `${note.hash}:${note.counter}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const record = shared.store.turnInjection(threadId, note.hash, note.counter);
+          if (!record || !record.items.length) continue;
+          out.push({ kind: "turn", at: note.at, scope: record.scope, items: record.items.map(i => ({ ...i, sourceTitle: null })) });
+        }
+      }
+      for (const s of shared.store.sessionInjections(threadId, since)) out.push({ kind: "session", at: s.at, scope: s.scope, items: [], card: s.card });
+      const ids = new Set(out.flatMap(i => i.items.flatMap(it => it.sourceThreadId ? [it.sourceThreadId] : [])));
+      const known = new Map(await Promise.all([...ids].map(async id => [id, await titleOf(id)] as const)));
+      for (const injection of out) for (const item of injection.items) item.sourceTitle = item.sourceThreadId ? known.get(item.sourceThreadId) ?? null : null;
+      return out.sort((a, b) => a.at - b.at);
+    },
     async threadContext(threadId) {
       const scope = shared.scopes.known(threadId);
       let stale = false;

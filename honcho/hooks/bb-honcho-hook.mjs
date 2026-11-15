@@ -7,7 +7,7 @@
 // It must never fail a turn: every error path prints nothing and exits 0.
 // Dependency-free on purpose: it runs from a copy in a bb-owned directory.
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const START = Date.now();
@@ -79,7 +79,7 @@ function pickEntry(file, hashes, startedAt) {
     if (!hashes.has(entryHash)) continue;
     if (!best || counter > best.counter || (counter === best.counter && createdAt > best.createdAt)) best = entry;
   }
-  return best ? { memory: best.memory } : null;
+  return best ? { memory: best.memory, hash: best.hash, counter: best.counter } : null;
 }
 
 function readStdin() {
@@ -112,6 +112,23 @@ function emit(value) {
   return new Promise((resolve) => process.stdout.write(JSON.stringify(value) + "\n", () => resolve()));
 }
 
+const SERVED_MAX_LINES = 400;
+const SERVED_KEEP_LINES = 200;
+
+/**
+ * Served note: one JSON line per injected hit, hash and time only (no prompt text), so the plugin can
+ * show a "from honcho" block for exactly the memory that reached the agent. Best effort and synchronous:
+ * called after the output was flushed, and any failure (read-only dir, full disk) is ignored.
+ */
+function noteServed(dir, thread, entry) {
+  try {
+    const path = join(dir, `${thread}.served.jsonl`);
+    appendFileSync(path, JSON.stringify({ v: 1, hash: entry.hash, counter: entry.counter, at: Date.now() }) + "\n", { mode: 0o600 });
+    const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
+    if (lines.length > SERVED_MAX_LINES) writeFileSync(path, lines.slice(-SERVED_KEEP_LINES).join("\n") + "\n", { mode: 0o600 });
+  } catch { /* never fail or delay the turn */ }
+}
+
 const debug = (reason) => { if (process.env.BB_HONCHO_HOOK_DEBUG === "1") process.stderr.write(`bb-honcho-hook: ${reason}\n`); };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,6 +153,7 @@ async function prompt(input) {
       debug("hit");
       const event = typeof input.hook_event_name === "string" && input.hook_event_name ? input.hook_event_name : "UserPromptSubmit";
       await emit({ hookSpecificOutput: { hookEventName: event, additionalContext: entry.memory } });
+      noteServed(dir, thread, entry);
       return;
     }
     const left = deadline - Date.now();

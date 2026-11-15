@@ -203,6 +203,20 @@ describe("rpc server", () => {
   });
 });
 
+describe("recall.injections", () => {
+  it("validates input and delegates to recall", async () => {
+    const { bb, call } = fakeBb();
+    const { services } = fakeServices();
+    const seen: unknown[] = [];
+    const injection = { kind: "turn" as const, at: 5, scope: "s", items: [{ content: "c", date: null, sourceThreadId: "t9", sourceTitle: null }] };
+    (services.recall as any).injections = async (input: unknown) => { seen.push(input); return [injection]; };
+    registerRpc(bb, services);
+    expect(await call("recall.injections", { threadId: "t1", since: 3 })).toEqual([injection]);
+    expect(seen).toEqual([{ threadId: "t1", since: 3 }]);
+    await expect(call("recall.injections", {} as never)).rejects.toThrow();
+  });
+});
+
 describe("labels.get", () => {
   it("returns chat titles and project names, null for unknown or untitled", async () => {
     const { bb, call } = fakeBb();

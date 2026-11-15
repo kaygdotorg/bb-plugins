@@ -115,7 +115,7 @@ describe("plugin factory", () => {
   });
 
   it("merges every slice's host ops into one contract", () => {
-    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.skip", "recall.write", "secrets.read"]);
+    expect(Object.keys(hostContract).sort()).toEqual(["harnessConnect", "harnessEnv", "harnessHandOver", "harnessState", "harnessUndo", "recall.delete", "recall.served", "recall.skip", "recall.write", "secrets.read"]);
   });
 
   it("serves the hook env from the one resolver per provider, with the shared hook budget", async () => {
