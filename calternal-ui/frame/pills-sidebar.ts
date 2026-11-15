@@ -194,11 +194,11 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
 }
 
 /* While "…" slides in and the toolbar grows to four pills, the usage pill gives way: it keeps one
-   provider (the one closest to its limit, data-cliproxy-primary) and the others collapse with the
+   provider (this chat's, else the one closest to its limit: footer-usage.ts marks it data-cf-usage-keep) and the others collapse with the
    same timing, so the two never overlap at any frame. */
 @media (hover: hover) {
   ${ROW}${TB_ACTIVE} [data-cliproxy-footer] { gap: 0; }
-  ${ROW}${TB_ACTIVE} [data-cliproxy-footer] > span:not([data-cliproxy-primary]) {
+  ${ROW}${TB_ACTIVE} [data-cliproxy-footer] > span:not([data-cf-usage-keep]) {
     max-width: 0;
     opacity: 0;
     overflow: hidden;

@@ -25,7 +25,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 
 **Small things that add up**
 - **Warm tooltips:** they appear after a short pause. After that, the next one shows instantly.
-- **Footer:** New thread and Search live there, next to Settings. The extra "…" menu only appears when your pointer is near it.
+- **Footer:** New thread and Search live there, next to Settings. The extra "…" menu only appears when your pointer is near it. When the sidebar is narrow, the usage pill shows only the provider of the chat you're in.
 - **Clock:** a 24-hour clock everywhere in bb (you can switch to 12-hour).
 - **Motion:** animations follow the mouse but never the keyboard, so typing always feels instant.
 
