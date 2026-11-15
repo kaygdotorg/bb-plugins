@@ -74,14 +74,14 @@ export function Offline({ message, onRetry }: { message: string; onRetry(): void
   return (
     <div role="alert" className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3">
       <Icon name="CloudOff" aria-hidden="true" className="size-3.5 text-muted-foreground" />
-      <p className="min-w-0 flex-1 text-xs text-muted-foreground">memory is unreachable. {message}</p>
-      <Button variant="ghost" onClick={onRetry}>retry</Button>
+      <p className="min-w-0 flex-1 text-xs text-muted-foreground">can't reach memory right now. {message}</p>
+      <Button variant="ghost" onClick={onRetry}>try again</Button>
     </div>
   );
 }
 
 export function StaleNote({ error }: { error: string | null }) {
-  return error ? <p className="text-2xs text-warning">offline, showing the last result</p> : null;
+  return error ? <p className="text-2xs text-warning">can't reach memory, showing the last result</p> : null;
 }
 
 export function Switch({ checked, onChange, label, description, disabled }: { checked: boolean; onChange(next: boolean): void; label: string; description?: string; disabled?: boolean }) {

@@ -30,7 +30,7 @@ describe("status line", () => {
   it.each([
     [{ state: "saving", lastUploadAt: now - 4000 }, 0, "memory · saving · 4s ago"],
     [{ state: "paused" }, 0, "memory · paused"],
-    [{ state: "offline" }, 3, "memory · offline · 3 queued"],
+    [{ state: "offline" }, 3, "memory · offline · 3 waiting"],
     [{ state: "not-captured" }, 0, "memory · not captured"],
     [{ state: "idle" }, 0, "memory · on"],
   ] as const)("%j", (patch, queued, expected) => {
@@ -45,7 +45,7 @@ describe("thread context card row", () => {
     for (const [patch, text] of [
       [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · \d+s ago/],
       [{ state: "paused" }, /memory · paused/],
-      [{ state: "offline", queued: 3 }, /memory · offline · 3 queued/],
+      [{ state: "offline", queued: 3 }, /memory · offline · 3 waiting/],
       [{ state: "not-captured", reason: "denied by remote" }, /memory · not captured/],
     ] as const) {
       const slot = renderSlot(row, props, { rpc: { "thread.status": () => status(patch as Partial<ThreadMemoryStatus>) } });
@@ -82,7 +82,7 @@ describe("thread context card section", () => {
     });
     expect(await slot.findByText("prefers small commits")).toBeTruthy();
     expect(slot.getByText("uses vitest here")).toBeTruthy();
-    expect(slot.getByText("agent")).toBeTruthy();
+    expect(slot.getByText("written by an agent")).toBeTruthy();
     fireEvent.click(slot.getByText("open memory"));
     expect(slot.inspection.navigateCalls[0]).toMatchObject({ method: "toPluginPanel", path: "memory" });
   });
@@ -90,13 +90,13 @@ describe("thread context card section", () => {
   it("marks stale memory", async () => {
     const a = await app();
     const slot = renderSlot(a.threadContextCardSections[0]!, props, { rpc: { "thread.context": () => ({ scope: null, stale: true, top: [c("1", "old fact")], fromThread: [] }) } });
-    expect(await slot.findByText(/stale/)).toBeTruthy();
+    expect(await slot.findByText(/out of date/)).toBeTruthy();
   });
 
   it("says so when memory is offline and nothing was cached", async () => {
     const a = await app();
     const slot = renderSlot(a.threadContextCardSections[0]!, props, { rpc: { "thread.context": () => { throw new Error("honcho offline"); } } });
-    expect(await slot.findByText(/memory is offline/)).toBeTruthy();
+    expect(await slot.findByText(/can't be reached/)).toBeTruthy();
   });
 });
 
@@ -106,5 +106,70 @@ describe("banner segment", () => {
     const reg = a.threadContextSegments[0]!;
     const slot = renderSlot({ component: reg.summary }, { ...props, segments: [], isExpanded: false, onToggle() {} }, { rpc: { "thread.status": () => status({ state: "paused" }) } });
     expect(await slot.findByText(/memory · paused/)).toBeTruthy();
+  });
+});
+
+describe("banner mode (threadContextCard experiment off)", () => {
+  const segmentProps = { ...props, segments: [], isExpanded: false, onToggle() {} };
+  const visible = async (kind: "banner" | "card") => {
+    const a = await app();
+    const reg = a.threadContextSegments[0]!;
+    let value: unknown = "unset";
+    const Probe = () => { value = reg.useVisible!(props); return null; };
+    renderSlot({ component: Probe }, {}, { threadContextKind: kind, rpc: {} });
+    return value;
+  };
+
+  it("shows the segment in banner mode and leaves it to the card row in card mode", async () => {
+    expect(await visible("banner")).toBe(true);
+    expect(await visible("card")).toBe(false);
+  });
+
+  it("renders each state and toggles pause from the segment", async () => {
+    const a = await app();
+    const reg = a.threadContextSegments[0]!;
+    const rpc = { "thread.status": () => status({ state: "saving", lastUploadAt: Date.now() - 4000 }), "pause.set": () => ({ ok: true }) };
+    const slot = renderSlot({ component: reg.summary }, segmentProps, { rpc });
+    fireEvent.click(await slot.findByText(/memory · saving · \d+s ago/));
+    await waitFor(() => expect(slot.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: true }));
+    slot.lifecycle.unmount();
+
+    const paused = renderSlot({ component: reg.summary }, segmentProps, { rpc: { "thread.status": () => status({ state: "paused" }), "pause.set": () => ({ ok: true }) } });
+    fireEvent.click(await paused.findByText("memory · paused"));
+    await waitFor(() => expect(paused.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: false }));
+    paused.lifecycle.unmount();
+
+    const off = renderSlot({ component: reg.summary }, segmentProps, { rpc: { "thread.status": () => status({ state: "not-captured", reason: "denied by remote" }) } });
+    const button = (await off.findByText("memory · not captured")).closest("button")!;
+    expect(button.disabled).toBe(true);
+  });
+
+  it("is on screen before the first answer, and when the answer fails", async () => {
+    const a = await app();
+    const reg = a.threadContextSegments[0]!;
+    const waiting = renderSlot({ component: reg.summary }, segmentProps, { rpc: { "thread.status": () => new Promise(() => {}) } });
+    expect(waiting.getByText("memory · checking")).toBeTruthy();
+    waiting.lifecycle.unmount();
+    const failing = renderSlot({ component: reg.summary }, segmentProps, { rpc: { "thread.status": () => { throw new Error("down"); } } });
+    expect(await failing.findByText("memory · offline")).toBeTruthy();
+  });
+
+  it("the card row is on screen before the first answer too", async () => {
+    const a = await app();
+    const slot = renderSlot(a.threadContextCardRows[0]!, props, { rpc: { "thread.status": () => new Promise(() => {}) } });
+    expect(slot.getByText("memory · checking")).toBeTruthy();
+  });
+});
+
+describe("conclusion origin", () => {
+  const c = (id: string, extra = {}) => ({ id, content: `fact ${id}`, observer_id: "a", observed_id: "b", created_at: "2026-01-01T00:00:00Z", agentWritten: false, confirmed: false, ...extra });
+  it("shows learned, falls back to agentWritten without origin, and hides the badge once confirmed", async () => {
+    const a = await app();
+    const slot = renderSlot(a.threadContextCardSections[0]!, props, {
+      rpc: { "thread.context": () => ({ scope: "bb", stale: false, top: [c("1", { origin: "learned" }), c("2", { agentWritten: true }), c("3", { origin: "confirmed", confirmed: true })], fromThread: [] }) },
+    });
+    expect(await slot.findByText("learned")).toBeTruthy();
+    expect(slot.getByText("written by an agent")).toBeTruthy();
+    expect(slot.queryByText("confirmed")).toBeNull();
   });
 });
