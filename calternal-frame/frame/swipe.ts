@@ -1,7 +1,8 @@
 /**
  * Swipe actions on touch devices, running bb's own actions (no core changes):
  *   thread row (sidebar)   left: Archive   right: Pin / Unpin   (via bb's context menu)
- *   message (chat)         left: Copy      right: Reply         (Copy button; quote into composer)
+ *   message (chat)         right: Reply, iMessage-style (left to right; the bubble follows
+ *                          your finger and a reply arrow grows in behind it). Left: none yet.
  * A horizontal drag slides the row and shows the action in the gap; past the threshold it
  * fires on release. Touches near the left screen edge are left to bb's drawer swipe, and a
  * row being swiped is marked so bb's own sidebar/panel swipes ignore it.
@@ -13,7 +14,8 @@ const THREAD = '[data-sidebar-rename-row][role="button"]';
 const MESSAGE = "[data-timeline-row-id]";
 
 type Side = "left" | "right";
-interface Action { label: string; tone?: "danger"; run: (row: HTMLElement) => void }
+interface Action { label: string; icon?: string; tone?: "danger"; run: (row: HTMLElement) => void }
+const REPLY_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -65,7 +67,7 @@ function reply(row: HTMLElement) {
   editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
 }
 
-const ACTIONS: Record<"thread" | "message", Record<Side, Action>> = {
+const ACTIONS: Record<"thread" | "message", Partial<Record<Side, Action>>> = {
   thread: {
     // Each row has its own Archive button (bb's hover action); the menu is only a fallback.
     left: {
@@ -78,8 +80,7 @@ const ACTIONS: Record<"thread" | "message", Record<Side, Action>> = {
     right: { label: "Pin", run: (row) => void viaContextMenu(row, /^(un)?pin$/i) },
   },
   message: {
-    left: { label: "Copy", run: (row) => row.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')?.click() },
-    right: { label: "Reply", run: reply },
+    right: { label: "Reply", icon: REPLY_ICON, run: reply },
   },
 };
 
@@ -128,20 +129,30 @@ export function mountSwipes(): () => void {
       if (parent && getComputedStyle(parent).position === "static") parent.style.position = "relative";
       parent?.insertBefore(label, row);
     }
-    dx = Math.max(-140, Math.min(140, x));
-    const side: Side = dx < 0 ? "left" : "right";
+    const side: Side = x < 0 ? "left" : "right";
     const action = ACTIONS[kind][side];
+    // No action this way: the row barely gives, like iMessage. Otherwise 1:1 to the
+    // threshold, then resistance.
+    const mag = Math.abs(x);
+    const travel = !action ? Math.min(12, mag * 0.15) : mag <= THRESHOLD ? mag : THRESHOLD + (mag - THRESHOLD) * 0.35;
+    dx = Math.sign(x) * Math.min(140, travel);
     row.style.transition = "none";
     row.style.translate = `${dx}px 0`;
-    label.textContent = action.label;
+    if (!action) { label.style.opacity = "0"; return; }
+    const ready = Math.abs(dx) >= THRESHOLD;
+    if (ready && !label.hasAttribute("data-ready")) navigator.vibrate?.(6);
+    if (action.icon) label.innerHTML = action.icon; else label.textContent = action.label;
+    label.setAttribute("aria-label", action.label);
     label.dataset.tone = action.tone ?? "";
     label.style.left = side === "right" ? "0" : "auto";
     label.style.right = side === "left" ? "0" : "auto";
     label.style.top = `${row.offsetTop}px`;
     label.style.height = `${row.offsetHeight}px`;
     label.style.bottom = "auto";
-    label.style.opacity = String(Math.min(1, Math.abs(dx) / THRESHOLD));
-    label.toggleAttribute("data-ready", Math.abs(dx) >= THRESHOLD);
+    const progress = Math.min(1, Math.abs(dx) / THRESHOLD);
+    label.style.opacity = String(progress);
+    label.style.scale = action.icon ? String(0.6 + 0.4 * progress) : "";
+    label.toggleAttribute("data-ready", ready);
   };
 
   const onEnd = () => {
@@ -151,7 +162,7 @@ export function mountSwipes(): () => void {
     const action = ACTIONS[kind][dx < 0 ? "left" : "right"];
     settle();
     row = null;
-    if (fire) { navigator.vibrate?.(8); action.run(target); }
+    if (fire && action) action.run(target);
   };
 
   // bb decides its drawer/panel swipe from the target at pointerdown, which fires before
