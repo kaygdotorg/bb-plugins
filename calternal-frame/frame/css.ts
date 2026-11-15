@@ -290,6 +290,48 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     backdrop-filter: blur(40px) saturate(140%);
     border-left-color: transparent !important;
   }
+  /* Search palette (bb's persistent drawer): an inset sheet whose corners are concentric
+     with the screen's. --cf-device-radius is the iPhone 16 Pro Max display radius (~62pt);
+     sheet radius = device radius - inset. Frosted like the menus. */
+  ${R} [data-persistent-drawer-content] {
+    --cf-device-radius: 62px;
+    --cf-sheet-inset: 8px;
+    --background: transparent;
+    left: var(--cf-sheet-inset) !important;
+    right: var(--cf-sheet-inset) !important;
+    margin-bottom: var(--cf-sheet-inset);
+    border-radius: calc(var(--cf-device-radius) - var(--cf-sheet-inset)) !important;
+    border-color: var(--cf-edge) !important;
+    overflow: clip;
+    background: color-mix(in oklab, var(--popover) 78%, transparent) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    backdrop-filter: blur(30px) saturate(160%);
+    box-shadow: 0 18px 50px -12px rgb(0 0 0 / 0.6);
+    padding-bottom: max(0px, calc(var(--bb-safe-area-bottom, env(safe-area-inset-bottom)) - var(--cf-sheet-inset))) !important;
+  }
+  ${R} [data-persistent-drawer-content] [data-palette-input-band] { background: transparent !important; padding-top: 0.5rem; }
+  /* Short visible area (keyboard up): the sidebar scrolls as one column so the thread
+     list keeps its rows instead of being squeezed to nothing. Set by frame/touch.ts. */
+  ${R}[data-cf-short] [data-testid="app-layout-root"] [data-sidebar="sidebar"] { overflow-y: auto; }
+  ${R}[data-cf-short] [data-testid="app-layout-root"] [data-sidebar="sidebar"] [data-sidebar="content"] { flex: 0 0 auto; min-height: auto; overflow: visible; }
+  /* Pull-down-to-search pill (frame/touch.ts). */
+  ${R} [data-cf-pull] {
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    translate: -50% -110%;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    background: color-mix(in oklab, var(--popover) 80%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  ${R} [data-cf-pull]::after { content: "Pull to search"; }
+  ${R} [data-cf-pull][data-state="ready"] { color: var(--cf-accent); }
+  ${R} [data-cf-pull][data-state="ready"]::after { content: "Release to search"; }
   /* Touch: the compact nav rows match bb's own touch row height. */
   @media (pointer: coarse) {
     ${R} [data-cf-nav] > button { height: 2.25rem; font-size: 0.875rem; }
