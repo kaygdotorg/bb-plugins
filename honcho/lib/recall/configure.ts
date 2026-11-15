@@ -1,0 +1,57 @@
+import type { BbPluginApi, PluginAgentConfiguration, PluginAgentConfigurationContext } from "@get-bb/plugin-sdk";
+import { buildInstructions } from "./format.js";
+import { recallInternals, type RecallDeps, type RecallRuntime } from "./service.js";
+import { ScopeResolver } from "./shared.js";
+import { HONCHO_TOOL_NAMES } from "../tools/names.js";
+
+export const SIDE_CHAT_PLUGIN_ID = "side-chat";
+
+export function isSideChat(ctx: Pick<PluginAgentConfigurationContext, "origin">): boolean {
+  return ctx.origin.kind === "fork" && ctx.origin.pluginId === SIDE_CHAT_PLUGIN_ID;
+}
+
+/** Tools for this resolution: none for codex unless `codexUseBbTools` (codex keeps its own honcho MCP). */
+export function selectTools(providerId: string, codexUseBbTools: boolean): string[] {
+  return providerId === "codex" && !codexUseBbTools ? [] : [...HONCHO_TOOL_NAMES];
+}
+
+/**
+ * The only session-build injection point (contributeInstructions is unused).
+ * Synchronous; reads the in-memory cache only and schedules refreshes.
+ */
+export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: RecallRuntime): void {
+  const { shared, cache, settings, deps } = recallInternals(recall);
+  bb.agents.configure((ctx): PluginAgentConfiguration => {
+    const tools = selectTools(ctx.provider.id, settings.codexUseBbTools());
+    let instructions: string | undefined;
+    try {
+      const sideChat = isSideChat(ctx);
+      const parentThreadId = ctx.thread.parentThreadId ?? ctx.thread.sourceThreadId;
+      const input = {
+        threadId: ctx.thread.id, parentThreadId, sideChat,
+        hostId: ctx.host.id, path: ctx.environment.path, projectName: ctx.project.name,
+      };
+      const { scope, provisional } = shared.scopes.sync(input);
+      if (provisional) void shared.scopes.resolve(input).then(s => { if (cache.want(s)) cache.request(true); }, () => undefined);
+      if (cache.want(scope)) cache.request(true);
+      const snap = cache.snapshot();
+      if (snap.lastSuccess === null) { cache.request(true); return { tools, skills: [] }; }
+      const entry = snap.scopes.get(scope);
+      const marks = shared.store.agentWrittenInScope(scope);
+      const byId = new Map(snap.recent.map(c => [c.id, c]));
+      const agentNotes = marks.flatMap(m => { const c = byId.get(m.id); return c ? [{ content: c.content, confirmed: m.confirmed }] : []; });
+      instructions = buildInstructions({
+        peer: snap.peer ?? "user", card: snap.card, scope, scopeSummary: entry?.summary ?? null,
+        agentNotes, stale: snap.stale, refreshedAt: snap.lastSuccess,
+      });
+      if (instructions) {
+        const contextThread = ScopeResolver.contextThread(input);
+        deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `session memory injected (scope ${scope}${contextThread !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
+      }
+    } catch (error) {
+      bb.log.warn(`honcho configure: ${error instanceof Error ? error.name : "error"}`);
+      instructions = undefined;
+    }
+    return instructions ? { tools, skills: [], instructions } : { tools, skills: [] };
+  });
+}
