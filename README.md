@@ -6,5 +6,6 @@ kayg's plugins for [bb](https://getbb.app). Each plugin lives in its own directo
 |---|---|
 | [calternal-ui](calternal-ui/) | Calternal's look for bb: wallpaper backdrop, floating glass chat card, accent colour, Google Fonts, compact composer and sidebar, light and dark |
 | [cliproxy-usage](cliproxy-usage/) | CLIProxyAPI quota for Claude and Codex: percentages in the sidebar footer, per-account breakdown |
+| [honcho](honcho/) | Honcho memory for every harness bb runs: captures each thread, recalls memory at session start and per turn, `honcho_*` tools, and a Memory page |
 
 Install a plugin from its directory with `bb plugin build && bb plugin install . --yes`. Notes for coding agents are in [AGENTS.md](AGENTS.md) and in each plugin's own `AGENTS.md`.
