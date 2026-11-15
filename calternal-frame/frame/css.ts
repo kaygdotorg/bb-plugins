@@ -30,9 +30,11 @@ ${R} {
   font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
   --cf-gap: 8px;
   --cf-radius: 14px;
-  /* Clear frosted glass: no grey wash; only a darker veil of the card's own tint. */
-  --cf-composer: color-mix(in oklab, var(--cf-bg) 38%, transparent);
-  --cf-composer-blur: blur(24px) saturate(170%);
+  /* Shared glass for floating panes (composer, inset sheets): one look, defined once. */
+  --cf-glass-fill: color-mix(in oklab, var(--cf-bg) 38%, transparent);
+  --cf-glass-blur: blur(24px) saturate(170%);
+  --cf-glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
   --cf-edge: rgb(255 255 255 / 0.55);
   --cf-shadow: 0 6px 14px -7px rgb(60 40 20 / 0.28);
   background: var(--cf-side) !important;
@@ -114,6 +116,30 @@ ${R} .text-background { color: var(--cf-bg) !important; }
 ${R} [role="switch"][data-state="checked"] { background-color: var(--cf-accent) !important; }
 ${R} [role="switch"][data-state="checked"] > span { background-color: var(--cf-accent-fg) !important; }
 ${R} [role="switch"][data-state="unchecked"] > span { background-color: var(--foreground) !important; }
+
+/* Swipe actions (frame/swipe.ts): the row slides, an action label shows in the gap. */
+${R} [data-cf-swipe-label] {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  opacity: 0;
+  transition: color 120ms, opacity 120ms;
+}
+${R} [data-cf-swipe-label][data-ready] { color: var(--cf-accent); }
+${R} [data-cf-swipe-label][data-ready][data-tone="danger"] { color: var(--destructive); }
+/* Keyboard-down button in the composer's submit group (frame/touch.ts): only while the keyboard is up. */
+${R} [data-cf-kb] { display: none; }
+${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }
+
+/* Context menus opened by a swipe to run an action stay invisible. */
+${R}[data-cf-silent-menu] :is([role="menu"], [data-persistent-drawer-content], [data-persistent-drawer-backdrop]) { opacity: 0 !important; }
 
 /* Menus, popovers, context menus: frosted and tinted, not flat grey. */
 ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > [data-state]) {
@@ -303,13 +329,22 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     border-radius: calc(var(--cf-device-radius) - var(--cf-sheet-inset)) !important;
     border-color: var(--cf-edge) !important;
     overflow: clip;
-    background: color-mix(in oklab, var(--popover) 78%, transparent) !important;
-    -webkit-backdrop-filter: blur(30px) saturate(160%);
-    backdrop-filter: blur(30px) saturate(160%);
-    box-shadow: 0 18px 50px -12px rgb(0 0 0 / 0.6);
+    background: var(--cf-glass-fill) !important;
+    -webkit-backdrop-filter: var(--cf-glass-blur);
+    backdrop-filter: var(--cf-glass-blur);
+    box-shadow: var(--cf-glass-highlight), var(--cf-glass-shadow), 0 18px 50px -12px rgb(0 0 0 / 0.5) !important;
     padding-bottom: max(0px, calc(var(--bb-safe-area-bottom, env(safe-area-inset-bottom)) - var(--cf-sheet-inset))) !important;
   }
   ${R} [data-persistent-drawer-content] [data-palette-input-band] { background: transparent !important; padding-top: 0.5rem; }
+  /* Inside the sheet everything is clear: the sheet is the one glass layer. Its results
+     list is a listbox, which the menu rule would otherwise give its own fill and blur. */
+  ${R} [data-persistent-drawer-content] :is([role="listbox"], [data-palette-results-viewport]) {
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  /* A lighter scrim, so the glass has something to show. */
+  ${R} [data-persistent-drawer-backdrop] { background: rgb(0 0 0 / 0.22) !important; }
   /* Short visible area (keyboard up): the sidebar scrolls as one column so the thread
      list keeps its rows instead of being squeezed to nothing. Set by frame/touch.ts. */
   ${R}[data-cf-short] [data-testid="app-layout-root"] [data-sidebar="sidebar"] { overflow-y: auto; }
@@ -398,11 +433,11 @@ function cardInterior(scope: string): string {
 
   /* The composer: its own frosted pane, blurring the chat and wallpaper under it. */
   ${scope} form[data-promptbox] {
-    background: var(--cf-composer) !important;
-    -webkit-backdrop-filter: var(--cf-composer-blur);
-    backdrop-filter: var(--cf-composer-blur);
+    background: var(--cf-glass-fill) !important;
+    -webkit-backdrop-filter: var(--cf-glass-blur);
+    backdrop-filter: var(--cf-glass-blur);
     border-color: var(--cf-edge) !important;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 24px -14px rgb(0 0 0 / 0.5) !important;
+    box-shadow: var(--cf-glass-highlight), var(--cf-glass-shadow) !important;
   }
 `;
 }
