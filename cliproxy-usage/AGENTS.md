@@ -9,7 +9,7 @@ Read this before changing anything. Keep it short; update it in the same commit 
 | `server.ts` | Settings, the CLIProxyAPI client (credentials, then quota per account), the RPC contract |
 | `lib/pool.ts` | Pools accounts per provider for the footer (`usage_summary`) |
 | `app.tsx` | The breakdown (a sidebar-footer disclosure) and registrations |
-| `footer.tsx` | The percentages inside bb's footer button |
+| `footer.tsx` | The percentages, an overlay on bb's footer item (clicks press bb's button) |
 
 ## Rules
 
