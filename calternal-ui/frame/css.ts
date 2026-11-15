@@ -188,8 +188,10 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
 ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   content: "";
   position: absolute;
-  right: -0.5rem;      /* 8 units stick out to the right */
-  bottom: -0.125rem;   /* the point hangs 2 units below */
+  /* Offsets count from inside the bubble's 1px (transparent) border: subtract it, or the
+     tail overlaps the bubble by 1px and the two translucent fills show a lighter seam. */
+  right: calc(-0.5rem - 1px);     /* 8 units stick out to the right */
+  bottom: calc(-0.125rem - 1px);  /* the point hangs 2 units below */
   width: 0.875rem;
   height: 1.25rem;
   background: var(--surface-recessed);
@@ -197,6 +199,27 @@ ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M6 0C6.2 8 8.4 14 12.2 17.6C13.3 18.3 13.5 19 12.6 19.4C10 20.1 7.5 19.9 5 19C3.4 18.5 1.8 18 0 18L6 18Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   pointer-events: none;
 }
+
+/* Wide chat (Settings → Chat layout, default): bb's 760px column becomes the whole card.
+   Your bubbles reach its right end, the agent writes from its left end across the full
+   width (a 48rem cap read as "back to narrow" in older messages), and the composer spans
+   the same width. The selector must not rely on data-scroll-attached alone. The left gutter is room
+   for the table-of-contents rail, which moves there. */
+${R}[data-cf-wide] main [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto,
+${R}[data-cf-wide] main div.max-w-\\[760px\\]:has(> [data-app-composer]) {
+  max-width: none;
+  padding-left: 3.25rem;
+  padding-right: 1.5rem;
+}
+
+/* bb's thread table of contents (the tick rail): on the left, out of the way, shown only
+   while hovered, focused or open. */
+${R} main div:has(> div > [data-thread-toc]) { align-items: flex-start !important; }
+${R} [data-thread-toc] { opacity: 0; transition: opacity 160ms ease; }
+${R} [data-thread-toc]:is(:hover, :focus-within, :has([aria-expanded="true"])) { opacity: 1; }
+/* Its panel opens beside the rail: on the left side that is to the right (bb anchors it to
+   the rail's left, which now is off the card). */
+${R} [data-thread-toc] [id^="thread-toc-panel"] { right: auto !important; left: 100% !important; padding-right: 0 !important; padding-left: 0.25rem !important; }
 
 /* bb's "thread context" strip above the composer (git changed files, pull request) repeats
    what the right sidebar's info tab shows, so it is not shown in the chat. */

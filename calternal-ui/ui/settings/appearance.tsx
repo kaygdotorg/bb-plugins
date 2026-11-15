@@ -104,6 +104,14 @@ export function AppearanceSection({ state, rpc, commit }: { state: FrameState; r
             Reset
           </button>
         </Row>
+        <Row label="Chat layout">
+          {([["wide", "Wide"], ["centered", "Centred"]] as const).map(([value, text]) => (
+            <label key={value} className="mr-2 flex cursor-pointer items-center gap-2 text-sm">
+              <input type="radio" name="cf-chat-width" checked={state.chatWidth === value} onChange={() => void save({ chatWidth: value })} />
+              {text}
+            </label>
+          ))}
+        </Row>
         <Row label="Clock">
           {([["24h", "24-hour"], ["12h", "12-hour"], ["system", "Browser default"]] as const).map(([value, text]) => (
             <label key={value} className="mr-2 flex cursor-pointer items-center gap-2 text-sm">

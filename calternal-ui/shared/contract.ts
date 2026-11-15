@@ -30,6 +30,8 @@ export const prefsSchema = z.object({
   uiScale: z.number().min(75).max(150),
   /** Clock format for every time bb shows; "system" leaves bb's own (the browser locale's). */
   clock: z.enum(["24h", "12h", "system"]),
+  /** Chat layout: "wide" fills the card (your bubbles right, the agent left); "centered" is bb's 760px column. */
+  chatWidth: z.enum(["wide", "centered"]),
 });
 export type FramePrefs = z.infer<typeof prefsSchema>;
 export type SurfacePrefs = z.infer<typeof surfaceSchema>;
@@ -43,6 +45,7 @@ const prefsPatchSchema = z.object({
   fonts: fontsSchema.partial().optional(),
   uiScale: z.number().min(75).max(150).optional(),
   clock: z.enum(["24h", "12h", "system"]).optional(),
+  chatWidth: z.enum(["wide", "centered"]).optional(),
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }).optional(),
 });
 export type FramePrefsPatch = z.infer<typeof prefsPatchSchema>;

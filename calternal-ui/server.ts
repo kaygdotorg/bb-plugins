@@ -61,6 +61,7 @@ export default async function plugin(bb: BbPluginApi) {
         fonts: { ...current.fonts, ...patch.fonts },
         uiScale: patch.uiScale ?? current.uiScale,
         clock: patch.clock ?? current.clock,
+        chatWidth: patch.chatWidth ?? current.chatWidth,
         accent: patch.accent ?? current.accent,
       });
       return state();

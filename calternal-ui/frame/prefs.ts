@@ -10,7 +10,7 @@ import { preblurBlurs } from "./preblur";
 import { setClock } from "./clock";
 
 type Surface = FramePrefs["sidebar"];
-export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale"> & Partial<Pick<FramePrefs, "clock">>;
+export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale"> & Partial<Pick<FramePrefs, "clock" | "chatWidth">>;
 
 const root = () => document.documentElement.style;
 
@@ -74,6 +74,8 @@ export function applyPrefs(prefs: AppliedPrefs, save = true) {
   preblurBlurs(blurOf(prefs.sidebar), blurOf(prefs.chat));
   setUiScale(prefs.uiScale);
   setClock(prefs.clock ?? "24h");
+  // Wide chat (css.ts): the default; "centered" keeps bb's own column.
+  document.documentElement.toggleAttribute("data-cf-wide", (prefs.chatWidth ?? "wide") === "wide");
   setText(styleElement("cf-fonts"), fontCss(prefs.fonts));
   if (save) cache.set(CACHE.prefs, JSON.stringify(prefs));
 }
@@ -95,6 +97,7 @@ export function applyCachedPrefs() {
 export function clearPrefs() {
   for (const p of ["side", "card"]) for (const k of ["blur", "tint", "dim-a"]) root().removeProperty(`--cf-${p}-${k}`);
   root().removeProperty("--cf-ui-scale");
+  document.documentElement.removeAttribute("data-cf-wide");
   document.getElementById("cf-fonts")?.remove();
   document.getElementById("cf-fontfaces")?.remove();
   document.querySelectorAll('link[data-bb-plugin="calternal-ui"]').forEach((l) => l.remove());
