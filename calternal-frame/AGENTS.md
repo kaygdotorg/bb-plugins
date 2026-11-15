@@ -47,7 +47,12 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - Rows are marked `data-no-sidebar-swipe` on `pointerdown` in the capture phase. bb decides its drawer swipe there, before `touchstart`.
   - Never dispatch Escape: it closes bb's drawer.
 - **Keyboard-down button:** shown while the composer's editor has focus on a touch device (`html[data-cf-keyboard]`). It sits right after bb's mic ("Start voice input") and copies its classes. bb refocuses the editor on any press inside the composer, so the button swallows every event of the press and then blurs. While typing, attachment thumbnails shrink and the editor is capped at 28% of `--cf-vvh` (the visual viewport height).
-- **Message swipes are iMessage-like:** left to right replies (1:1 to the threshold, then resistance, with a growing reply arrow). Right to left has no action yet.
+- **Message swipes are iMessage-like:**
+  - Left to right replies (1:1 to the threshold, then resistance, with a growing reply arrow).
+  - Right to left reveals times: the whole `[data-timeline-row-list]` slides left, and times appear at the chat's right edge. Nothing runs on release.
+  - bb renders no times on phones, so they come from the `message_times` RPC (`bb.sdk.threads.timeline`; its row ids match `[data-timeline-row-id]`). They reach the content script through `frame/times.ts`, a loader the overlay registers.
+  - Rows use `content-visibility`, which clips overflow. That's why the times sit on one fixed layer, not inside the rows.
+- **Phone composer attachments (`frame/attachments.ts`):** bb's attachment grid is hidden (`[data-cf-attach="collapsed"]`). A chip (count + up to three mini thumbnails) sits last in the left button group, and its auto margin centres it in the gap. Tapping it opens bb's own grid as a horizontal, snapping strip. bb's DOM is only marked, never moved. A `MutationObserver` on the composer ignores edits inside the editor.
 - **Pull to search** starts from the top of the sidebar, from the chat's title bar (any scroll position), or in a chat scrolled to the very top. bb anchors long threads and loads older messages, so "the top" is rare there.
 - **The sliding phone pane uses `--cf-device-radius`** (the screen's corner), like Claude's iOS app, plus `corner-shape: squircle` where supported.
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
