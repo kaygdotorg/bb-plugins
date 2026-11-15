@@ -7,10 +7,9 @@ import type { experimental_useSidebarNavigation } from "@get-bb/plugin-sdk/app";
 
 type Actions = ReturnType<typeof experimental_useSidebarNavigation>["actions"];
 
-/** bb's stable ids for the two items that live in the footer instead of the nav. */
+/** bb's stable ids for the two items the footer's + and search run. */
 export const NEW_THREAD = "__bb__/new-thread";
 export const SEARCH_THREADS = "__bb__/search-threads";
-export const FOOTER_ITEMS = new Set([NEW_THREAD, SEARCH_THREADS]);
 
 let current: Actions | null = null;
 

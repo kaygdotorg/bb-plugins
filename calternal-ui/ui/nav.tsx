@@ -4,7 +4,7 @@ import {
   experimental_SidebarNavigationIcon as SidebarNavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
 } from "@get-bb/plugin-sdk/app";
-import { FOOTER_ITEMS, publishNavActions } from "./nav-actions";
+import { publishNavActions } from "./nav-actions";
 
 /**
  * Compact single-column navigation above bb's thread list. Rows are shorter than bb's
@@ -67,10 +67,10 @@ export function ChatNavigation() {
   const { items, activeItemId, isHomeActive, isShortcutModifierHeld, actions } =
     useSidebarNavigation();
   const [moreOpen, setMoreOpen] = useState(false);
-  // New thread and Search live in the sidebar footer (+ and search icons), not here.
-  const navItems = items.filter((item) => !FOOTER_ITEMS.has(item.id));
-  const visibleItems = navItems.filter((item) => item.isVisible);
-  const hiddenItems = navItems.filter((item) => !item.isVisible);
+  // bb's own "Customize navigation" decides what shows here (kayg hides New thread and
+  // Search threads there: they live in the footer as + and search). Hidden items go under More.
+  const visibleItems = items.filter((item) => item.isVisible);
+  const hiddenItems = items.filter((item) => !item.isVisible);
   useEffect(() => {
     publishNavActions(actions);
     return () => publishNavActions(null);
@@ -101,6 +101,8 @@ export function ChatNavigation() {
       <button
         type="button"
         className={rowClass(false)}
+        data-cf-nav-more=""
+        data-open={moreOpen ? "" : undefined}
         aria-expanded={moreOpen}
         onClick={() => setMoreOpen((v) => !v)}
       >

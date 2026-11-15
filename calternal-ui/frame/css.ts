@@ -242,6 +242,42 @@ ${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/search"] {
 ${R} [data-sidebar="footer"] li[data-footer-item="builtin:settings"] { order: 3; }
 ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]) { order: 4; }
 
+/* Quiet sidebar: "More" (top) and bb's footer "…" appear only while the pointer is over the
+   sidebar or focus is inside it, fading and sliding in and taking their space only then.
+   Touch screens have no hover: they always show. The footer item keeps bb's 2rem when shown
+   (bb measures footer items to decide what overflows). */
+@media (hover: hover) {
+  ${R} [data-cf-nav-more] {
+    max-height: 0;
+    opacity: 0;
+    translate: 0 -0.25rem;
+    overflow: hidden;
+    transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  ${R} [data-sidebar="sidebar"]:is(:hover, :focus-within) [data-cf-nav-more],
+  ${R} [data-cf-nav-more][data-open] { max-height: 2.25rem; opacity: 1; translate: 0 0; }
+
+  ${R} [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]) {
+    width: 0;
+    min-width: 0 !important;
+    margin-inline-start: -0.25rem; /* the row's gap, so the hidden item takes no space at all */
+    opacity: 0;
+    translate: -0.375rem 0;
+    overflow: hidden;
+    transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  ${R} [data-sidebar="sidebar"]:is(:hover, :focus-within) [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]),
+  ${R} [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]):has([data-state="open"]) {
+    width: 2rem;
+    margin-inline-start: 0;
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (hover: hover) and (prefers-reduced-motion: reduce) {
+  ${R} :is([data-cf-nav-more], [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item])) { transition: opacity 120ms ease; translate: none !important; }
+}
+
 /* Strips stacked above the composer (bb's git status, plugin notices) are solid panels in
    bb; here they share the composer's glass. Text only, so a plain backdrop-filter is fine. */
 ${R} [data-app-composer] section.bg-surface-raised-solid {
