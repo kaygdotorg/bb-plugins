@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { migrateOutbox, openOutbox, Outbox, OUTBOX_MIGRATIONS } from "../lib/outbox";
 const databases: Database.Database[] = [];
@@ -10,11 +13,32 @@ describe("content-free outbox", () => {
     const { db, outbox } = setup(); outbox.advance("thread", 5);
     migrateOutbox(db); const reopened = new Outbox(db);
     expect(reopened.cursor("thread")).toBe(5);
-    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   });
   it("rejects future schema versions", () => {
-    const { db } = setup(); db.prepare("INSERT INTO honcho_migrations VALUES (4,0)").run();
+    const { db } = setup(); db.prepare(`INSERT INTO honcho_migrations VALUES (${OUTBOX_MIGRATIONS.length + 1},0)`).run();
     expect(() => migrateOutbox(db)).toThrow("Unsupported");
+  });
+  it("upload leases: one owner at a time across connections; expired leases are taken over", () => {
+    const dir = mkdtempSync(join(tmpdir(), "honcho-lease-"));
+    try {
+      const a = new Database(join(dir, "data.db")), b = new Database(join(dir, "data.db"));
+      databases.push(a, b);
+      const old = new Outbox(a), next = new Outbox(b);
+      expect(old.acquireLease("t", "gen-old", 1_000, 60_000)).toBe(true);
+      expect(next.acquireLease("t", "gen-new", 2_000, 60_000)).toBe(false);
+      expect(next.leaseOwner("t", 2_000)).toBe("gen-old");
+      expect(old.acquireLease("t", "gen-old", 30_000, 60_000)).toBe(true); // renewal
+      expect(next.acquireLease("t", "gen-new", 61_000, 60_000)).toBe(false); // renewed, still live
+      expect(next.acquireLease("t", "gen-new", 90_000, 60_000)).toBe(true); // stale: taken over
+      old.releaseLease("t", "gen-old"); // not the holder any more: no effect
+      expect(next.leaseOwner("t", 90_001)).toBe("gen-new");
+      next.releaseLeases("gen-new");
+      expect(old.leaseOwner("t", 90_001)).toBeUndefined();
+      expect(old.acquireLease("t", "gen-old", 90_002, 60_000)).toBe(true);
+      old.deleteThread("t");
+      expect(next.leaseOwner("t", 90_003)).toBeUndefined();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it("clears retry state without moving the cursor", () => {
     const { outbox } = setup(); outbox.advance("t", 4); outbox.fail("t", "offline", 0);
@@ -142,7 +166,7 @@ describe("content-free outbox", () => {
   it("contains no message/content columns", () => {
     const { db } = setup();
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
-    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "honcho_migrations", "in_flight", "meta", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
+    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "honcho_migrations", "in_flight", "leases", "meta", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
     for (const { name } of tables) {
       const columns = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>;
       expect(columns.some(c => /content|body|message|payload/.test(c.name))).toBe(false);

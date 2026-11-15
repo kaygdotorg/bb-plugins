@@ -27,6 +27,9 @@ export const OUTBOX_MIGRATIONS = [
   `ALTER TABLE pause_ranges ADD COLUMN since_at INTEGER;
    UPDATE pause_ranges SET since_at=from_value WHERE kind='project';
    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+  // v4: per-thread upload leases, so two plugin generations (old one still uploading during a reload,
+  // new one catching up) never POST or recover the same thread at once.
+  `CREATE TABLE leases (thread TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);`,
 ] as const;
 export interface InFlight { thread: string; firstSeq: number; lastSeq: number; startedAt: number }
 export interface PauseRange { kind: "thread" | "project"; id: string; from: number; to: number | null; sinceAt: number | null }
@@ -77,6 +80,24 @@ export class Outbox {
       this.db.prepare("DELETE FROM in_flight WHERE thread=?").run(thread);
       this.db.prepare("DELETE FROM retries WHERE thread=?").run(thread);
     })();
+  }
+  /** Takes (or renews) the thread's upload lease for `owner` until now+ttl. Succeeds when the
+   * thread has no lease, an expired one, or one `owner` already holds. One statement, so two
+   * connections to the same database can't both win. */
+  acquireLease(thread: string, owner: string, now: number, ttlMs: number): boolean {
+    this.db.prepare(`INSERT INTO leases VALUES (?,?,?) ON CONFLICT(thread) DO UPDATE SET owner=excluded.owner, expires_at=excluded.expires_at
+      WHERE leases.owner=excluded.owner OR leases.expires_at<=?`).run(thread, owner, now + ttlMs, now);
+    return this.leaseOwner(thread, now) === owner;
+  }
+  /** The live lease holder, or undefined when there is none or it expired. */
+  leaseOwner(thread: string, now: number): string | undefined {
+    return (this.db.prepare("SELECT owner FROM leases WHERE thread=? AND expires_at>?").get(thread, now) as { owner: string } | undefined)?.owner;
+  }
+  releaseLease(thread: string, owner: string): void {
+    this.db.prepare("DELETE FROM leases WHERE thread=? AND owner=?").run(thread, owner);
+  }
+  releaseLeases(owner: string): void {
+    this.db.prepare("DELETE FROM leases WHERE owner=?").run(owner);
   }
   retry(thread: string): RetryState | undefined {
     const row = this.db.prepare("SELECT * FROM retries WHERE thread=?").get(thread) as { attempts: number; next_at: number; last_error: string } | undefined;
@@ -186,7 +207,7 @@ export class Outbox {
   /** Removes the thread's state, including its pause ranges. Project pauses stay. */
   deleteThread(thread: string): void {
     this.db.transaction(() => {
-      for (const table of ["cursors", "in_flight", "retries", "switch_over", "fork_sources", "superseded", "provider_threads"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
+      for (const table of ["cursors", "in_flight", "retries", "switch_over", "fork_sources", "superseded", "provider_threads", "leases"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
       this.db.prepare("DELETE FROM pause_ranges WHERE kind='thread' AND id=?").run(thread);
     })();
   }
