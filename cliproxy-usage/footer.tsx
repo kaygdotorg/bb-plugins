@@ -39,6 +39,12 @@ button[${COMPACT}] > * { visibility: hidden; }
 `;
 
 const NAMES = { claude: "Claude", codex: "Codex" } as const;
+
+/** The last summary, so a reload paints the numbers at once instead of ~4s later. */
+const CACHE_KEY = "cliproxy-usage:footer-summary";
+function cachedSummary(): UsageSummary | null {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as UsageSummary | null; } catch { return null; }
+}
 /** bb's own provider logos, drawn as a mask so they take the text colour. */
 const LOGOS = {
   claude: "/api/v1/system/providers/claude-code/logo",
@@ -101,14 +107,18 @@ export function FooterUsage() {
   const { values } = useSettings();
   const enabled = values?.footer !== false;
   const prefs = prefsFrom(values);
-  const [summary, setSummary] = useState<UsageSummary | null>(null);
+  const [summary, setSummary] = useState<UsageSummary | null>(cachedSummary);
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
     const load = () => rpc.call("usage_summary", { refresh: false })
-      .then((value) => { if (alive) setSummary(value); })
+      .then((value) => {
+        if (!alive) return;
+        setSummary(value);
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify(value)); } catch { /* private mode */ }
+      })
       .catch(() => { if (alive) setSummary(null); });
     void load();
     const timer = window.setInterval(load, 60_000);
@@ -153,12 +163,15 @@ export function FooterUsage() {
       current.style.setProperty("--cliproxy-room", `${Math.max(item.offsetWidth, next - left - 4)}px`);
     };
     attach();
+    // bb draws the footer a moment after load: retry quickly at first, then once a second.
+    const early = [100, 300, 700].map((ms) => window.setTimeout(attach, ms));
     const timer = window.setInterval(attach, 1000);
     const resize = new ResizeObserver(attach);
     const row = document.querySelector(BUTTON)?.closest("ul");
     if (row) resize.observe(row);
     return () => {
       window.clearInterval(timer);
+      early.forEach(window.clearTimeout);
       resize.disconnect();
       current?.parentElement?.querySelector(BUTTON.split(" > ")[1])?.removeAttribute(COMPACT);
       current?.remove();
