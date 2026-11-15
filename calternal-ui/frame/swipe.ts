@@ -1,7 +1,7 @@
 /**
  * Swipe actions on touch devices, running bb's own actions (no core changes):
  *   thread row (sidebar)   left: Archive   right: Pin / Unpin   (via bb's context menu)
- *   message (chat)         right: Reply, iMessage-style (left to right; the bubble follows
+ *   message (chat)         OFF (CHAT_SWIPES): right: Reply, iMessage-style (left to right; the bubble follows
  *                          your finger and a reply arrow grows in behind it).
  *                          left: reveal times, iMessage-style (the whole conversation slides
  *                          left and each visible message's time shows at the right edge).
@@ -10,6 +10,9 @@
  * row being swiped is marked so bb's own sidebar/panel swipes ignore it.
  */
 import { formatTime, messageTimes } from "./times";
+
+/** Swipes on chat messages (reply, times reveal): off. Thread rows in the drawer still swipe. */
+const CHAT_SWIPES = false;
 
 const THRESHOLD = 72;
 const EDGE = 28;
@@ -178,7 +181,9 @@ export function mountSwipes(): () => void {
     if (touch.clientX < EDGE) return; // the screen edge belongs to bb's drawer swipe
     const target = e.target as Element;
     const thread = target.closest<HTMLElement>(THREAD);
-    const message = thread ? null : target.closest<HTMLElement>(MESSAGE);
+    // Chat messages don't swipe (kayg: swipe actions don't fit an AI chat; times are always shown now,
+    // msg-times.ts). The message actions below are kept but switched off by CHAT_SWIPES.
+    const message = thread || !CHAT_SWIPES ? null : target.closest<HTMLElement>(MESSAGE);
     row = thread ?? message;
     if (!row) return;
     kind = thread ? "thread" : "message";

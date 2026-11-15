@@ -1,7 +1,7 @@
 /**
- * Message times for the timestamp reveal. bb renders no times in the phone layout, so the
- * overlay (which can call the plugin's RPC) registers a loader here and the swipe module
- * (a plain content script) asks for times through it. Cached per thread for 30s.
+ * Message times. bb renders none for your messages (and none at all in the phone layout), so the
+ * overlay (which can call the plugin's RPC) registers a loader here and msg-times.ts (a plain content
+ * script) asks for times through it. Cached per thread for 30s; `fresh` skips the cache (a new message).
  */
 type Loader = (threadId: string) => Promise<Record<string, number>>;
 
@@ -13,9 +13,9 @@ export function registerTimesLoader(next: Loader | null) {
 }
 
 /** Times for a thread's rows, keyed by [data-timeline-row-id]; {} if unavailable. */
-export async function messageTimes(threadId: string): Promise<Record<string, number>> {
+export async function messageTimes(threadId: string, fresh = false): Promise<Record<string, number>> {
   const hit = cache.get(threadId);
-  if (hit && Date.now() - hit.at < 30_000) return hit.times;
+  if (hit && !fresh && Date.now() - hit.at < 30_000) return hit.times;
   if (!loader) return {};
   try {
     const times = await loader(threadId);

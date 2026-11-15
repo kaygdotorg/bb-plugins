@@ -28,12 +28,12 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 - **Warm tooltips:** they appear after a short pause. After that, the next one shows instantly.
 - **Footer:** New thread and Search live there, next to Settings. The extra "…" menu only appears when your pointer is near it. When the sidebar is narrow, the usage pill shows only the provider of the chat you're in.
 - **Clock:** a 24-hour clock everywhere in bb (you can switch to 12-hour).
+- **Message times:** every message, yours and the agent's, shows when it was sent.
 - **Motion:** animations follow the mouse but never the keyboard, so typing always feels instant.
 
 **On phones**
 - **The header:** the thread title sits on the left; the ⋯ menu also holds the right panel, and opening it keeps your keyboard up.
 - **Swipe a thread** left to archive it, right to pin it.
-- **Swipe a message** right to reply, left to see its time.
 - **Pull down** from the top to search.
 - **A keyboard-down button** sits in the composer while you type.
 
