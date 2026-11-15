@@ -67,9 +67,9 @@ export const PHONE_MENU_CSS = `
     border-radius: var(--cf-radius) !important;
     padding: 6px !important;
     border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent) !important;
-    background: color-mix(in oklab, var(--popover) 80%, transparent) !important;
-    -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
-    backdrop-filter: blur(24px) saturate(160%) !important;
+    background: var(--cf-glass-fill) !important; /* the one glass (css.ts --cf-glass) */
+    -webkit-backdrop-filter: var(--cf-glass) !important;
+    backdrop-filter: var(--cf-glass) !important;
     box-shadow: var(--cf-glass-highlight), 0 12px 32px -10px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.12) !important;
     overflow: clip !important;
     --state-hover: color-mix(in oklab, var(--cf-accent) 26%, transparent);

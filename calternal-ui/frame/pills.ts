@@ -71,8 +71,8 @@ ${R} {
      sit over lines of chat text, and iOS adapts its tint to busy content, which CSS cannot.
      Pills that carry words (the title capsule) set a denser alpha of their own for contrast. */
   --cf-pill-tint: 253 250 245;
-  --cf-pill-alpha: 0.6;
-  --cf-pill-filter: blur(3px) saturate(170%) brightness(1.03);
+  --cf-pill-alpha: 0;                /* the one glass: no tint (css.ts --cf-glass) */
+  --cf-pill-filter: var(--cf-glass);
   --cf-pill-shade: inset 0 0 20px rgb(253 250 245 / 0.3);
   --cf-pill-edge: inset 0 0 0 1px rgb(255 255 255 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.6);
   --cf-pill-shadow: 0 0 0 1px rgb(31 27 23 / 0.05), 0 10px 28px -8px rgb(60 40 20 / 0.26), 0 2px 4px -1px rgb(60 40 20 / 0.08);
@@ -105,8 +105,8 @@ ${R} {
 }
 ${R}.dark {
   --cf-pill-tint: 30 28 26;
-  --cf-pill-alpha: 0.3;
-  --cf-pill-filter: blur(3px) saturate(160%) brightness(0.92);
+  --cf-pill-alpha: 0;
+  --cf-pill-filter: var(--cf-glass);
   --cf-pill-shade: inset 0 0 20px rgb(16 15 14 / 0.3);
   --cf-pill-edge: inset 0 0 0 1px rgb(255 255 255 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.14);
   --cf-pill-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 12px 30px -10px rgb(0 0 0 / 0.55);

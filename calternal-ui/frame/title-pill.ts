@@ -66,7 +66,7 @@ export const TITLE_PILL_CSS = `
     margin-left: var(--cf-hd-inset);
     cursor: default;
     user-select: none;
-    --cf-pill-alpha: 0.8;
+    --cf-pill-alpha: 0; /* the one glass, as every pill */
     transition: scale 150ms var(--cf-ease-out);
   }
   ${PILL}::before {

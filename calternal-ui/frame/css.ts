@@ -53,9 +53,13 @@ ${R} {
      sliding pane and inset sheets follow the screen's corner (--cf-device-radius). */
   --radius: 10px;
   --cf-radius: calc(var(--radius) + 4px);
-  /* Shared glass for floating panes (composer, inset sheets): one look, defined once. */
-  --cf-glass-fill: color-mix(in oklab, var(--cf-bg) 38%, transparent);
-  --cf-glass-blur: blur(24px) saturate(170%);
+  /* ONE glass for every floating surface: pills, the composer and the strips above it, menus and dialogs,
+     sheets, tooltips, toasts (kayg: the same transparency + blur everywhere; iOS's liquid glass can't be done
+     on the web). No tint (no grey cast): only blur, saturation and a luminance shift of what is behind,
+     brighter in light, darker in dark, which keeps words on the glass legible. Change it here only. */
+  --cf-glass: blur(16px) saturate(180%) brightness(1.12);
+  --cf-glass-fill: transparent;
+  --cf-glass-blur: var(--cf-glass);
   --cf-glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
   --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
   --cf-edge: rgb(255 255 255 / 0.55);
@@ -149,6 +153,14 @@ ${R}, ${R}.dark {
    restyle bb does (sidebar toggle, menus, tooltips: ~2,100 -> ~1,100 elements, desktop trace
    2026-11-15). WebKit doesn't inherit it but computes it lazily, so Safari keeps the universal
    rule (the Apple Pay property is a WebKit-only feature test). */
+${R}.dark { --cf-glass: blur(16px) saturate(180%) brightness(0.72); }
+/* bb's toasts (Sonner): the one glass too. */
+${R} [data-sonner-toast] {
+  --normal-bg: var(--cf-glass-fill);
+  background: var(--cf-glass-fill) !important;
+  -webkit-backdrop-filter: var(--cf-glass);
+  backdrop-filter: var(--cf-glass);
+}
 ${R}::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
 @supports (-apple-pay-button-style: inherit) {
   ${R} ::selection { background-color: color-mix(in oklab, var(--cf-accent) 38%, transparent); }
@@ -491,20 +503,23 @@ ${R} [data-cf-tip] {
   max-width: min(22rem, calc(100vw - 16px));
   padding: 0.375rem 0.625rem;
   border-radius: calc(var(--radius) - 2px);
-  background: var(--cf-tip-surface);
+  /* The one glass (--cf-glass), as every floating surface. */
+  background: var(--cf-glass-fill);
+  -webkit-backdrop-filter: var(--cf-glass);
+  backdrop-filter: var(--cf-glass);
   color: var(--cf-tip-ink);
   font: 500 0.75rem/1.3 var(--font-sans);
-  box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 8%, transparent), 0 6px 18px -8px rgb(0 0 0 / 0.45);
   pointer-events: none;
   opacity: 0;
-  scale: 0.94;
-  filter: blur(4px);
+  /* No filter blur on the tooltip itself (it fought the backdrop blur): a small scale and a fade. */
+  scale: 0.97;
   transform-origin: center bottom;
-  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), scale 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 125ms cubic-bezier(0.23, 1, 0.32, 1), scale 125ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 ${R}.dark [data-cf-tip] { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 6px 18px -8px rgb(0 0 0 / 0.6); }
 ${R} [data-cf-tip][data-side="bottom"] { transform-origin: center top; }
-${R} [data-cf-tip]:is([data-state="open"], [data-state="open-instant"]) { opacity: 1; scale: 1; filter: none; }
+${R} [data-cf-tip]:is([data-state="open"], [data-state="open-instant"]) { opacity: 1; scale: 1; }
 ${R} [data-cf-tip][data-state="open-instant"] { transition-duration: 60ms; }
 /* While warm, an open tooltip glides to the next trigger instead of popping again. */
 ${R} [data-cf-tip][data-glide="true"] { transition: translate 140ms cubic-bezier(0.23, 1, 0.32, 1), opacity 60ms; }
@@ -515,6 +530,8 @@ ${R} [data-cf-tip] kbd {
   background: color-mix(in oklab, var(--cf-tip-ink) 10%, transparent);
   color: color-mix(in oklab, var(--cf-tip-ink) 70%, transparent);
 }
+/* No arrow: a second small glass square would overlap the first (and Apple's tooltips have none). */
+${R} [data-cf-tip] i { display: none !important; }
 ${R} [data-cf-tip] i {
   position: absolute;
   width: 8px;
@@ -550,9 +567,9 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   /* Hover and highlight inside menus read as the accent, not grey. */
   --state-hover: color-mix(in oklab, var(--cf-accent) 26%, transparent);
   --accent: color-mix(in oklab, var(--cf-accent) 26%, transparent);
-  background-color: color-mix(in oklab, var(--popover) 80%, transparent) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  backdrop-filter: blur(24px) saturate(160%);
+  background-color: var(--cf-glass-fill) !important;
+  -webkit-backdrop-filter: var(--cf-glass);
+  backdrop-filter: var(--cf-glass);
   border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
 }
 
@@ -569,9 +586,9 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
    their inner bands clear. Outside the card, bg-background would be opaque. Phone sheets
    ([data-persistent-drawer-content]) keep their own glass. */
 ${R} [role="dialog"][data-bb-portaled-overlay]:not([data-persistent-drawer-content]):is(.bg-background, .bg-popover, .bg-card) {
-  background-color: color-mix(in oklab, var(--popover) 80%, transparent) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  backdrop-filter: blur(24px) saturate(160%);
+  background-color: var(--cf-glass-fill) !important;
+  -webkit-backdrop-filter: var(--cf-glass);
+  backdrop-filter: var(--cf-glass);
   border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
 }
 ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, .bg-card, [data-palette-input-band], [data-palette-results-clip]) {

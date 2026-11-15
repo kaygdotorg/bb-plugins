@@ -33,14 +33,6 @@ export const PILL_PHONE_CSS = `
   }
 
   @media (min-width: 430px) { ${R} { --cf-ph-side: ${s(20)}; } }
-  /* The header pills are glass only: no tint, just blur (kayg: iOS's are liquid glass, which the web can't
-     do; transparency + blur is the honest version). The blur carries legibility: 10px smears the chat text
-     passing under the title so it never competes with it (3px left it readable). The edge stays, so each
-     pill still reads as a shape. Both themes. */
-  ${R}, ${R}.dark {
-    --cf-pill-alpha: 0;
-    --cf-pill-filter: blur(10px) saturate(180%);
-  }
 
   /* The header: a row of floating pills. Room on the left for the back pill. */
   ${R} main header { padding: 0; }
@@ -102,7 +94,6 @@ ${GLASS_LAYER}}
     max-width: calc(100% - 2 * (var(--cf-ph-side) + var(--cf-pill) + var(--cf-ctl-gap)));
     padding: 0 ${s(16)};
     border-radius: 999px;
-    --cf-pill-alpha: 0; /* glass only, as the other pills */
   }
   ${ROW} > div:first-child > div > div:has(.bb-thread-title)::before {
 ${GLASS_LAYER}}
