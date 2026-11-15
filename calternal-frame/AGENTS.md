@@ -11,7 +11,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
-- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage as coloured percentages in the sidebar footer, a denser composer, and compact navigation.
+- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, a denser composer, and compact navigation. (Usage in the sidebar footer belongs to the sibling `cliproxy-usage` plugin.)
 
 ## Map
 
@@ -20,9 +20,9 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `app.tsx` / `server.ts` | Entry points; registration and wiring only |
 | `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
-| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `usage` |
+| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts` |
 | `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color`; behaviour: `composer`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
-| `ui/` | React: `overlay` (sync + footer portal), `usage-bars`, `nav`, `settings/` |
+| `ui/` | React: `overlay` (sync), `nav`, `settings/` |
 
 ## Rules learned the hard way
 
@@ -54,6 +54,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - "New thread here" is appended to the + menu when it opens; bb's own button stays the action.
   - "Collapsed" means bb's attribute *and* no visible model button: desktop composers get `data-promptbox-collapsed` after Escape while showing everything.
   - Phones, collapsed: bb renders neither the footer nor the model button. The model icon (bb's `[data-provider-logo]` span, not an svg) is cached in localStorage and shown before the mic; tapping it expands the composer, then opens the picker.
+- **No tooltip while bb's own floating content is open** (`[data-radix-popper-content-wrapper]`): the context ring's hover card already explains it. An open tooltip steps aside when one appears.
 - **Tooltips skip triggers whose menu is open** (`aria-expanded="true"` or `data-state="open"`). A warm tooltip opens on the next frame; a press in that frame cancels it, or it pops up over the menu the press opened.
 - **Spacing is optical, not box-based.** In compact `gap-1` buttons a leading icon gets +2px and a trailing chevron −2px, so icon → text, text → text and text → chevron all read about 6px.
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear. So do lists nested in a menu, picker or dialog (no second glass layer). Modal dialogs (the desktop search palette) get the same glass; phone sheets keep theirs.
@@ -76,11 +77,9 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **The sliding phone pane uses `--cf-device-radius`** (the screen's corner), like Claude's iOS app, plus `corner-shape: squircle` where supported.
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
-- **Usage is an icon plus a coloured percentage per provider (amber from 75%, red from 90%), not bars:** the footer is too narrow. It is not a child of bb's footer icon row: bb counts that row's children to decide which icons overflow into "…". It is positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
 - **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
 - **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.
-- **Usage data comes from the `cliproxy-usage` plugin** through `bb.sdk.plugins.callRpc`. That plugin keeps the key.
 
 ## Performance
 
@@ -88,7 +87,6 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - The wallpaper is decoded once (`frame/color.ts`, memoised) for both the sidebar tone and the accent.
 - The always-on sync uses `frame_light`, a few KB. It fetches the wallpaper (~1 MB) only when `wallpaperId` changes, and fonts only when the set of enabled families changes. That matters when bb is used remotely.
 - Style text is only rewritten when it changes, and the last look is cached in localStorage so a reload paints immediately.
-- The footer portal re-attaches on a 1s check. Don't observe the whole DOM.
 
 ## Work loop
 

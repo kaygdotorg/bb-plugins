@@ -70,6 +70,12 @@ function anchorOf(el: HTMLElement): HTMLElement {
   return at ?? el;
 }
 
+/**
+ * bb's own floating content (hover cards like the context ring's, menus, popovers) already
+ * explains the control: while one is open, ours stays away.
+ */
+const hostPopupOpen = () => !!document.querySelector("[data-radix-popper-content-wrapper]");
+
 /** Moves a native title aside so the browser never shows its own popup next to ours. */
 function stashTitle(el: HTMLElement) {
   const title = el.getAttribute("title");
@@ -100,6 +106,7 @@ export function mountTooltips(): () => void {
   let warmUntil = 0;
   let graceTimer = 0;
   let openFrame = 0; // the pending open; a press in the same frame must cancel it
+  let watchTimer = 0; // while open: watches for a host popup
 
   const place = (el: HTMLElement, glide: boolean) => {
     const r = anchorOf(el).getBoundingClientRect();
@@ -127,8 +134,15 @@ export function mountTooltips(): () => void {
     cancelAnimationFrame(openFrame);
     openFrame = requestAnimationFrame(() => {
       openFrame = 0;
+      if (hostPopupOpen()) { trigger = null; return; }
       tip.dataset.state = instant || reduce ? "open-instant" : "open";
       open = true;
+      // A hover card can open after us (bb's own delay): step aside when it does.
+      clearInterval(watchTimer);
+      watchTimer = window.setInterval(() => {
+        if (!open) clearInterval(watchTimer);
+        else if (hostPopupOpen()) hide();
+      }, 120);
     });
   };
 
@@ -196,6 +210,7 @@ export function mountTooltips(): () => void {
     clearTimeout(openTimer);
     clearTimeout(graceTimer);
     cancelAnimationFrame(openFrame);
+    clearInterval(watchTimer);
     document.removeEventListener("pointerover", onOver);
     document.removeEventListener("pointerout", onOut);
     document.removeEventListener("focusin", onFocus);
