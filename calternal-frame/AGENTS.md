@@ -8,7 +8,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 - **Window backdrop:** the wallpaper, blurred and tinted. One seamless surface.
 - **Sidebars:** the left one and the right panel have no surface of their own. They sit flat on the backdrop: no fill, edges or seams.
-- **Chat card:** floats on the backdrop with an 8px gap. It's heavy glass (blur, tint and dim).
+- **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
 - **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage bars, and compact navigation.

@@ -195,6 +195,12 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     border-left-width: 0 !important;
   }
   :is(${SIDE_PANEL}) aside { border-left-width: 0 !important; }
+  /* bb's collapsed icon rail (its own navigation, placement=rail) sits flat on the backdrop too. */
+  ${SHELL} [data-sidebar-navigation-placement="rail"] {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
 
   /* The center region is see-through; only the chat card inside it paints. */
   ${MAIN} {
@@ -219,7 +225,7 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
      that starts at (0,0). Ours floats one gap (+1px border) in, so the toggle follows. */
   ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-sidebar-trigger-overlay"],
   ${R}:has([data-side="left"][data-state="collapsed"]) [data-testid="app-desktop-sidebar-trigger"] {
-    translate: calc(var(--cf-gap) + 1px) calc(var(--cf-gap) + 1px);
+    translate: calc(var(--cf-gap) + 1px) 1px; /* + the card's 1px border */
   }
 
   /* Resize handles: no seam lines. A small grip pill appears on hover only. */
@@ -249,14 +255,15 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     --surface-scrim: transparent;
     position: relative;
     isolation: isolate;
-    margin: var(--cf-gap);
+    /* Flush with the window's top and bottom; the gap separates it from the sidebars only. */
+    margin: 0 var(--cf-gap);
     background: transparent !important;
     border: 1px solid var(--cf-edge);
     border-radius: var(--cf-radius);
     box-shadow: var(--cf-shadow);
     overflow: clip !important;
   }
-  ${PLAIN_MAIN} { padding: var(--cf-gap) !important; }
+  ${PLAIN_MAIN} { padding: 0 var(--cf-gap) !important; }
   ${CARD_FALLBACK} { margin: 0 !important; }
   :is(${CARD})::before {
     content: "";
