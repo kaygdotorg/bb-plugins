@@ -34,6 +34,12 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **100% interface size is 17.6px root on desktop** (bb's 110%) **and 16px on phones**, where bb already enlarges touch targets. bb is rem-based, so this scales text and controls together. On touch, the compact nav rows match bb's own row height.
 - **Pages without a panel group** (Settings, Skills) use their content shell as the card.
 - **Phones (<768px) have a different shell.** `main` is a full-screen pane that slides aside to reveal the sidebar drawer *beneath* it. On phones it's the glass pane: full-bleed at rest, and rounded (28px, with the card's edge and shadow) whenever it slides aside for the drawer or the right panel, with a solid base so the drawer never shows through. The right panel is a portaled shelf with heavy frost. The card interior rules (`cardInterior()` in `css.ts`) are shared, so add new interior styling there, not only in the desktop block.
+- **Touch behaviour lives in `frame/touch.ts`** and installs on any touch device (`maxTouchPoints > 0`):
+  - Opening the drawer dismisses the keyboard.
+  - `html[data-cf-short]` (visible area under 560px) makes the sidebar scroll as one column.
+  - Pulling down at the top of the sidebar opens search. It's vertical only, so bb's sideways edge swipes stay bb's.
+  - To test headless, enable CDP `Emulation.setTouchEmulationEnabled`, then use `p.touchscreen`.
+- **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
 - **The usage bars are not a child of bb's footer icon row.** bb counts that row's children to decide which icons overflow into "…". The bars are positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
