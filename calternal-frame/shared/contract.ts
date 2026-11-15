@@ -171,6 +171,11 @@ export const rpcContract = defineRpcContract({
   /** @font-face CSS for the enabled font overrides, with the font files inlined from local storage. */
   font_faces: { input: z.object({}), output: z.object({ css: z.string() }) },
   usage_summary: { input: z.object({ refresh: z.boolean() }), output: usageSummarySchema },
+  /** When each conversation row of a thread was created (ms), keyed by bb's timeline row id. */
+  message_times: {
+    input: z.object({ threadId: z.string().regex(/^thr_[\w-]+$/) }),
+    output: z.record(z.string(), z.number()),
+  },
 });
 
 export type UsageWindow = z.infer<typeof windowSchema>;

@@ -100,5 +100,14 @@ export default async function plugin(bb: BbPluginApi) {
     google_fonts: () => fonts.catalogue(),
     font_faces: async () => ({ css: await fonts.faces() }),
     usage_summary: ({ refresh }) => usage(refresh),
+    message_times: async ({ threadId }) => {
+      // bb's own timeline read; its row ids match the chat's [data-timeline-row-id].
+      const timeline = await bb.sdk.threads.timeline({ threadId });
+      const times: Record<string, number> = {};
+      for (const row of timeline.rows as { id: string; kind: string; createdAt: number }[]) {
+        if (row.kind === "conversation") times[row.id] = row.createdAt;
+      }
+      return times;
+    },
   });
 }
