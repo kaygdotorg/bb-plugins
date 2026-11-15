@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { migrateOutbox, openOutbox, Outbox } from "../lib/outbox";
+import { migrateOutbox, openOutbox, Outbox, OUTBOX_MIGRATIONS } from "../lib/outbox";
 const databases: Database.Database[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 function setup() { const db = new Database(":memory:"); databases.push(db); return { db, outbox: new Outbox(db) }; }
@@ -10,10 +10,10 @@ describe("content-free outbox", () => {
     const { db, outbox } = setup(); outbox.advance("thread", 5);
     migrateOutbox(db); const reopened = new Outbox(db);
     expect(reopened.cursor("thread")).toBe(5);
-    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }]);
+    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }]);
   });
   it("rejects future schema versions", () => {
-    const { db } = setup(); db.prepare("INSERT INTO honcho_migrations VALUES (2,0)").run();
+    const { db } = setup(); db.prepare("INSERT INTO honcho_migrations VALUES (3,0)").run();
     expect(() => migrateOutbox(db)).toThrow("Unsupported");
   });
   it("advances cursors monotonically and rejects invalid sequences", () => {
@@ -48,26 +48,82 @@ describe("content-free outbox", () => {
     const { outbox } = setup(); expect(outbox.switchOver("thread")).toBeUndefined();
     outbox.markSwitchOver("thread", 10); outbox.markSwitchOver("thread", 20); expect(outbox.switchOver("thread")).toBe(10);
   });
-  it("pauses independently by project and thread", () => {
-    const { outbox } = setup(); outbox.setPaused("project", "project", true);
-    expect(outbox.isPaused("thread", "project")).toBe(true); expect(outbox.isPaused("thread")).toBe(false);
-    outbox.setPaused("thread", "thread", true); outbox.setPaused("project", "project", false);
-    expect(outbox.isPaused("thread", "project")).toBe(true); outbox.setPaused("thread", "thread", false);
-    expect(outbox.isPaused("thread", "project")).toBe(false);
+  it("stores thread pauses as seq ranges checked at send time", () => {
+    const { outbox } = setup();
+    outbox.setPaused("thread", "t", true, 10);
+    expect(outbox.isPausedNow("thread", "t")).toBe(true);
+    expect([10, 11, 500].map(n => outbox.isPaused("t", n))).toEqual([false, true, true]);
+    // Unpausing inside the grace window never uploads what was typed while paused.
+    outbox.setPaused("thread", "t", false, 14);
+    expect([10, 11, 14, 15].map(n => outbox.isPaused("t", n))).toEqual([false, true, true, false]);
+    expect(outbox.isPausedNow("thread", "t")).toBe(false);
+    expect(outbox.pauses()).toEqual([{ kind: "thread", id: "t", from: 11, to: 14 }]);
+    // A second pause adds a separate range; pausing twice does not.
+    outbox.setPaused("thread", "t", true, 20); outbox.setPaused("thread", "t", true, 25);
+    expect(outbox.pauses().map(r => [r.from, r.to])).toEqual([[11, 14], [21, null]]);
+    expect(outbox.isPaused("other", 12)).toBe(false);
+  });
+  it("drops an empty pause range when nothing happened while paused", () => {
+    const { outbox } = setup(); outbox.setPaused("thread", "t", true, 5); outbox.setPaused("thread", "t", false, 5);
+    expect(outbox.pauses()).toEqual([]); expect(outbox.isPaused("t", 6)).toBe(false);
+  });
+  it("stores project pauses as createdAt ranges across threads", () => {
+    const { outbox } = setup(); outbox.setPaused("project", "p", true, 1_000);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 999 })).toBe(false);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 1_000 })).toBe(true);
+    expect(outbox.isPaused("b", 1, { id: "q", createdAt: 5_000 })).toBe(false);
+    outbox.setPaused("project", "p", false, 2_000);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 2_000 })).toBe(true);
+    expect(outbox.isPaused("a", 1, { id: "p", createdAt: 2_001 })).toBe(false);
+  });
+  it("migrates v1 flag pauses into open ranges", () => {
+    const db = new Database(":memory:"); databases.push(db);
+    db.exec("CREATE TABLE honcho_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
+    db.exec(OUTBOX_MIGRATIONS[0]); db.prepare("INSERT INTO honcho_migrations VALUES (1,0)").run();
+    db.prepare("INSERT INTO pauses VALUES ('thread','t'), ('project','p')").run();
+    const outbox = new Outbox(db);
+    expect(outbox.isPaused("t", 3)).toBe(true); expect(outbox.isPausedNow("project", "p")).toBe(true);
+  });
+  it("starts a fork's cursor after the copied parent events", () => {
+    const { outbox } = setup(); outbox.advance("fork", 2);
+    outbox.setForkSource("fork", "parent", 40);
+    expect(outbox.forkSource("fork")).toEqual({ sourceThreadId: "parent", boundarySeq: 40 });
+    expect(outbox.cursor("fork")).toBe(40);
+    outbox.setForkSource("fork", "other", 99); // the first boundary wins
+    expect(outbox.forkSource("fork")).toEqual({ sourceThreadId: "parent", boundarySeq: 40 }); expect(outbox.cursor("fork")).toBe(40);
+    expect(outbox.forkSource("none")).toBeUndefined();
+  });
+  it("records superseded seq ranges so queued items from the old branch are dropped", () => {
+    const { outbox } = setup();
+    outbox.supersede("t", 5, 9);
+    expect([4, 5, 9, 10].map(n => outbox.isSuperseded("t", n))).toEqual([false, true, true, false]);
+    expect([4, 7, 10].map(n => outbox.shouldSend("t", n))).toEqual([true, false, true]);
+    outbox.supersede("t", 5, 12); expect(outbox.supersededRanges("t")).toEqual([{ from: 5, to: 12 }]);
+    expect(outbox.isSuperseded("other", 7)).toBe(false);
+    expect(() => outbox.supersede("t", 9, 5)).toThrow();
+    outbox.setPaused("thread", "t", true, 20); expect(outbox.shouldSend("t", 21)).toBe(false);
+  });
+  it("keeps several provider thread ids per thread, once each", () => {
+    const { outbox } = setup();
+    outbox.addProviderThread("t", "p1"); outbox.addProviderThread("t", "p2"); outbox.addProviderThread("t", "p1"); outbox.addProviderThread("t", "");
+    expect(outbox.providerThreads("t")).toEqual(["p1", "p2"]); expect(outbox.providerThreads("x")).toEqual([]);
   });
   it("deletes a thread's state, preserving other threads and project pauses", () => {
     const { outbox } = setup();
     outbox.advance("thread", 3); outbox.begin({ thread: "thread", firstSeq: 4, lastSeq: 5, startedAt: 100 });
     outbox.fail("thread", "offline", 100); outbox.markSwitchOver("thread", 1);
-    outbox.setPaused("thread", "thread", true); outbox.setPaused("project", "project", true); outbox.advance("other", 9);
+    outbox.setForkSource("thread", "parent", 2); outbox.supersede("thread", 3, 4); outbox.addProviderThread("thread", "p");
+    outbox.setPaused("thread", "thread", true, 0); outbox.setPaused("project", "project", true, 10); outbox.advance("other", 9);
     outbox.deleteThread("thread"); expect(outbox.cursor("thread")).toBe(0); expect(outbox.inFlight()).toEqual([]);
     expect(outbox.retry("thread")).toBeUndefined(); expect(outbox.switchOver("thread")).toBeUndefined();
-    expect(outbox.isPaused("thread")).toBe(false); expect(outbox.isPaused("other", "project")).toBe(true); expect(outbox.cursor("other")).toBe(9);
+    expect(outbox.forkSource("thread")).toBeUndefined(); expect(outbox.supersededRanges("thread")).toEqual([]); expect(outbox.providerThreads("thread")).toEqual([]);
+    expect(outbox.isPaused("thread", 1)).toBe(false);
+    expect(outbox.isPaused("other", 1, { id: "project", createdAt: 11 })).toBe(true); expect(outbox.cursor("other")).toBe(9);
   });
   it("contains no message/content columns", () => {
     const { db } = setup();
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
-    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "honcho_migrations", "in_flight", "pauses", "retries", "switch_over"]);
+    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "honcho_migrations", "in_flight", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
     for (const { name } of tables) {
       const columns = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>;
       expect(columns.some(c => /content|body|message|payload/.test(c.name))).toBe(false);

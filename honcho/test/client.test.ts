@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HonchoClient, HonchoError, type MessageDraft } from "../lib/honcho-client";
+import { HonchoClient, HonchoError, seqRange, type MessageDraft } from "../lib/honcho-client";
 import { mockHoncho } from "./mock-honcho";
 let mock: Awaited<ReturnType<typeof mockHoncho>>, client: HonchoClient;
 beforeEach(async () => { mock = await mockHoncho(); client = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test", apiKey: "synthetic-key" }); });
@@ -23,6 +23,27 @@ describe("v3 REST client", () => {
     const next = await client.listMessages("thread", { bb_thread: "thread" }, { size: 1, cursor: page.next_page! }); expect(next.items[0].metadata?.bb_seq).toBe(2);
     expect((await client.listMessages("thread", { bb_seq: 99 })).items).toEqual([]);
     expect(mock.requests[1]).toEqual({ method: "POST", path: "/v3/workspaces/test/sessions/thread/messages/list", query: { size: "1", cursor: "" }, body: { filters: { metadata: { bb_thread: "thread" } } } });
+  });
+  it("filters messages by bb_seq ranges and follows cursors", async () => {
+    await client.createMessages("thread", [1, 2, 3, 4, 5].map(n => ({ ...draft, content: `m${n}`, metadata: { bb_thread: "thread", bb_seq: n, bb_part: 0 } })));
+    const range = await client.listMessages("thread", { bb_thread: "thread", ...seqRange(2, 4) });
+    expect(range.items.map(m => m.metadata?.bb_seq)).toEqual([2, 3, 4]);
+    expect(mock.requests.at(-1)?.body).toEqual({ filters: { metadata: { bb_thread: "thread", bb_seq: { gte: 2, lte: 4 } } } });
+    expect((await client.listMessages("thread", seqRange(4))).items).toHaveLength(2);
+    expect((await client.listMessages("thread", seqRange(undefined, 1))).items).toHaveLength(1);
+    expect((await client.listAllMessages("thread", { bb_thread: "thread" })).map(m => m.content)).toEqual(["m1", "m2", "m3", "m4", "m5"]);
+    expect(await client.listAllMessages("thread", seqRange(2), 2)).toHaveLength(2);
+    expect(seqRange(3, 3)).toEqual({ bb_seq: { gte: 3, lte: 3 } });
+  });
+  it("creates a session with peers, scopes and metadata in one call", async () => {
+    const session = await client.getOrCreateSession("thread", { metadata: { provider: "codex" }, scopes: ["repo"], peers: { hermy: { observe_me: true, observe_others: false }, codex: { observe_me: false, observe_others: false } } });
+    expect(mock.requests).toHaveLength(1);
+    expect(mock.requests[0]).toMatchObject({ method: "POST", path: "/v3/workspaces/test/sessions", body: { id: "thread", scopes: ["repo"], peers: { codex: { observe_me: false } } } });
+    expect(session).toMatchObject({ scopes: ["repo"] });
+    // The session is in its scope before any message exists.
+    expect(mock.scopes.get("test/repo")).toEqual(new Set(["thread"]));
+    for (const bad of ["bad id", "", "x".repeat(513)]) expect(() => client.getOrCreateSession(bad)).toThrow(HonchoError);
+    expect(() => client.getOrCreateSession("thread", { scopes: ["Bad Scope"] })).toThrow(HonchoError);
   });
   it("accepts limits and rejects invalid batches without issuing HTTP", async () => {
     await client.createMessages("thread", Array.from({ length: 100 }, () => ({ ...draft, content: "x".repeat(25000) })));
@@ -53,18 +74,40 @@ describe("v3 REST client", () => {
   it("creates, lists, queries and deletes conclusions", async () => {
     const created = await client.createConclusions([{ content: "agent-written: uses fixtures", observer_id: "codex", observed_id: "hermy", session_id: "thread" }]);
     expect(created).toHaveLength(1);
-    expect((await client.listConclusions({ observed_id: "hermy" }, { size: 10 })).items).toEqual(created);
+    expect((await client.listConclusions({ observed: "hermy" }, { size: 10 })).items).toEqual(created);
     expect(await client.queryConclusions({ query: "fixtures", top_k: 3, filters: { observer: "codex", observed: "hermy" } })).toEqual(created);
     await client.deleteConclusion(created[0].id); expect((await client.listConclusions()).items).toEqual([]);
     expect(() => client.createConclusions([])).toThrow(HonchoError);
+  });
+  it("lists conclusions by session, observer and observed, and sends ids as the SDK does", async () => {
+    await client.createConclusions([
+      { content: "a fixtures", observer_id: "codex", observed_id: "hermy", session_id: "s1" },
+      { content: "b fixtures", observer_id: "hermy", observed_id: "hermy", session_id: "s2" },
+      { content: "c fixtures", observer_id: "hermy", observed_id: "hermy" },
+    ]);
+    expect((await client.listConclusions({ session_id: "s1" })).items.map(c => c.content)).toEqual(["a fixtures"]);
+    expect(mock.requests.at(-1)?.body).toEqual({ filters: { session_id: "s1" } });
+    expect((await client.listConclusions({ observer: "hermy", observed: "hermy" })).items).toHaveLength(2);
+    expect(mock.requests.at(-1)?.body).toEqual({ filters: { observer_id: "hermy", observed_id: "hermy" } });
+    const [derived] = await client.listConclusions({ session_id: "s2" }).then(p => p.items);
+    mock.conclusions.push({ id: "d1", content: "derived", observer_id: "hermy", observed_id: "hermy", level: "deductive", source_ids: [derived.id] });
+    expect((await client.listConclusions({ source_ids: { contains: derived.id } })).items.map(c => c.id)).toEqual(["d1"]);
+    const found = await client.queryConclusions({ query: "fixtures", filters: { observer: "hermy", observed: "hermy", session_id: "s2" } });
+    expect(found.map(c => c.content)).toEqual(["b fixtures"]);
+    expect(mock.requests.at(-1)?.body).toEqual({ query: "fixtures", filters: { observer_id: "hermy", observed_id: "hermy", session_id: "s2" } });
+    for (const filters of [{}, { observer: "hermy" }, { observed: "hermy" }]) expect(() => client.queryConclusions({ query: "q", filters: filters as never })).toThrow(HonchoError);
+    expect(() => client.queryConclusions({ query: "q", top_k: 101, filters: { observer: "a", observed: "b" } })).toThrow(HonchoError);
   });
   it("updates message metadata and reads scoped representations", async () => {
     const [message] = await client.createMessages("thread", [draft]);
     const metadata = { ...message.metadata, bb_superseded: true };
     expect(await client.updateMessageMetadata("thread", message.id, metadata)).toMatchObject({ metadata });
     expect(mock.requests.at(-1)).toMatchObject({ method: "PUT", body: { metadata } });
-    expect(await client.peerRepresentation("hermy", { scope: "repo" })).toEqual({ representation: "synthetic representation" });
-    expect(mock.requests.at(-1)?.body).toEqual({ scope: "repo" });
+    expect(await client.peerRepresentation("hermy", { scope: "repo" })).toEqual({ representation: "synthetic representation for repo" });
+    expect(mock.requests.at(-1)).toMatchObject({ method: "POST", path: "/v3/workspaces/test/peers/hermy/representation", body: { scope: "repo" } });
+    expect((await client.peerRepresentation("hermy", { scope: ["repo", "other"], max_conclusions: 10 })).representation).toContain("repo,other");
+    expect(() => client.peerRepresentation("hermy", { scope: "repo", session_id: "thread" })).toThrow(HonchoError);
+    await expect(client.updateMessageMetadata("thread", "missing", {})).rejects.toMatchObject({ kind: "http", status: 404 });
     expect(() => client.queryConclusions({ query: "q", filters: {} as never })).toThrow(HonchoError);
     expect(() => client.getOrCreatePeer("codex", {}, { observe_me: false } as never)).toThrow(HonchoError);
   });

@@ -51,6 +51,14 @@ function toolSummary(item: Record<string, unknown>): string | undefined {
   }
   return tool ? `ran: ${oneLine(server ? `${server}/${tool}` : tool)}` : undefined;
 }
+/** system/operation edit_message marks the point where editThreadMessage deleted seqs [cutoff, oldMax]. */
+export function isEditMessage(event: CaptureEvent): boolean {
+  return event.type === "system/operation" && event.data.operation === "edit_message";
+}
+/** providerThreadId carried by thread/identity; a thread can emit several. */
+export function providerThreadIdOf(event: CaptureEvent): string | undefined {
+  return event.type === "thread/identity" ? event.data.providerThreadId : undefined;
+}
 /** Pure ordered transformation. client/turn/requested is the canonical prompt
  * source. Provider userMessage echoes are ignored, as are partial deltas.
  * Unresolved inter-thread attribution is reported and withheld, never credited
@@ -68,7 +76,8 @@ export function transformEvents(events: readonly CaptureEvent[], context: Transf
       if (data.initiator === "system" && data.systemMessageKind?.startsWith("child-")) continue;
       content = (data.input ?? []).flatMap(part => part.type === "text" ? [part.text] : []).join("\n");
       const sender = data.senderThreadId ?? content.match(/^\[bb message from thread:([^\]\s]+)\]/)?.[1];
-      const parentPrompt = data.source === "spawn" && data.initiator === "agent";
+      // Any agent-initiated prompt is never the user: spawn prompts come from the parent agent.
+      const parentPrompt = data.initiator === "agent";
       if (sender || parentPrompt) {
         const provider = sender ? context.senderProviders?.[sender] : context.parentProviderId;
         if (!provider) { result.unresolvedSenders.push(sender ?? "parent"); continue; }

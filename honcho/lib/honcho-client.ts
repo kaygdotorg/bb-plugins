@@ -19,6 +19,17 @@ export interface ChatOptions { query: string; scope?: string | string[]; session
 export interface PeerChatOptions extends ChatOptions { target?: string; filters?: Metadata }
 export interface ChatResult { content: string | null }
 export interface SearchOptions { query: string; filters?: Metadata; limit?: number }
+/** Metadata filter for a bb_seq range, e.g. seqRange(5, 9) -> { bb_seq: { gte: 5, lte: 9 } }. Merge into listMessages metadata. */
+export function seqRange(from?: number, to?: number): Metadata {
+  return { bb_seq: { ...(from === undefined ? {} : { gte: from }), ...(to === undefined ? {} : { lte: to }) } };
+}
+/** What list and query accept for conclusions. observer/observed become observer_id/observed_id on the wire,
+ * as the official SDK sends them. Other keys (level, source_ids: { contains }) pass through. */
+export type ConclusionFilters = Metadata & { session_id?: string; observer?: string; observed?: string };
+function conclusionFilters(filters: ConclusionFilters = {}): Metadata {
+  const { observer, observed, ...rest } = filters;
+  return { ...(observer === undefined ? {} : { observer_id: observer }), ...(observed === undefined ? {} : { observed_id: observed }), ...rest };
+}
 export type HonchoErrorKind = "auth" | "offline" | "rate-limited" | "validation" | "server" | "http";
 export class HonchoError extends Error {
   constructor(public readonly kind: HonchoErrorKind, public readonly status?: number, public readonly retryAfter?: string) {
@@ -86,7 +97,9 @@ export class HonchoClient {
     if (configuration && ("observe_me" in configuration || "observe_others" in configuration)) throw new HonchoError("validation");
     return this.request(this.workspacePath("/peers"), { id: peer, metadata, configuration });
   }
+  /** Peers and scopes belong in the create call, so the session joins its scope before any message. */
   getOrCreateSession(session: string, options: { metadata?: Metadata; configuration?: Metadata; peers?: Record<string, PeerConfig>; scopes?: string[] } = {}): Promise<Session> {
+    if (!/^[a-zA-Z0-9_-]{1,512}$/.test(session) || options.scopes?.some(scope => !/^[a-zA-Z0-9_-]+$/.test(scope)) || (options.scopes?.length ?? 0) > 100) throw new HonchoError("validation");
     return this.request(this.workspacePath("/sessions"), { id: session, ...options });
   }
   addPeers(session: string, peers: Record<string, PeerConfig>): Promise<Session> {
@@ -96,8 +109,21 @@ export class HonchoClient {
     if (messages.length < 1 || messages.length > 100 || messages.some(m => m.content.length > 25_000)) throw new HonchoError("validation");
     return this.request(this.workspacePath(`/sessions/${id(session)}/messages`), { messages });
   }
+  /** `metadata` is matched against message metadata; values may carry operators, e.g. seqRange(5, 9). */
   listMessages(session: string, metadata: Metadata = {}, pagination?: Pagination): Promise<Page<Message>> {
     return this.request(this.workspacePath(`/sessions/${id(session)}/messages/list`), { filters: { metadata } }, "POST", pagination);
+  }
+  /** Follows cursors until the end or `max` items (default 1000). */
+  async listAllMessages(session: string, metadata: Metadata = {}, max = 1000): Promise<Message[]> {
+    const all: Message[] = [];
+    let cursor = "";
+    while (all.length < max) {
+      const page = await this.listMessages(session, metadata, { size: Math.min(100, max - all.length), cursor });
+      all.push(...page.items);
+      if (!page.next_page || page.items.length === 0) break;
+      cursor = page.next_page;
+    }
+    return all;
   }
   updateMessageMetadata(session: string, message: string, metadata: Metadata): Promise<Message> {
     // Honcho replaces metadata; callers merge the existing fields before marking superseded.
@@ -124,12 +150,13 @@ export class HonchoClient {
     if (options.scope !== undefined && options.session_id !== undefined) throw new HonchoError("validation");
     return this.request(this.workspacePath("/chat"), { reasoning_level: "low", ...options, stream: false });
   }
-  listConclusions(filters: Metadata = {}, pagination?: Pagination): Promise<Page<Conclusion>> {
-    return this.request(this.workspacePath("/conclusions/list"), { filters }, "POST", pagination);
+  listConclusions(filters: ConclusionFilters = {}, pagination?: Pagination): Promise<Page<Conclusion>> {
+    return this.request(this.workspacePath("/conclusions/list"), { filters: conclusionFilters(filters) }, "POST", pagination);
   }
-  queryConclusions(options: { query: string; top_k?: number; distance?: number; filters: Metadata & { observer: string; observed: string } }): Promise<Conclusion[]> {
-    if (!options.filters?.observer || !options.filters?.observed) throw new HonchoError("validation");
-    return this.request(this.workspacePath("/conclusions/query"), options);
+  /** Semantic search. The server requires the observer/observed pair. */
+  queryConclusions(options: { query: string; top_k?: number; distance?: number; filters: ConclusionFilters & { observer: string; observed: string } }): Promise<Conclusion[]> {
+    if (!options.filters?.observer || !options.filters?.observed || (options.top_k !== undefined && (options.top_k < 1 || options.top_k > 100))) throw new HonchoError("validation");
+    return this.request(this.workspacePath("/conclusions/query"), { ...options, filters: conclusionFilters(options.filters) });
   }
   createConclusions(conclusions: readonly ConclusionDraft[]): Promise<Conclusion[]> {
     if (conclusions.length < 1 || conclusions.length > 100) throw new HonchoError("validation");

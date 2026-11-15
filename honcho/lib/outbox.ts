@@ -11,8 +11,20 @@ export const OUTBOX_MIGRATIONS = [
    CREATE TABLE switch_over (thread TEXT PRIMARY KEY, start_seq INTEGER NOT NULL CHECK(start_seq >= 0));
    CREATE TABLE pauses (kind TEXT NOT NULL CHECK(kind IN ('thread','project')), id TEXT NOT NULL,
      PRIMARY KEY(kind,id));`,
+  // v2: pauses become ranges, plus fork boundaries, edit supersession and provider thread ids.
+  // Old flag pauses have no position, so they become open ranges from the beginning.
+  `CREATE TABLE pause_ranges (kind TEXT NOT NULL CHECK(kind IN ('thread','project')), id TEXT NOT NULL,
+     from_value INTEGER NOT NULL CHECK(from_value >= 0), to_value INTEGER CHECK(to_value IS NULL OR to_value >= from_value));
+   CREATE INDEX pause_ranges_target ON pause_ranges(kind, id);
+   INSERT INTO pause_ranges SELECT kind, id, 0, NULL FROM pauses;
+   DROP TABLE pauses;
+   CREATE TABLE fork_sources (thread TEXT PRIMARY KEY, source_thread_id TEXT NOT NULL, boundary_seq INTEGER NOT NULL CHECK(boundary_seq >= 0));
+   CREATE TABLE superseded (thread TEXT NOT NULL, from_seq INTEGER NOT NULL CHECK(from_seq >= 0),
+     to_seq INTEGER NOT NULL CHECK(to_seq >= from_seq), PRIMARY KEY(thread, from_seq));
+   CREATE TABLE provider_threads (thread TEXT NOT NULL, provider_thread_id TEXT NOT NULL, PRIMARY KEY(thread, provider_thread_id));`,
 ] as const;
 export interface InFlight { thread: string; firstSeq: number; lastSeq: number; startedAt: number }
+export interface PauseRange { kind: "thread" | "project"; id: string; from: number; to: number | null }
 export interface RetryState { attempts: number; nextAt: number; lastError: string }
 export type RetryError = "auth" | "offline" | "rate-limited" | "validation" | "server" | "http";
 
@@ -81,17 +93,79 @@ export class Outbox {
   switchOver(thread: string): number | undefined {
     return (this.db.prepare("SELECT start_seq FROM switch_over WHERE thread=?").get(thread) as { start_seq: number } | undefined)?.start_seq;
   }
-  setPaused(kind: "thread" | "project", id: string, paused: boolean): void {
-    if (paused) this.db.prepare("INSERT OR IGNORE INTO pauses VALUES (?,?)").run(kind, id);
-    else this.db.prepare("DELETE FROM pauses WHERE kind=? AND id=?").run(kind, id);
+  /** Pauses are inclusive ranges, closed or open at the end, checked when an item is about to be sent.
+   * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of event
+   * createdAt (epoch ms) instead, applied to every thread in the project.
+   * `boundary` is the newest seq already seen on the thread (thread kind) or the current time
+   * (project kind): pausing covers everything after it, resuming closes the range at it. */
+  setPaused(kind: "thread" | "project", id: string, paused: boolean, boundary: number): void {
+    seq(boundary);
+    this.db.transaction(() => {
+      const open = this.db.prepare("SELECT from_value FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").get(kind, id) as { from_value: number } | undefined;
+      if (paused) {
+        if (!open) this.db.prepare("INSERT INTO pause_ranges VALUES (?,?,?,NULL)").run(kind, id, kind === "thread" ? boundary + 1 : boundary);
+        return;
+      }
+      if (!open) return;
+      const to = boundary;
+      if (to < open.from_value) this.db.prepare("DELETE FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").run(kind, id);
+      else this.db.prepare("UPDATE pause_ranges SET to_value=? WHERE kind=? AND id=? AND to_value IS NULL").run(to, kind, id);
+    })();
   }
-  isPaused(thread: string, project?: string): boolean {
-    return !!this.db.prepare("SELECT 1 FROM pauses WHERE (kind='thread' AND id=?) OR (kind='project' AND id=?) LIMIT 1").get(thread, project ?? null);
+  /** Whether the event at `seq` (created at `createdAt`) falls in a thread or project pause range. */
+  isPaused(thread: string, seqNumber: number, project?: { id: string; createdAt: number }): boolean {
+    const covers = this.db.prepare("SELECT 1 FROM pause_ranges WHERE kind=? AND id=? AND from_value<=? AND (to_value IS NULL OR to_value>=?) LIMIT 1");
+    return !!covers.get("thread", thread, seqNumber, seqNumber) || (project !== undefined && !!covers.get("project", project.id, project.createdAt, project.createdAt));
   }
+  /** Whether new events are being paused right now. */
+  isPausedNow(kind: "thread" | "project", id: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").get(kind, id);
+  }
+  pauses(): PauseRange[] {
+    return (this.db.prepare("SELECT kind,id,from_value,to_value FROM pause_ranges ORDER BY kind,id,from_value").all() as Array<{ kind: "thread" | "project"; id: string; from_value: number; to_value: number | null }>)
+      .map(r => ({ kind: r.kind, id: r.id, from: r.from_value, to: r.to_value }));
+  }
+  /** Forks and side chats copy the parent's completed-turn events: their cursor starts after the last copied seq. */
+  setForkSource(thread: string, sourceThreadId: string, boundarySeq: number): void {
+    seq(boundarySeq);
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO fork_sources VALUES (?,?,?) ON CONFLICT(thread) DO NOTHING").run(thread, sourceThreadId, boundarySeq);
+      this.advance(thread, this.forkSource(thread)!.boundarySeq);
+    })();
+  }
+  forkSource(thread: string): { sourceThreadId: string; boundarySeq: number } | undefined {
+    const row = this.db.prepare("SELECT source_thread_id, boundary_seq FROM fork_sources WHERE thread=?").get(thread) as { source_thread_id: string; boundary_seq: number } | undefined;
+    return row && { sourceThreadId: row.source_thread_id, boundarySeq: row.boundary_seq };
+  }
+  /** A message edit deleted seqs [fromSeq, toSeq] from the log. Queued items in the range are dropped, not retried. */
+  supersede(thread: string, fromSeq: number, toSeq: number): void {
+    seq(fromSeq); seq(toSeq);
+    if (toSeq < fromSeq) throw new Error("Invalid superseded range.");
+    this.db.prepare("INSERT INTO superseded VALUES (?,?,?) ON CONFLICT(thread,from_seq) DO UPDATE SET to_seq=MAX(to_seq,excluded.to_seq)").run(thread, fromSeq, toSeq);
+  }
+  isSuperseded(thread: string, seqNumber: number): boolean {
+    return !!this.db.prepare("SELECT 1 FROM superseded WHERE thread=? AND from_seq<=? AND to_seq>=? LIMIT 1").get(thread, seqNumber, seqNumber);
+  }
+  supersededRanges(thread: string): Array<{ from: number; to: number }> {
+    return (this.db.prepare("SELECT from_seq,to_seq FROM superseded WHERE thread=? ORDER BY from_seq").all(thread) as Array<{ from_seq: number; to_seq: number }>).map(r => ({ from: r.from_seq, to: r.to_seq }));
+  }
+  /** Send-time gate: false when the seq is paused or superseded. */
+  shouldSend(thread: string, seqNumber: number, project?: { id: string; createdAt: number }): boolean {
+    return !this.isSuperseded(thread, seqNumber) && !this.isPaused(thread, seqNumber, project);
+  }
+  /** thread/identity.providerThreadId; a thread can have several. */
+  addProviderThread(thread: string, providerThreadId: string): void {
+    if (!providerThreadId) return;
+    this.db.prepare("INSERT OR IGNORE INTO provider_threads VALUES (?,?)").run(thread, providerThreadId);
+  }
+  providerThreads(thread: string): string[] {
+    return (this.db.prepare("SELECT provider_thread_id FROM provider_threads WHERE thread=? ORDER BY rowid").all(thread) as Array<{ provider_thread_id: string }>).map(r => r.provider_thread_id);
+  }
+  /** Removes the thread's state, including its pause ranges. Project pauses stay. */
   deleteThread(thread: string): void {
     this.db.transaction(() => {
-      for (const table of ["cursors", "in_flight", "retries", "switch_over"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
-      this.db.prepare("DELETE FROM pauses WHERE kind='thread' AND id=?").run(thread);
+      for (const table of ["cursors", "in_flight", "retries", "switch_over", "fork_sources", "superseded", "provider_threads"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
+      this.db.prepare("DELETE FROM pause_ranges WHERE kind='thread' AND id=?").run(thread);
     })();
   }
 }

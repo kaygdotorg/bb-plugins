@@ -14,8 +14,24 @@ export async function mockHoncho() {
   const faults: Array<{ status: number; body?: string; headers?: Record<string, string> }> = [];
   const now = "2026-01-01T00:00:00.000Z";
   let counter = 0;
+  const operators = new Set(["gte", "lte", "gt", "lt", "ne", "in", "contains"]);
+  const operator = (actual: any, op: string, expected: any): boolean => {
+    switch (op) {
+      case "gte": return typeof actual === "number" && actual >= expected;
+      case "lte": return typeof actual === "number" && actual <= expected;
+      case "gt": return typeof actual === "number" && actual > expected;
+      case "lt": return typeof actual === "number" && actual < expected;
+      case "ne": return actual !== expected;
+      case "in": return Array.isArray(expected) && expected.includes(actual);
+      default: return Array.isArray(actual) ? actual.includes(expected) : typeof actual === "string" && actual.includes(expected);
+    }
+  };
   const matches = (row: Row, filter: Row = {}): boolean => Object.entries(filter).every(([key, expected]) => {
-    if (expected && typeof expected === "object" && !Array.isArray(expected)) return matches(row[key] ?? {}, expected);
+    if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+      const keys = Object.keys(expected);
+      if (keys.length && keys.every(k => operators.has(k))) return keys.every(k => operator(row[key], k, expected[k]));
+      return matches(row[key] ?? {}, expected);
+    }
     return row[key] === expected;
   });
   const server = createServer(async (req, res) => {
@@ -68,7 +84,12 @@ export async function mockHoncho() {
     }
     if (req.method !== "POST") { send(405); return; }
     if (resource === "peers" && parts.length === 4) { getCreate(peers, `${workspace}/${body.id}`, { workspace_id: workspace }); return; }
-    if (resource === "sessions" && parts.length === 4) { getCreate(sessions, `${workspace}/${body.id}`, { workspace_id: workspace, is_active: true, peers: body.peers ?? {}, scopes: body.scopes ?? [] }); return; }
+    if (resource === "sessions" && parts.length === 4) {
+      if (typeof body.id !== "string" || !/^[a-zA-Z0-9_-]{1,512}$/.test(body.id) || (body.scopes !== undefined && body.scopes !== null && (!Array.isArray(body.scopes) || body.scopes.length > 100 || body.scopes.some((x: unknown) => typeof x !== "string")))) { send(422); return; }
+      // Scopes passed at create join before any message; unknown scopes are created on the fly.
+      for (const scope of body.scopes ?? []) { const k = `${workspace}/${scope}`; scopes.set(k, (scopes.get(k) ?? new Set()).add(body.id)); }
+      getCreate(sessions, `${workspace}/${body.id}`, { workspace_id: workspace, is_active: true, peers: body.peers ?? {}, scopes: body.scopes ?? [] }); return;
+    }
     if (resource === "sessions" && action === "peers") {
       const session = sessions.get(key);
       if (!session) { send(404); return; }
@@ -92,7 +113,11 @@ export async function mockHoncho() {
     }
     if (resource === "conclusions") {
       if (resourceId === "list") { page(conclusions.filter(c => matches(c, body.filters))); return; }
-      if (resourceId === "query") { send(200, conclusions.filter(c => c.content.includes(body.query) && c.observer_id === body.filters?.observer && c.observed_id === body.filters?.observed).slice(0, body.top_k ?? 10)); return; }
+      if (resourceId === "query") {
+        // The server requires the observer/observed pair (sent as observer_id/observed_id).
+        if (typeof body.query !== "string" || !body.filters?.observer_id || !body.filters?.observed_id || body.top_k < 1 || body.top_k > 100) { send(422); return; }
+        send(200, conclusions.filter(c => c.content.includes(body.query) && matches(c, body.filters)).slice(0, body.top_k ?? 10)); return;
+      }
       if (parts.length === 4 && Array.isArray(body.conclusions)) {
         const created = body.conclusions.map((c: Row) => ({ ...c, id: `con_${++counter}`, created_at: now, level: "explicit" }));
         conclusions.push(...created); send(201, created); return;
@@ -106,7 +131,10 @@ export async function mockHoncho() {
         && matches(m, body.filters) && m.content.includes(body.query));
       send(200, rows.slice(0, body.limit ?? 10)); return;
     }
-    if (resource === "peers" && action === "representation") { send(200, { representation: "synthetic representation" }); return; }
+    if (resource === "peers" && action === "representation") {
+      if (body.scope !== undefined && (body.session_id !== undefined || body.filters !== undefined)) { send(422); return; }
+      send(200, { representation: body.scope === undefined ? "synthetic representation" : `synthetic representation for ${[body.scope].flat().join(",")}` }); return;
+    }
     if (resource === "chat" || (resource === "peers" && action === "chat")) {
       if (body.stream !== false || !body.query || !body.reasoning_level || (body.scope && (body.session_id || body.filters))) { send(422); return; }
       send(200, { content: "synthetic memory" }); return;
