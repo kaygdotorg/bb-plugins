@@ -1,11 +1,14 @@
 /**
- * Usage in the sidebar footer, drawn inside bb's own "Provider usage" button.
+ * Usage in the sidebar footer, drawn over bb's own "Provider usage" item.
  *
- * bb renders footer items itself and only takes an icon, so this overlay finds that button,
- * hides its chart icon and portals pooled percentages into it ([icon] 6%  [icon] 83%).
- * The button stays bb's: clicking the percentages is clicking it, so it opens the same
- * disclosure the icon did. Our content ignores pointer events so the click target is always
- * bb's button (a target inside another React tree could miss bb's handler).
+ * bb renders footer items itself and only takes an icon. It also decides how many items fit
+ * by measuring them (floor((row + gap) / (item + gap)) - 1), so bb's item must stay exactly
+ * its usual size: when the button grew to fit the percentages, bb moved Settings into "…"
+ * and re-rendered the row, which dropped the percentages back to the bare chart icon.
+ * So the button keeps its size with its icon hidden, and the percentages ([icon] 6%
+ * [icon] 83%) are an overlay that starts there and spans the free space to its right,
+ * capped at that space. A click on the overlay presses bb's button (a native .click(), so
+ * bb's own handler runs) and opens the same disclosure.
  *
  * Settings (server.ts): footer, footerWindow, footerProviders, footerLabels, warnPercent,
  * criticalPercent. Data: the usage_summary RPC, polled once a minute.
@@ -19,11 +22,17 @@ const BUTTON = 'li[data-footer-item] > button[aria-label="Provider usage"]';
 const HOST = "data-cliproxy-footer";
 const COMPACT = "data-cliproxy-compact";
 
-/** Hides the chart icon and lets the button grow to fit; light mode inks amber darker. */
+/** Keeps bb's button its size (icon hidden); the overlay sits on top. Light mode inks amber darker. */
 const STYLE = `
-button[${COMPACT}] { width: auto !important; padding-inline: 0.375rem !important; }
-button[${COMPACT}] > :not([${HOST}]) { display: none !important; }
-[${HOST}] { display: flex; align-items: center; gap: 0.625rem; pointer-events: none; font-size: 0.6875rem; line-height: 1; }
+button[${COMPACT}] > * { visibility: hidden; }
+[${HOST}] {
+  position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+  width: max-content; max-width: var(--cliproxy-room, 8rem); overflow: hidden;
+  display: flex; align-items: center; gap: 0.625rem; padding-inline: 0.5rem;
+  border-radius: calc(var(--radius) - 2px); cursor: pointer;
+  font-size: 0.6875rem; line-height: 1; white-space: nowrap;
+}
+[${HOST}]:hover { background: var(--sidebar-accent); }
 [${HOST}] > span { display: inline-flex; align-items: center; gap: 0.25rem; }
 [data-cliproxy-tone="warn"] { color: oklch(0.55 0.15 50); }
 .dark [data-cliproxy-tone="warn"] { color: var(--warning, oklch(0.75 0.15 70)); }
@@ -119,31 +128,46 @@ export function FooterUsage() {
     const attach = () => {
       const button = document.querySelector<HTMLElement>(BUTTON);
       if (!show || !button) {
-        current?.closest(BUTTON)?.removeAttribute(COMPACT);
+        current?.parentElement?.querySelector("button")?.removeAttribute(COMPACT);
         current?.remove();
         current = null;
         setHost(null);
         return;
       }
-      if (current && button.contains(current)) return;
-      current = document.createElement("span");
-      current.setAttribute(HOST, "");
-      button.append(current);
-      button.setAttribute(COMPACT, "");
-      setHost(current);
+      const item = button.parentElement as HTMLElement;
+      if (!current || current.parentElement !== item) {
+        current?.remove();
+        current = document.createElement("span");
+        current.setAttribute(HOST, "");
+        current.setAttribute("aria-hidden", "true"); // the button carries the words (aria-description)
+        current.addEventListener("click", () => item.querySelector<HTMLButtonElement>("button")?.click());
+        item.append(current);
+        button.setAttribute(COMPACT, "");
+        setHost(current);
+      }
+      // Room = up to the next item to the right in the row (bb's own items, any order).
+      const left = item.getBoundingClientRect().left;
+      const next = Math.min(...Array.from(item.parentElement?.children ?? [])
+        .map((li) => li.getBoundingClientRect().left)
+        .filter((x) => x > left + 1), window.innerWidth);
+      current.style.setProperty("--cliproxy-room", `${Math.max(item.offsetWidth, next - left - 4)}px`);
     };
     attach();
     const timer = window.setInterval(attach, 1000);
+    const resize = new ResizeObserver(attach);
+    const row = document.querySelector(BUTTON)?.closest("ul");
+    if (row) resize.observe(row);
     return () => {
       window.clearInterval(timer);
-      current?.closest(BUTTON)?.removeAttribute(COMPACT);
+      resize.disconnect();
+      current?.parentElement?.querySelector(BUTTON.split(" > ")[1])?.removeAttribute(COMPACT);
       current?.remove();
       style.remove();
     };
   }, [show]);
 
   useEffect(() => {
-    const button = host?.closest(BUTTON);
+    const button = host?.parentElement?.querySelector("button");
     if (button) button.setAttribute("aria-description", describe(providers, prefs));
   });
 

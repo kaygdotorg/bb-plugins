@@ -13,7 +13,7 @@ Read this before changing anything. Keep it short; update it in the same commit 
 
 ## Rules
 
-- **bb draws footer items itself and only takes an icon.** `footer.tsx` portals the percentages into bb's own "Provider usage" button and hides its icon, so a click on them is a click on that button and opens the same disclosure. The content has `pointer-events: none`: a click target inside another React tree can miss bb's handler. It re-attaches on a 1s check, because bb re-creates the footer.
+- **bb draws footer items itself and only takes an icon, and counts how many fit by measuring them** (`floor((row + gap) / (item + gap)) - 1`). Never change the size of bb's item: a wider button pushed Settings into "…" and made bb re-render the row, dropping the percentages. `footer.tsx` hides the button's icon (same size) and puts the percentages in an overlay in the same `li`, capped at the free space to the next item. A click on the overlay calls the button's native `.click()`, so bb's handler opens the same disclosure. It re-attaches on a 1s check and on row resize.
 - **The management key never reaches the app.** Read it server-side only; the app gets projected account fields.
 - **Never call CLIProxyAPI's queued usage endpoint:** reading it consumes the records.
 - **Other plugins read usage through `bb.sdk.plugins.callRpc`** (`usage_read`, `usage_summary`). Keep both outputs backwards compatible.
