@@ -23,11 +23,22 @@ export const PILL_PHONE_CSS = `
 @media (max-width: 767px) {
   ${R} {
     /* Heights, segments and glyphs are pills.ts's phone tokens (44, 48, 20).
-       Equal inset left and right (iOS 27: 20px); the top inset keeps the pills off the screen's rounded corner. */
-    --cf-ph-side: ${s(20)};
-    --cf-ph-top: ${s(12)};
+       Side inset as iOS 27 sets it by screen width (measured, Files/Settings/Messages): 16pt on the 402pt
+       Pro, 20pt on the 440pt Pro Max. The pills sit right under the status bar (Claude's and the system
+       nav bars' top: y=62 on a Pro Max), with 4pt above and below inside the row. */
+    --cf-ph-side: ${s(16)};
+    --cf-ph-top: ${s(4)};
     --cf-ph-row: calc(var(--cf-tb) + 2 * var(--cf-ph-top));
     --bb-app-chrome-row-height: var(--cf-ph-row);
+  }
+
+  @media (min-width: 430px) { ${R} { --cf-ph-side: ${s(20)}; } }
+  /* Dark: the pills' glass was nearly invisible over dark text (fill ~26 over a 20 page); Claude's read ~68.
+     A lighter neutral tint, still glass. */
+  ${R}.dark {
+    --cf-pill-tint: 72 72 76;
+    --cf-pill-alpha: 0.55;
+    --cf-pill-filter: blur(6px) saturate(160%) brightness(0.92);
   }
 
   /* The header: a row of floating pills. Room on the left for the back pill. */

@@ -235,8 +235,8 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
    then sat 10px and 8px from the edges. */
 @media (max-width: 767px) {
   ${R} [data-sidebar="sidebar"] [data-sidebar="footer"] {
-    padding-left: 17px !important;  /* + the usage pill's own 3px offset = 20 */
-    padding-right: 20px !important;
+    padding-left: calc(var(--cf-ph-side, 20px) - 3px) !important;  /* + the usage pill's own 3px offset = the side inset */
+    padding-right: var(--cf-ph-side, 20px) !important;
   }
 }
 `;

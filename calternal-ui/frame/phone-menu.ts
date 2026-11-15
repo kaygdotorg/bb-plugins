@@ -197,7 +197,9 @@ export function mountPhoneMenu(): () => void {
     // The header's right toolbar is hidden on phones (its buttons are this menu's first items), so the
     // ⋯ pill is the header's right end. (A visible toolbar still widens the anchor, e.g. mid-resize.)
     const tb = btn.closest("main")?.querySelector(TOOLBAR_SEL)?.getBoundingClientRect();
-    const right = Math.max(INSET, innerWidth - Math.max(p.right, tb && tb.width > 0 ? tb.right : p.right));
+    // The screen inset is the header's (--cf-ph-side: 16 or 20 by screen width), so the menu's edge stays on the pill's.
+    const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ph-side")) || INSET;
+    const right = Math.max(inset, innerWidth - Math.max(p.right, tb && tb.width > 0 ? tb.right : p.right));
     const top = Math.max(INSET / 2, p.top);
     drawer.style.setProperty("--cf-am-top", `${top}px`);
     drawer.style.setProperty("--cf-am-right", `${right}px`);

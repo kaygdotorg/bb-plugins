@@ -28,7 +28,7 @@ let el: HTMLSpanElement | null = null;
 const TOGGLE = '[data-sidebar="trigger"]';
 /** The leading column comes from sidebar-top.ts's sidebarColumn (the rows' icon/text start). */
 const LEAD_FALLBACK = 17.6; // the row inset 8.8 + the label's padding 8.8
-/** Phones: the side inset (pills-phone.ts --cf-ph-side). */
+/** Phones: the side inset, read from pills-phone.ts's --cf-ph-side (16pt or 20pt by screen width); 20 as a fallback. */
 const PHONE = "(max-width: 767px)";
 const PHONE_INSET = 20;
 
@@ -106,7 +106,8 @@ async function align() {
     const contentLeft = row.left + (parseFloat(getComputedStyle(rowEl).paddingLeft) || 0);
     const inkLeft = (parseFloat(cs.paddingLeft) || 0) - m.actualBoundingBoxLeft; // ink start inside the element
     const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ui-scale")) || 1;
-    const start = phone ? row.left + PHONE_INSET * scale
+    const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ph-side")) || PHONE_INSET * scale;
+    const start = phone ? row.left + side
       : col && sidebar ? sidebar.getBoundingClientRect().left + col.left
       : row.left + LEAD_FALLBACK * scale;
     node.style.setProperty("--cf-brand-left", `${(start - contentLeft - inkLeft).toFixed(2)}px`);
