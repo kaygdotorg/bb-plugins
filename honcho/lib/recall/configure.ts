@@ -32,6 +32,10 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
         projectId: ctx.project.id, environmentId: ctx.environment.id,
         path: ctx.environment.path, projectName: ctx.project.name,
       };
+      // Paused or deny-listed threads get no memory; an unknown deny answer fails closed.
+      const contextThreadId = ScopeResolver.contextThread(input);
+      const blocked = shared.gate.blockedNow({ id: ctx.thread.id, projectId: ctx.project.id, environmentId: ctx.environment.id ?? null, contextThreadId });
+      if (blocked !== false) return { tools, skills: [] };
       const { scope, provisional } = shared.scopes.sync(input);
       if (provisional) void shared.scopes.resolve(input).then(s => { if (cache.want(s)) cache.request(true); }, () => undefined);
       if (cache.want(scope)) cache.request(true);
@@ -46,8 +50,7 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
         agentNotes, stale: snap.stale, refreshedAt: snap.lastSuccess,
       });
       if (instructions) {
-        const contextThread = ScopeResolver.contextThread(input);
-        deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `session memory injected (scope ${scope}${contextThread !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
+        deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `session memory injected (scope ${scope}${contextThreadId !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
       }
     } catch (error) {
       bb.log.warn(`honcho configure: ${error instanceof Error ? error.name : "error"}`);

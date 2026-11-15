@@ -1,7 +1,9 @@
 import type { BbPluginApi, PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { Deps } from "../contract.js";
-import { HonchoError, type Message } from "../honcho-client.js";
+import { HonchoError, type Conclusion, type ConclusionDraft, type HonchoClient, type Message } from "../honcho-client.js";
+import { REDACTED } from "../redact.js";
+import { ensureThreadSession, type ToolThread } from "./session.js";
 import { truncateBytes } from "../recall/format.js";
 import { describeError, recallShared, toView, type RecallShared } from "../recall/shared.js";
 import type { HonchoToolName } from "./names.js";
@@ -40,6 +42,15 @@ async function guarded(deps: Deps, shared: RecallShared, tool: HonchoToolName, t
   }
 }
 class ToolRefusal extends Error {}
+
+/** Ensure the session (unless the thread is paused or deny-listed), then create attached; null when it cannot. */
+async function attachAfterEnsure(bb: BbPluginApi, shared: RecallShared, client: HonchoClient, peer: string, threadId: string, draft: ConclusionDraft): Promise<Conclusion[] | null> {
+  const thread = await bb.sdk.threads.get({ threadId }) as ToolThread;
+  // Capture never creates a session for a paused or deny-listed thread; neither do the tools.
+  if (await shared.gate.blocked({ id: thread.id, projectId: thread.projectId, environmentId: thread.environmentId ?? null })) return null;
+  await ensureThreadSession(bb, shared, client, peer, thread);
+  return client.createConclusions([draft]);
+}
 
 async function requireBroadKey(shared: RecallShared, wanted: boolean): Promise<void> {
   if (wanted && await shared.keyLevel.get() === "restricted") throw new ToolRefusal(RESTRICTED);
@@ -97,18 +108,32 @@ export function registerTools(bb: BbPluginApi, deps: Deps): void {
     parameters: z.object({ content: z.string().trim().min(1).max(2000).describe("One self-contained fact, with dates as YYYY-MM-DD") }).strict(),
     presentation: { label: { pending: "Saving to memory", completed: "Saved to memory" }, icon: brain },
     execute: (params, ctx) => guarded(deps, shared, "honcho_conclude", ctx.threadId, async () => {
+      const { text: content, count: redactions } = (await shared.gate.redactor())(params.content);
+      if (!content.split(REDACTED).join("").trim()) throw new ToolRefusal("Nothing left to save after redacting secrets. Never save secrets to memory.");
       const { client, peer } = await shared.client();
-      const draft = { content: params.content, observer_id: peer, observed_id: peer };
-      let created;
-      try { created = await client.createConclusions([{ ...draft, session_id: ctx.threadId }]); }
+      const draft = { content, observer_id: peer, observed_id: peer };
+      const attachedDraft = { ...draft, session_id: ctx.threadId };
+      const missingSession = (error: unknown) => error instanceof HonchoError && (error.kind === "validation" || error.status === 404);
+      let created: Conclusion[];
+      let attached = true;
+      try { created = await client.createConclusions([attachedDraft]); }
       catch (error) {
-        // The thread's session may not exist yet (capture's grace window); save it unattached.
-        if (!(error instanceof HonchoError && (error.kind === "validation" || error.status === 404))) throw error;
-        created = await client.createConclusions([draft]);
+        if (!missingSession(error)) throw error;
+        // The thread's session does not exist yet (capture's grace window): create it as capture would, then attach.
+        created = await attachAfterEnsure(bb, shared, client, peer, ctx.threadId, attachedDraft).catch(() => null) ?? [];
+        if (!created.length) { attached = false; created = await client.createConclusions([draft]); }
       }
       const scope = shared.scopes.known(ctx.threadId);
-      for (const c of created) shared.store.markAgentWritten(c.id, ctx.threadId, scope);
-      return { text: `Saved as agent-written conclusion ${created[0]?.id ?? "(unknown id)"}.`, summary: "saved 1 conclusion" };
+      // The conclusion exists now: a failed local mark must not make the agent save it twice.
+      try { for (const c of created) shared.store.markAgentWritten(c.id, ctx.threadId, scope, attached); }
+      catch (error) {
+        deps.activity.record({ kind: "failure", threadId: ctx.threadId, summary: "honcho_conclude: saved, but the local agent-written mark failed", error: error instanceof Error ? error.name : "error" });
+      }
+      const note = redactions ? ` ${redactions} secret${redactions === 1 ? " was" : "s were"} redacted before saving.` : "";
+      return {
+        text: `Saved as agent-written conclusion ${created[0]?.id ?? "(unknown id)"}.${note}`,
+        summary: `saved 1 conclusion${attached ? "" : " (unattached)"}${redactions ? `, ${redactions} redacted` : ""}`,
+      };
     }),
   });
 

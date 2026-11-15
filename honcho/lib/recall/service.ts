@@ -14,6 +14,9 @@ export type RecallRuntime = RecallService & {
   stop(): void;
   /** run() without a service, returning its stopper: for tests. */
   start(): () => void;
+  /** Conclusions honcho_conclude saved from a thread; `attached: false` ones carry no session_id,
+   * so deleting the thread's session leaves them and the delete path must purge them by id. */
+  conclusionsForThread(threadId: string): Array<{ id: string; attached: boolean }>;
 };
 
 export interface RecallInternals {
@@ -46,7 +49,11 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
   const cache = new MemoryCache(shared, Date.now, m => bb.log.warn(m));
   const settings = deps.recall?.settings ?? defineSettings(bb);
 
-  bb.events.on("thread.active", () => { cache.request(); });
+  bb.events.on("thread.active", ({ thread }) => {
+    cache.request();
+    // Session build reads the deny answer synchronously; have it ready.
+    void shared.gate.checkDenied({ id: thread.id, projectId: thread.projectId, environmentId: thread.environmentId ?? null });
+  });
 
   const views = (items: readonly Conclusion[]): ConclusionView[] => {
     const marks = shared.store.many(items.map(c => c.id));
@@ -93,6 +100,7 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
       deps.activity.record({ kind: "delete", summary: "deleted 1 conclusion" });
       cache.request(true);
     },
+    conclusionsForThread: threadId => shared.store.conclusionsForThread(threadId),
     async confirmConclusion(id) {
       shared.store.confirm(id);
       cache.request(true);
