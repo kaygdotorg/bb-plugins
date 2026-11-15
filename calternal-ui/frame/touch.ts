@@ -4,8 +4,8 @@
  *    keyboard squeezes the drawer's thread list to nothing.
  *  - When the visible area is short anyway, html gets [data-cf-short] and the sidebar
  *    scrolls as one column (css.ts) instead of collapsing its thread list.
- *  - Pull down to search: from the top of the sidebar, from the chat's title bar, or in a
- *    chat scrolled all the way up.
+ *  - Pull down to search: from the chat's title bar, or in a chat scrolled all the way up
+ *    (not in the sidebar: it has a search button at the top, sidebar-top.ts).
  *  - While the keyboard is up for the composer, a keyboard-down button sits in its icon row.
  *  - Swipe actions (swipe.ts), and sideways swipes in the chat that open the sidebar / right panel.
  * Listeners are passive where possible and attached to single elements, never the DOM tree.
@@ -396,16 +396,9 @@ function pullToSearch(): () => void {
 
   /** Where a pull can start: the top of the sidebar, or the chat scrolled all the way up. */
   const begin = (target: Element): boolean => {
-    const sidebar = target.closest<HTMLElement>(SIDEBAR);
-    if (sidebar) {
-      const list = sidebar.querySelector<HTMLElement>('[data-sidebar="content"]');
-      if (list && list.scrollTop > 0) return false;
-      const toggle = document.querySelector<HTMLElement>('[data-testid="app-sidebar-trigger-overlay"]');
-      moving = toggle ? [sidebar, toggle] : [sidebar];
-      sidebar.prepend(pill);
-      pill.style.top = "0.5rem";
-      return true;
-    }
+    // Not in the sidebar (kayg): it scrolls as one column now, and a pull at its end opened search. The
+    // drawer has a search button at the top instead (sidebar-top.ts).
+    if (target.closest(SIDEBAR)) return false;
     // From the chat's title bar, at any scroll position: bb keeps long threads anchored and
     // loads older messages as you scroll up, so "scrolled to the very top" is rare there.
     const header = target.closest<HTMLElement>(`${SHELF} header`);

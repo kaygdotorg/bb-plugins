@@ -18,9 +18,10 @@ export interface EdgeFade {
   scroller: string;
   /** The rows inside it that fade (keep them row-sized: a tall block would fade as a whole). */
   rows: string;
-  /** CSS lengths of the bars over the top and bottom edges (the fade spans each bar). */
-  top: string;
-  bottom: string;
+  /** CSS lengths of the bars over the top and bottom edges (each fade spans its bar). Leave one out for an
+   *  edge without a bar (a zero-length range would leave the rows invisible). */
+  top?: string;
+  bottom?: string;
   /** Half a row's height: the fade follows the row's middle (its text), not its top edge. */
   mid?: string;
 }
@@ -28,26 +29,28 @@ export interface EdgeFade {
 export function edgeFadeCSS(f: EdgeFade): string {
   const mid = f.mid ?? "0px";
   // Two edges, two animations: both can't drive opacity (the later one would win), so each drives its own
-  // registered number and the opacity is their product.
+  // registered number and the opacity is their product. Each is measured from the row's middle:
+  //  - under the bottom bar: a plain view; "entry <mid>" is the row's middle at the scroller's bottom edge
+  //    (0), "entry <bar + mid>" is it at the bar's top (1);
+  //  - under the top bar: the view starts below the bar (inset, less mid); "exit 0px" is the row's middle at
+  //    the bar's bottom (1), "exit <bar>" is it at the scroller's top (0).
+  // So each fade spans its bar: from the bar's inner edge to its outer edge.
+  const parts: { anim: string; timeline: string; range: string }[] = [];
+  if (f.bottom) parts.push({ anim: `cf-fade-in-${f.name} linear both`, timeline: "view(block 0px 0px)", range: `entry ${mid} entry calc(${f.bottom} + ${mid})` });
+  if (f.top) parts.push({ anim: `cf-fade-out-${f.name} linear both`, timeline: `view(block calc(${f.top} - ${mid}) 0px)`, range: `exit 0px exit ${f.top}` });
+  if (!parts.length) return "";
   return `
 @property --cf-fade-in-${f.name} { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --cf-fade-out-${f.name} { syntax: "<number>"; inherits: false; initial-value: 1; }
 @supports (animation-timeline: view()) {
-  /* Progressive, not linear: 85% of the fade happens in the bar's inner 30%, so whatever is behind the
-     bar's own content (the wordmark, the footer's pills) is already faint (a linear fade left a row at
-     ~25% right behind the wordmark). */
+  /* Progressive, not linear: 85% of the fade happens in the bar's inner 30%, so whatever is behind the bar's
+     own content (the wordmark, the footer's pills, the composer) is already faint. */
   @keyframes cf-fade-in-${f.name} { 0% { --cf-fade-in-${f.name}: 0; } 70% { --cf-fade-in-${f.name}: 0.15; } 100% { --cf-fade-in-${f.name}: 1; } }
   @keyframes cf-fade-out-${f.name} { 0% { --cf-fade-out-${f.name}: 1; } 30% { --cf-fade-out-${f.name}: 0.15; } 100% { --cf-fade-out-${f.name}: 0; } }
   ${f.scroller} :is(${f.rows}) {
-    /* Each measured from the row's middle (its top edge + mid; the ranges and the top inset shift by it):
-       - under the footer: a plain view (no inset); "entry 0px" is the row's top at the scroller's bottom
-         edge (0), "entry <footer>" is it at the footer's top (1);
-       - under the header: the view starts below the header (inset); "exit 0px" is the row's top at the
-         header's bottom (1), "exit <header>" is it at the scroller's top (0).
-       So each fade spans its bar exactly: from the bar's inner edge to its outer edge. */
-    animation: cf-fade-in-${f.name} linear both, cf-fade-out-${f.name} linear both;
-    animation-timeline: view(block 0px 0px), view(block calc(${f.top} - ${mid}) 0px);
-    animation-range: entry ${mid} entry calc(${f.bottom} + ${mid}), exit 0px exit ${f.top};
+    animation: ${parts.map((x) => x.anim).join(", ")};
+    animation-timeline: ${parts.map((x) => x.timeline).join(", ")};
+    animation-range: ${parts.map((x) => x.range).join(", ")};
     opacity: calc(var(--cf-fade-in-${f.name}) * var(--cf-fade-out-${f.name}));
   }
 }

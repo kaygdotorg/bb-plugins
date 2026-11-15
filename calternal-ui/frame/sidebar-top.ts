@@ -14,6 +14,7 @@
  * never while you drag the sidebar's edge, and never for the keyboard (input-mode.ts).
  */
 import { R } from "./selectors";
+import { GLASS_LAYER, s } from "./pills";
 
 const OVERLAY = '[data-testid="app-sidebar-trigger-overlay"]';
 const SIDEBAR = '[data-sidebar="sidebar"]';
@@ -26,6 +27,34 @@ const CSS = `
 ${R} ${SIDEBAR} div:has(> button[aria-label="Go back"]) { display: none !important; }
 ${R} ${OVERLAY} { translate: var(--cf-toggle-dx, 0) 0; }
 /* Slides with the sidebar: bb's own duration and curve for its slide (read at runtime). */
+/* Phones: a search button at the drawer's top-trailing corner, like Claude's and ChatGPT's (a 44pt glass
+   circle at the side inset); the footer's own search button steps aside there. Desktop keeps the footer's. */
+${R} [data-cf-sb-search] { display: none; }
+@media (max-width: 767px) {
+  ${R} [data-cf-sb-search] {
+    display: inline-flex;
+    position: relative;
+    isolation: isolate;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cf-pill);
+    height: var(--cf-pill);
+    margin-left: auto;
+    margin-right: calc(var(--cf-ph-side, 20px) - 0.55rem); /* the row's own padding is 0.55rem (8.8px) */
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--foreground);
+    transition: scale 150ms var(--cf-ease-out);
+  }
+  ${R} [data-cf-sb-search]::before {
+${GLASS_LAYER}}
+  ${R} [data-cf-sb-search]:active { scale: 0.97; }
+  ${R} [data-cf-sb-search] svg { width: var(--cf-pill-icon); height: var(--cf-pill-icon); }
+  ${R} ${SIDEBAR} [data-sidebar="footer"] li[data-footer-item]:has(> button[aria-label^="Search threads"]) { display: none !important; }
+}
 ${R} ${OVERLAY}[data-cf-sliding] { transition: translate var(--cf-slide-ms, 200ms) var(--cf-slide-ease, linear); }
 `;
 
@@ -128,7 +157,22 @@ export function mountSidebarTop(): () => void {
   let page = "";
   /** The 1s check costs no layout: it re-places only when bb swapped an element or the page changed
    *  (Settings has no top row). Everything else is event-driven (state flips, resizes). */
+  // The phone search button (see the CSS): one element, put back whenever bb re-renders the top row.
+  const search = document.createElement("button");
+  search.type = "button";
+  search.setAttribute("data-cf-sb-search", "");
+  search.setAttribute("aria-label", "Search threads");
+  search.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+  search.addEventListener("click", () => {
+    [...document.querySelectorAll<HTMLButtonElement>("button[aria-label]")]
+      .find((b) => b !== search && /^Search threads/i.test(b.getAttribute("aria-label") ?? ""))?.click();
+  });
+  const placeSearch = () => {
+    const row = document.querySelector(`${SIDEBAR} ${ROW}`);
+    if (row && search.parentElement !== row) row.append(search);
+  };
   const attach = () => {
+    placeSearch();
     const sidebar = document.querySelector(SIDEBAR);
     const overlay = document.querySelector(OVERLAY);
     let changed = overlay !== overlaySeen || location.pathname !== page;
@@ -155,6 +199,7 @@ export function mountSidebarTop(): () => void {
     window.removeEventListener("resize", schedule);
     document.querySelector<HTMLElement>(OVERLAY)?.style.removeProperty("--cf-toggle-dx");
     document.documentElement.removeAttribute("data-cf-sb-collapsed");
+    search.remove();
     style.remove();
   };
 }

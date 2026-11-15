@@ -168,6 +168,27 @@ ${edgeFadeCSS({
   mid: "1.5rem", // half a 48pt row
 })}
 
+/* The new-chat page on phones: bb lets its "Recent" list scroll under the composer band, which bb paints solid;
+   ours is glass, so rows showed through it. Now rows fade as they pass under it (the sidebar's edge fade; bb
+   already leaves room to scroll the last row clear of it), and the "Recent" label isn't sticky (it
+   overlapped rows). */
+@media (max-width: 767px) {
+  ${R} [data-root-compose-mobile-recents] > .sticky { position: relative !important; }
+}
+${edgeFadeCSS({
+  name: "recents",
+  scroller: `${R} [data-testid="root-compose-compact-scroll-viewport"]`,
+  rows: `[data-root-compose-mobile-recents] li, [data-root-compose-mobile-recents] h2`,
+  bottom: "var(--cf-compose-band, 12rem)", // bb's composer band (~190pt on phones)
+  mid: "1.875rem", // half a 60pt row
+})}
+
+/* Closed sheets are hidden once bb's slide-out ends. bb parks a closed sheet one sheet-height below its open
+   place; our inset sheets float above the screen's bottom edge, so the inset (~8pt) stayed in view as a
+   strip at the bottom (kayg: "wallpaper leaks from the bottom"). The delay lets the slide play first. */
+@keyframes cf-sheet-gone { to { visibility: hidden; } }
+${R} [data-persistent-drawer-content][data-state="closed"] { animation: cf-sheet-gone 0s linear 450ms forwards; }
+
 /* Selection: on the root only. Chrome (131+) inherits ::selection from the root; a universal
    \`html ::selection\` made it compute a selection style for EVERY element, doubling each whole-page
    restyle bb does (sidebar toggle, menus, tooltips: ~2,100 -> ~1,100 elements, desktop trace
