@@ -17,7 +17,7 @@ The plugin reads `~/.honcho/config.json`, the same file claude-honcho uses, so i
 - **Capture.** Every bb thread becomes one Honcho session. The session is scoped to its repo, or to its project when there is no repo. Each harness is its own AI peer. Uploads happen in the background, after a short grace window, and never block a turn. Credentials and your own redaction patterns are removed first. Deleting a thread deletes its session.
 - **Recall.** At session start, each thread gets a memory summary: your peer card, the scope's conclusions, and notes agents saved. Claude Code and Codex also get per-turn memory: a fast Honcho search runs as the message is dispatched, and the bb hook injects the result into that turn.
 - **Tools.** `honcho_chat`, `honcho_search`, `honcho_conclude` and `honcho_conclusions`. Codex gets them only when `codexUseBbTools` is on.
-- **CLI.** `bb honcho status`, `bb honcho pause [--project] [--off]`, `bb honcho backfill --dry-run|--start|--stop|--progress`, and `bb honcho harness state|connect|hand-over|undo`.
+- **CLI.** `bb honcho status`, `bb honcho pause [--project] [--off]`, `bb honcho backfill --dry-run|--start|--stop|--progress`, and `bb honcho harness state|connect|hand-over|undo [--step connect|hand-over]`.
 
 ## The Memory page
 
@@ -37,7 +37,7 @@ Do these on each machine, on the Memory page → connection, or with `bb honcho 
 1. **connect harnesses.** This installs one bb-owned hook in Claude Code and Codex. It does nothing outside bb, because it exits unless bb started the harness. Inside bb it injects per-turn memory and blocks the old honcho MCP tools. It also records Codex's trust for the new hook. If it can't, the step shows `codex untrusted`.
 2. **hand over to bb.** This turns off claude-honcho (`honcho@honcho`) and codex-honcho for this machine, and backs up the configs first. From then on, bb is the only thing that writes your conversations to Honcho. Skip this step on a machine where you still run the CLIs outside bb: inside bb they are neutralized anyway.
 
-Each step has its own **undo**, which restores bb's backups for that step. `bb honcho harness undo` undoes both.
+Each step has its own **undo**, which restores bb's backups for that step. `bb honcho harness undo --step connect|hand-over` undoes one step; without `--step` it undoes both.
 
 Claude Code and Codex threads that were already running keep their harness capture until bb rebuilds their session. Their status says so. Set `captureRequiresSwitchover` off only if you are sure nothing else is writing them.
 

@@ -90,6 +90,16 @@ describe("bb honcho CLI", () => {
     expect(t.hs.connect).toHaveBeenCalledWith(undefined); expect(t.hs.undo).toHaveBeenCalledTimes(1);
     expect(JSON.parse((await t.run(["harness", "state", "--json"])).stdout)).toMatchObject({ machineId: "m1", codex: { trusted: null } });
   });
+  it("harness undo --step undoes one step, and refuses anything else", async () => {
+    const t = use();
+    await t.run(["harness", "undo"]);
+    expect((await t.run(["harness", "undo", "--step", "connect"])).exitCode).toBe(0);
+    expect((await t.run(["harness", "undo", "--step", "hand-over", "--machine", "m2"])).exitCode).toBe(0);
+    expect(vi.mocked(t.hs.undo).mock.calls).toEqual([[undefined, undefined], [undefined, "connect"], ["m2", "handOver"]]);
+    const bad = await t.run(["harness", "undo", "--step", "everything"]);
+    expect(bad.exitCode).not.toBe(0);
+    expect(t.hs.undo).toHaveBeenCalledTimes(3);
+  });
   it("formats helpers", () => {
     expect(ago(null)).toBe("never"); expect(ago(1000, 5000)).toBe("4s ago"); expect(ago(0, 7_200_000)).toBe("2h ago");
     expect(formatPlan({ threads: 1, messages: 2, tokens: 3, skippedAlreadyInHoncho: 4, reasoningMessages: 5 })).toContain("tokens (about):         3");

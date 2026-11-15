@@ -1,6 +1,6 @@
 import { PluginCliError, cliCommand, defineCli } from "@get-bb/plugin-sdk";
 import type { BbPluginApi, PluginCliContext, PluginCliResult } from "@get-bb/plugin-sdk";
-import type { BackfillPlan, BackfillService, CaptureService, HarnessService, HarnessState } from "./contract";
+import type { BackfillPlan, BackfillService, CaptureService, HarnessService, HarnessState, HarnessUndoStep } from "./contract";
 
 export interface CliServices { capture: CaptureService; backfill: BackfillService; harness: HarnessService }
 
@@ -49,7 +49,7 @@ function needThread(ctx: PluginCliContext): string {
 export function registerCli(bb: BbPluginApi, services: CliServices): void {
   const { capture, backfill, harness } = services;
   const machine = { type: "string", description: "Machine id (default: this machine)" } as const;
-  const harnessCommand = (summary: string, action: "state" | "connect" | "handOver" | "undo") => cliCommand({
+  const harnessCommand = (summary: string, action: "state" | "connect" | "handOver") => cliCommand({
     summary, options: { machine, json },
     async run({ options }) {
       const state = await harness[action](options.machine);
@@ -119,7 +119,19 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
       "harness state": harnessCommand("Show claude/codex hook and hand-over state", "state"),
       "harness connect": harnessCommand("Install the bb-gated Honcho hooks", "connect"),
       "harness hand-over": harnessCommand("Turn off claude-honcho and codex honcho inside bb, with a backup", "handOver"),
-      "harness undo": harnessCommand("Undo connect and hand over from bb's backups", "undo"),
+      "harness undo": cliCommand({
+        summary: "Undo connect or hand over (one step with --step) from bb's backups",
+        options: {
+          machine,
+          step: { type: "enum", values: ["connect", "hand-over"], description: "Undo only this step: connect (the bb hooks) or hand-over (claude-honcho / codex honcho)" },
+          json,
+        },
+        async run({ options }) {
+          const step: HarnessUndoStep | undefined = options.step === "hand-over" ? "handOver" : options.step === "connect" ? "connect" : undefined;
+          const state = await harness.undo(options.machine, step);
+          return out(state, formatHarness(state), options.json);
+        },
+      }),
     },
   }));
 }
