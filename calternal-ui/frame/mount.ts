@@ -11,6 +11,7 @@ import { applyCachedAccent, clearAccent } from "./accent";
 import { mountTouch } from "./touch";
 import { mountTooltips } from "./tooltip";
 import { mountComposer } from "./composer";
+import { installClock } from "./clock";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -26,6 +27,8 @@ export function mountFrame(): () => void {
 
   const root = document.documentElement;
   root.setAttribute(ROOT_ATTR, "");
+  // Before the cached prefs: they choose the clock format the wrapped formatters use.
+  const uninstallClock = installClock();
   applyCachedWallpaper();
   applyCachedPrefs();
   applyCachedAccent();
@@ -34,6 +37,7 @@ export function mountFrame(): () => void {
   const unmountComposer = mountComposer();
 
   return () => {
+    uninstallClock();
     unmountComposer();
     unmountTouch();
     unmountTooltips();

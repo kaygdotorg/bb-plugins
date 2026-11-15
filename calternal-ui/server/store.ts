@@ -42,6 +42,7 @@ export function createStore(bb: BbPluginApi) {
       chat: { ...d.chat, ...p.chat },
       fonts: { ...d.fonts, ...p.fonts },
       uiScale: p.uiScale ?? d.uiScale,
+      clock: p.clock ?? d.clock,
       accent: p.accent ?? d.accent,
     };
   }

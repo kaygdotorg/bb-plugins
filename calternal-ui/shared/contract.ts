@@ -28,6 +28,8 @@ export const prefsSchema = z.object({
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }),
   /** Interface size in %: scales bb's rem-based text and controls together. */
   uiScale: z.number().min(75).max(150),
+  /** Clock format for every time bb shows; "system" leaves bb's own (the browser locale's). */
+  clock: z.enum(["24h", "12h", "system"]),
 });
 export type FramePrefs = z.infer<typeof prefsSchema>;
 export type SurfacePrefs = z.infer<typeof surfaceSchema>;
@@ -40,6 +42,7 @@ const prefsPatchSchema = z.object({
   chat: surfaceSchema.partial().optional(),
   fonts: fontsSchema.partial().optional(),
   uiScale: z.number().min(75).max(150).optional(),
+  clock: z.enum(["24h", "12h", "system"]).optional(),
   accent: z.object({ mode: z.enum(["wallpaper", "custom"]), color: z.string().regex(/^#[\da-fA-F]{6}$/) }).optional(),
 });
 export type FramePrefsPatch = z.infer<typeof prefsPatchSchema>;

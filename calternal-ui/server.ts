@@ -60,6 +60,7 @@ export default async function plugin(bb: BbPluginApi) {
         chat: { ...current.chat, ...patch.chat },
         fonts: { ...current.fonts, ...patch.fonts },
         uiScale: patch.uiScale ?? current.uiScale,
+        clock: patch.clock ?? current.clock,
         accent: patch.accent ?? current.accent,
       });
       return state();

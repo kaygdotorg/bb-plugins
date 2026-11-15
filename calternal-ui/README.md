@@ -5,6 +5,7 @@ A bb plugin that gives bb calternal's look, after Craft's window:
 - **Backdrop:** your wallpaper behind flat sidebars, blurred once (not on every repaint).
 - **Chat card:** a floating, tinted glass card with a soft shadow and a frosted composer.
 - **Accent:** one accent colour across bb, from the wallpaper or your own.
+- **Clock:** 24-hour times everywhere in bb by default (12-hour or the browser's default if you prefer).
 - **Light and dark:** both themes measured to WCAG 4.5:1 text contrast.
 - **Fonts:** any Google Font for the UI, chat, code and terminal, stored locally.
 - **Composer:** one compact bottom row of icons (model, context, permission, environment); one line on phones until you type; voice input as an accent pill with a clock.

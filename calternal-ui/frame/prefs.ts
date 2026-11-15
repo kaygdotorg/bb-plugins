@@ -7,9 +7,10 @@ import type { FramePrefs } from "../shared/contract";
 import { CACHE, cache } from "./events";
 import { R } from "./selectors";
 import { preblurBlurs } from "./preblur";
+import { setClock } from "./clock";
 
 type Surface = FramePrefs["sidebar"];
-export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale">;
+export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale"> & Partial<Pick<FramePrefs, "clock">>;
 
 const root = () => document.documentElement.style;
 
@@ -72,6 +73,7 @@ export function applyPrefs(prefs: AppliedPrefs, save = true) {
   const blurOf = (s: Surface) => (s.blur.on ? s.blur.value : 0);
   preblurBlurs(blurOf(prefs.sidebar), blurOf(prefs.chat));
   setUiScale(prefs.uiScale);
+  setClock(prefs.clock ?? "24h");
   setText(styleElement("cf-fonts"), fontCss(prefs.fonts));
   if (save) cache.set(CACHE.prefs, JSON.stringify(prefs));
 }

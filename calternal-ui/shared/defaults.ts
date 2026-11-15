@@ -18,5 +18,6 @@ export const DEFAULT_PREFS: FramePrefs = {
   },
   // 100% here is bb's 110%: see frame/css.ts.
   uiScale: 100,
+  clock: "24h",
   accent: { mode: "wallpaper", color: "#d9925b" },
 };

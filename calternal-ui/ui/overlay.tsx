@@ -21,7 +21,7 @@ export function FrameOverlay() {
   const sync = useCallback(async () => {
     try {
       const next = await rpc.call("frame_light", {});
-      applyPrefs({ sidebar: next.sidebar, chat: next.chat, fonts: next.fonts, uiScale: next.uiScale });
+      applyPrefs({ sidebar: next.sidebar, chat: next.chat, fonts: next.fonts, uiScale: next.uiScale, clock: next.clock });
 
       const wallpaperKey = next.wallpaperId ?? `url:${next.wallpaperUrl}`;
       let wallpaper = applied.current.wallpaperSrc ?? null;
