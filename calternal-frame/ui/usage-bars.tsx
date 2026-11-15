@@ -1,6 +1,6 @@
 /**
  * Pooled Claude/Codex usage as one item in bb's sidebar footer row, next to its icons:
- * two stacked mini bars filling the row's height.
+ * the providers side by side on one line, each [icon or name] [short bar] [%].
  * Data: the usage_summary RPC (server/usage.ts), polled once a minute.
  */
 import { useEffect, useState } from "react";
@@ -51,14 +51,14 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
   ].filter(Boolean).join(" \u00b7 ");
 
   return (
-    <div className={`flex h-3.5 items-center gap-1.5 text-[10px] leading-none text-sidebar-foreground ${shown ? "" : "opacity-50"}`} title={title}>
+    <div className={`flex h-3.5 min-w-0 flex-1 items-center gap-1.5 text-[10px] leading-none text-sidebar-foreground ${shown ? "" : "opacity-50"}`} title={title}>
       {prefs.showIcons ? (
         <ProviderIcon provider={provider.provider} />
       ) : (
         <span className="w-9 shrink-0 truncate text-muted-foreground">{name}</span>
       )}
       <div
-        className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-sidebar-foreground/10"
+        className="h-1 min-w-3 flex-1 overflow-hidden rounded-full bg-sidebar-foreground/10"
         role="progressbar"
         aria-label={`${name} usage`}
         aria-valuemin={0}
@@ -69,7 +69,7 @@ function UsageBar({ provider, prefs }: { provider: ProviderUsage; prefs: UsagePr
         {shown ? <div className={`h-full rounded-full ${fill(shown.used)}`} style={{ width: `${Math.min(100, shown.used * 100)}%` }} /> : null}
       </div>
       {prefs.showPercent || pct === null ? (
-        <span className="w-7 shrink-0 text-right tabular-nums text-muted-foreground">{pct === null ? "\u2014" : `${pct}%`}</span>
+        <span className="shrink-0 text-right tabular-nums text-muted-foreground">{pct === null ? "\u2014" : `${pct}%`}</span>
       ) : null}
     </div>
   );
@@ -96,7 +96,7 @@ export function UsageBars({ prefs }: { prefs: UsagePrefs }) {
     ) : null;
   }
   return (
-    <div className="flex w-full flex-col justify-center gap-1">
+    <div className="flex w-full min-w-0 flex-row items-center gap-3">
       {summary.providers.map((provider) => <UsageBar key={provider.provider} provider={provider} prefs={prefs} />)}
     </div>
   );
