@@ -146,24 +146,27 @@ ${R} [data-cf-swipe-label] {
 }
 ${R} [data-cf-swipe-label][data-ready] { color: var(--cf-accent); }
 ${R} [data-cf-swipe-label][data-ready][data-tone="danger"] { color: var(--destructive); }
-/* Your messages get an iMessage tail at the bottom right, in the bubble's own fill. The
-   bubble's border goes (iMessage has none) and its bottom-right corner tightens so the tail
-   joins it. The tail sits beside the bubble, never over it, so translucent fills don't double. */
+/* Your messages get an iMessage tail, in the bubble's own fill. Like iMessage: the bubble's
+   right edge runs straight down (bottom-right corner square) and, over the lower half of a
+   one-line bubble, flares out into a rounded point a little below it; the tail's lower edge
+   sweeps back under the bubble. Units: the 14×20 viewBox is 14×20px at a 16px root; the
+   bubble's right edge is x=6 and its bottom y=18. The tail never overlaps the bubble, so a
+   translucent fill doesn't double. The bubble's border goes: iMessage has none. */
 ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
   position: relative;
   border-color: transparent !important;
-  border-bottom-right-radius: 0.375rem;
+  border-bottom-right-radius: 0;
 }
 ${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
   content: "";
   position: absolute;
-  right: -0.6875rem;
-  bottom: 0;
-  width: 0.75rem;
-  height: 1.125rem;
+  right: -0.5rem;      /* 8 units stick out to the right */
+  bottom: -0.125rem;   /* the point hangs 2 units below */
+  width: 0.875rem;
+  height: 1.25rem;
   background: var(--surface-recessed);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath d='M0 0C0 8 1.6 13.6 9.6 17.2C10.3 17.5 10.4 17.9 9.8 18C6 18.3 2.4 17.6 0 16.4Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath d='M0 0C0 8 1.6 13.6 9.6 17.2C10.3 17.5 10.4 17.9 9.8 18C6 18.3 2.4 17.6 0 16.4Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M6 0C6.2 8 8.4 14 12.2 17.6C13.3 18.3 13.5 19 12.6 19.4C10 20.1 7.5 19.9 5 19C3.4 18.5 1.8 18 0 18L6 18Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M6 0C6.2 8 8.4 14 12.2 17.6C13.3 18.3 13.5 19 12.6 19.4C10 20.1 7.5 19.9 5 19C3.4 18.5 1.8 18 0 18L6 18Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   pointer-events: none;
 }
 
