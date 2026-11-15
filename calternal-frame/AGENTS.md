@@ -39,6 +39,14 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - `html[data-cf-short]` (visible area under 560px) makes the sidebar scroll as one column.
   - Pulling down at the top of the sidebar opens search. It's vertical only, so bb's sideways edge swipes stay bb's.
   - To test headless, enable CDP `Emulation.setTouchEmulationEnabled`, then use `p.touchscreen`.
+- **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
+- **Swipe actions (`frame/swipe.ts`)** run bb's own actions:
+  - Thread row: left archives (the row's own Archive button), right toggles pin (the context menu, opened silently; on touch it's an action sheet).
+  - Message: left copies (its Copy button), right quotes into the composer as a synthetic paste. Never simulate Enter, which sends.
+  - A thread row is `[data-sidebar-rename-row][role="button"]`; the section wrapper reuses the attribute without the role.
+  - Rows are marked `data-no-sidebar-swipe` on `pointerdown` in the capture phase. bb decides its drawer swipe there, before `touchstart`.
+  - Never dispatch Escape: it closes bb's drawer.
+- **Keyboard-down button:** shown in `[data-promptbox-submit-group]` only while an editor in the composer has focus and the visible area is more than 150px shorter than the window (`html[data-cf-keyboard]`).
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
 - **The usage bars are not a child of bb's footer icon row.** bb counts that row's children to decide which icons overflow into "…". The bars are positioned over the row's free space, measured from the last visible icon button, with one `ResizeObserver`.
