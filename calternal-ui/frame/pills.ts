@@ -16,7 +16,22 @@
  */
 import { R } from "./selectors";
 
-const s = (px: number) => `calc(${px}px * var(--cf-ui-scale, 1))`;
+/** calternal's px at 100% interface size, scaled with it. */
+export const s = (px: number) => `calc(${px}px * var(--cf-ui-scale, 1))`;
+
+/** The floating glass as a layer: put these declarations on a ::before of a stacking context. */
+export const GLASS_LAYER = `
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgb(var(--cf-pill-tint) / var(--cf-pill-alpha));
+  -webkit-backdrop-filter: var(--cf-pill-filter);
+  backdrop-filter: var(--cf-pill-filter);
+  box-shadow: var(--cf-pill-shade), var(--cf-pill-edge), var(--cf-pill-shadow);
+`;
 
 export const PILL_CSS = `
 ${R} {
@@ -57,17 +72,7 @@ ${R} main header div:has(> [data-thread-header-pane-actions]) {
   border-radius: 999px;
 }
 ${R} main header div:has(> [data-thread-header-pane-actions])::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: rgb(var(--cf-pill-tint) / var(--cf-pill-alpha));
-  -webkit-backdrop-filter: var(--cf-pill-filter);
-  backdrop-filter: var(--cf-pill-filter);
-  box-shadow: var(--cf-pill-shade), var(--cf-pill-edge), var(--cf-pill-shadow);
-}
+${GLASS_LAYER}}
 ${R} main header div:has(> [data-thread-header-pane-actions]) :is([data-thread-header-workflow-actions], [data-thread-header-pane-actions], [data-thread-header-responsive-action], [data-thread-header-responsive-action] *:not(button):not(button *)) {
   display: contents;
 }
@@ -107,17 +112,7 @@ ${R} main header button[aria-label="Thread actions"] {
   color: var(--foreground);
 }
 ${R} main header button[aria-label="Thread actions"]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: rgb(var(--cf-pill-tint) / var(--cf-pill-alpha));
-  -webkit-backdrop-filter: var(--cf-pill-filter);
-  backdrop-filter: var(--cf-pill-filter);
-  box-shadow: var(--cf-pill-shade), var(--cf-pill-edge), var(--cf-pill-shadow);
-}
+${GLASS_LAYER}}
 
 /* ── Every pill: one icon size, the hover tint, the press. */
 ${R} main header :is(div:has(> [data-thread-header-pane-actions]) button, button[aria-label="Thread actions"]) :is(svg, span.size-4) {

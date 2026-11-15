@@ -13,6 +13,9 @@
  * so removing that attribute restores bb exactly.
  */
 import { PILL_CSS } from "./pills";
+import { PILL_SIDEBAR_CSS } from "./pills-sidebar";
+import { PILL_COMPOSER_CSS } from "./pills-composer";
+import { PILL_PHONE_CSS } from "./pills-phone";
 import { BACKDROP, CARD, CARD_FALLBACK, CARD_PANEL, FLAT, GROUP, MAIN, PLAIN_MAIN, R, SHELL, SIDE_PANEL } from "./selectors";
 
 export const CSS = `
@@ -803,6 +806,9 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
 ${cardInterior(MAIN)}}
 ${PILL_CSS}
+${PILL_SIDEBAR_CSS}
+${PILL_COMPOSER_CSS}
+${PILL_PHONE_CSS}
 `;
 
 /**
