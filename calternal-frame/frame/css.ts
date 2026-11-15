@@ -142,6 +142,27 @@ ${R} [data-cf-swipe-label] {
 }
 ${R} [data-cf-swipe-label][data-ready] { color: var(--cf-accent); }
 ${R} [data-cf-swipe-label][data-ready][data-tone="danger"] { color: var(--destructive); }
+/* Your messages get an iMessage tail at the bottom right, in the bubble's own fill. The
+   bubble's border goes (iMessage has none) and its bottom-right corner tightens so the tail
+   joins it. The tail sits beside the bubble, never over it, so translucent fills don't double. */
+${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
+  position: relative;
+  border-color: transparent !important;
+  border-bottom-right-radius: 0.3rem;
+}
+${R} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed::after {
+  content: "";
+  position: absolute;
+  right: -0.5rem;
+  bottom: 0;
+  width: 0.5625rem;
+  height: 1rem;
+  background: var(--surface-recessed);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16'%3E%3Cpath d='M0 0v16h9C4.5 15 1 11.5 0 0Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16'%3E%3Cpath d='M0 0v16h9C4.5 15 1 11.5 0 0Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
 /* Keyboard-down button in the composer's submit group (frame/touch.ts): only while the keyboard is up. */
 ${R} [data-cf-kb] { display: none; }
 ${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }
@@ -268,7 +289,9 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
     background: transparent !important;
     border: 1px solid var(--cf-edge);
     border-block-width: 0;
-    border-radius: var(--cf-radius);
+    /* The same corner as the phone pane (the screen's, ~62pt), squircle where supported. */
+    border-radius: var(--cf-device-radius);
+    corner-shape: squircle;
     box-shadow: var(--cf-shadow);
     overflow: clip !important;
   }
@@ -495,14 +518,12 @@ function cardInterior(scope: string): string {
   ${scope} [data-scroll-footer]::before {
     content: "";
     position: absolute;
-    inset: -28px 0 0 0;
+    inset: -56px 0 0 0;
     z-index: -1;
     pointer-events: none;
-    background: color-mix(in oklab, var(--cf-bg) 45%, transparent);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
-    mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+    /* A plain colour fade, no blur: a masked backdrop blur drew a hard top edge in some
+       Chromium builds (a "solid band"). The composer keeps its own frost. */
+    background: linear-gradient(to bottom, transparent 0, color-mix(in oklab, var(--cf-bg) 60%, transparent) 28px, color-mix(in oklab, var(--cf-bg) 92%, transparent) 56px);
   }
   /* bb's own fade above the composer blends into --background, which is clear here. */
   ${scope} [data-overflow-fade] { display: none !important; }

@@ -8,7 +8,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 - **Window backdrop:** the wallpaper, blurred and tinted. One seamless surface.
 - **Sidebars:** the left one and the right panel have no surface of their own. They sit flat on the backdrop: no fill, edges or seams.
-- **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It's heavy glass (blur, tint and dim).
+- **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
 - **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, pooled Claude/Codex usage bars, and compact navigation.
@@ -39,6 +39,8 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - `html[data-cf-short]` (visible area under 560px) makes the sidebar scroll as one column.
   - Pulling down at the top of the sidebar opens search. It's vertical only, so bb's sideways edge swipes stay bb's.
   - To test headless, enable CDP `Emulation.setTouchEmulationEnabled`, then use `p.touchscreen`.
+- **Your messages have iMessage tails:** an SVG-masked `::after` beside the bubble (never over it, so translucent fills don't double), with the bubble's border removed and its bottom-right corner tightened.
+- **Below the composer, text fades out behind a plain colour gradient** (`[data-scroll-footer]::before`, 56px soft ramp up to 92%). A masked backdrop blur there drew a hard edge in some Chromium builds, which read as a solid band.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
 - **Swipe actions (`frame/swipe.ts`)** run bb's own actions:
   - Thread row: left archives (the row's own Archive button), right toggles pin (the context menu, opened silently; on touch it's an action sheet).
