@@ -54,21 +54,33 @@ ${R} {
   --cf-shadow: 0 1px 3px rgb(60 40 20 / 0.16), 0 8px 20px -8px rgb(60 40 20 / 0.34);
   /* Warning text (Full Access): bb's amber is too light to read on a light
      glass, so light mode inks it darker. */
-  --cf-warn-ink: oklch(0.55 0.15 50);
+  --cf-warn-ink: oklch(0.43 0.13 45);
   background: var(--cf-side) !important;
+}
+/* Light mode: a light card must stay light whatever the wallpaper; with a dark wallpaper the
+   ~10% still showing through turned it grey (and the title fade, a near-white gradient,
+   then read as a white band). The white wash is stronger here: 30% dim -> 65% wash, so the
+   wallpaper contributes ~5%. Dark mode keeps the plain strength. */
+${R}:not(.dark) {
+  --cf-card-dim: rgb(255 255 255 / min(0.9, calc(var(--cf-card-dim-a) * 1.5 + 0.2)));
+  /* The sidebars too: over a dark wallpaper a 35% light tint is mid-grey, where neither dark
+     nor light text reads (measured 2.3–2.7:1). A 50% white wash keeps them light (>= 4.5:1). */
+  --cf-side-wash: rgb(255 255 255 / 0.5);
 }
 ${R}.dark {
   --radius: 10px;
   --cf-dim-rgb: 0 0 0;
   --cf-edge: rgb(255 255 255 / 0.09);
-  --cf-warn-ink: var(--warning, oklch(0.75 0.15 70));
+  --cf-warn-ink: oklch(0.8 0.14 70); /* small text: bb's --warning measured 3.9:1 */
+  /* bb's muted text on the dark card measured 4.4:1 (tool summaries); lift it to ~5:1. */
+  --cf-card-muted: oklch(0.74 0 0);
   /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
   --cf-shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 8px 20px -8px rgb(0 0 0 / 0.75);
 }
 /* Light mode: the sidebars sit on a bright, colourful wallpaper with only a light tint, so
    bb's mid-grey secondary text is too faint there. Ink it darker (dark mode needs nothing). */
 ${R}:not(.dark) :is([data-sidebar="sidebar"], ${SIDE_PANEL}) {
-  --muted-foreground: color-mix(in oklab, var(--foreground) 74%, transparent);
+  --muted-foreground: oklch(0.4 0 0); /* section labels: measured 2.5:1 at bb's grey */
   --sidebar-foreground: var(--foreground);
 }
 ${R} body, ${R} #root, ${SHELL}, ${R} [data-app-content-shell] {
@@ -95,7 +107,7 @@ ${BACKDROP}::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(var(--cf-side-dim), var(--cf-side-dim)), var(--cf-side-tint);
+  background: linear-gradient(var(--cf-side-wash, transparent), var(--cf-side-wash, transparent)), linear-gradient(var(--cf-side-dim), var(--cf-side-dim)), var(--cf-side-tint);
 }
 
 /* Accent: one hue drives bb's otherwise grey palette. --cf-accent-h / -c are set by
@@ -731,6 +743,14 @@ ${cardInterior(MAIN)}}
  */
 function cardInterior(scope: string): string {
   return `
+  /* Finished tool rows ("Ran 3 commands"): bb shows them in its subtle colour at 40% opacity,
+     which measured ~2:1. Any fade below ~85% fails on light glass, so they stay quieter by
+     colour alone: the subtle grey, inked so it measures >= 4.5:1 in both themes, no fade. */
+  ${scope} [data-timeline-row-id] .opacity-40 { opacity: 1; }
+  ${scope}:where(.dark *) { --subtle-foreground: oklch(0.73 0 0); }
+  ${scope}:where(html:not(.dark) *) { --subtle-foreground: oklch(0.46 0 0); }
+  /* Dark mode: bb's muted text measured 4.4:1 on the card; lifted to ~5:1. */
+  ${scope}:where(.dark *) { --muted-foreground: var(--cf-card-muted); }
   /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
   ${scope} { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); --surface-scrim: transparent; }
   ${scope} header { border-bottom-color: transparent !important; }

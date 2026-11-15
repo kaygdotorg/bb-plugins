@@ -34,8 +34,9 @@ button[${COMPACT}] > * { visibility: hidden; }
 }
 [${HOST}]:hover { background: var(--sidebar-accent); }
 [${HOST}] > span { display: inline-flex; align-items: center; gap: 0.25rem; }
-[data-cliproxy-tone="warn"] { color: oklch(0.55 0.15 50); }
-.dark [data-cliproxy-tone="warn"] { color: var(--warning, oklch(0.75 0.15 70)); }
+/* Amber measured for small text (WCAG 4.5:1) on light and dark sidebars. */
+[data-cliproxy-tone="warn"] { color: oklch(0.43 0.13 45); }
+.dark [data-cliproxy-tone="warn"] { color: oklch(0.8 0.14 70); }
 `;
 
 const NAMES = { claude: "Claude", codex: "Codex" } as const;
