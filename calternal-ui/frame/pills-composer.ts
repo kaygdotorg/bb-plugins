@@ -67,7 +67,7 @@ ${PILL}, ${SEND} {
 ${PILL} {
   background: var(--cf-pill-quiet);
   color: var(--muted-foreground);
-  transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 150ms ease, color 150ms ease;
+  transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease;
 }
 ${ROW} button :is(svg, [data-icon-root]) { width: var(--cf-ci) !important; height: var(--cf-ci) !important; }
 
@@ -105,13 +105,13 @@ ${SPLIT} { margin: 0 !important; height: var(--cf-cp); border-radius: 999px !imp
 ${SPLIT} > button { width: var(--cf-cp); border-radius: 0 !important; }
 
 /* Send: bb's filled primary keeps its fill; only the shape matches. */
-${SEND} { transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 150ms ease; }
+${SEND} { transition: scale 150ms var(--cf-ease-out), filter 150ms ease; }
 
 /* The toolbar's pills (ring, permission, environment): inner pills, transparent until hovered. */
 ${TOOL} {
   border-radius: 999px;
   background: transparent;
-  transition: scale 150ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 150ms ease, color 150ms ease;
+  transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease;
 }
 ${TOOL} :is(svg[data-icon-root], svg) { width: var(--cf-ci) !important; height: var(--cf-ci) !important; }
 ${C} [data-cf-env] > * { width: 100%; height: 100%; }

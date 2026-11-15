@@ -40,6 +40,9 @@ ${R} {
   font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
   /* Side gap between the sidebars and the card: room for its shadow (bb clips beyond it). */
   --cf-gap: 12px;
+  /* Motion (Emil Kowalski's practical animation tips): one strong ease-out for anything that
+     enters, leaves or responds; UI motion stays under 300ms; nothing grows from a tiny scale. */
+  --cf-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   /* The iPhone 16 Pro Max's display corner (~62pt): sheets and the sliding pane follow it. */
   --cf-device-radius: 62px;
   /* One radius scale for everything. bb derives md / lg / xl from --radius (-2, 0, +4px),
@@ -265,7 +268,7 @@ ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]
     opacity: 0;
     translate: 0 -0.25rem;
     overflow: hidden;
-    transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: max-height 220ms var(--cf-ease-out), opacity 180ms ease, translate 220ms var(--cf-ease-out);
   }
   ${R} [data-cf-nav]:is(:hover, :focus-within) [data-cf-nav-more],
   ${R} [data-cf-nav-more][data-open] { max-height: 2.25rem; opacity: 1; translate: 0 0; }
@@ -277,7 +280,7 @@ ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]
     opacity: 0;
     translate: -0.375rem 0;
     overflow: hidden;
-    transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, translate 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: width 220ms var(--cf-ease-out), margin 220ms var(--cf-ease-out), opacity 180ms ease, translate 220ms var(--cf-ease-out);
   }
   ${R} [data-sidebar="footer"]:is(:hover, :focus-within) li li[data-sidebar="menu-item"]:not([data-footer-item]),
   ${R} [data-sidebar="footer"] li li[data-sidebar="menu-item"]:not([data-footer-item]):has([data-state="open"]) {
@@ -389,8 +392,7 @@ ${R} [data-cf-voice-pill] {
   border-radius: 999px;
   background: color-mix(in oklab, var(--cf-accent) 18%, transparent);
   color: color-mix(in oklab, var(--cf-accent) 55%, var(--foreground));
-  transform-origin: right center;
-  animation: cf-voice-pill-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  animation: cf-voice-pill-in 200ms var(--cf-ease-out);
 }
 ${R} [data-cf-voice-pill] canvas { color: inherit; }
 ${R} [data-cf-voice-pill] > :first-child { min-width: 0; flex: 1; height: 1.25rem; } /* bars keep clear of the pill edge */
@@ -402,9 +404,10 @@ ${R} [data-cf-voice-clock] {
 }
 ${R} [data-app-composer][data-cf-voice="transcribing"] [data-cf-voice-pill] { background: color-mix(in oklab, var(--cf-accent) 10%, transparent); }
 ${R} [data-app-composer][data-cf-voice="transcribing"] [data-cf-voice-clock] { opacity: 0.6; }
+/* Grows out of the mic's side by revealing, never by squashing its contents (no tiny scale). */
 @keyframes cf-voice-pill-in {
-  from { transform: scaleX(0.15); opacity: 0; }
-  60% { opacity: 1; }
+  from { clip-path: inset(0 0 0 85% round 999px); opacity: 0.4; }
+  to { clip-path: inset(0 0 0 0 round 999px); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   ${R} [data-cf-voice-pill] { animation: none; }
@@ -495,6 +498,9 @@ ${R} [data-cf-tip][data-side="bottom"] i { bottom: auto; top: -4px; }
 @media (prefers-reduced-motion: reduce) {
   ${R} [data-cf-tip] { scale: 1; filter: none; transition: opacity 80ms; }
 }
+
+/* Popovers grow from their trigger (origin-aware): Radix exposes the side it opened from. */
+${R} [data-radix-popper-content-wrapper] > [data-state] { transform-origin: var(--radix-popper-transform-origin); }
 
 /* Every floating menu (context menus, dropdowns, drop-ups, pickers) gets the same glass as the
    context menu; panels inside them go clear so it reads as one surface. */
@@ -874,6 +880,21 @@ function cardInterior(scope: string): string {
     z-index: -1;
     pointer-events: none;
     background: linear-gradient(to bottom, color-mix(in oklab, var(--cf-bg) 80%, transparent) 0%, color-mix(in oklab, var(--cf-bg) 55%, transparent) 55%, transparent 100%);
+  }
+  /* The same fade at the bottom edge (kayg, 2026-11-15): text sliding toward the card's
+     bottom fades out over the same height and gradient as under the title, mirrored. It lives
+     in the sticky composer area (a stacking context), beneath the composer, so the composer's
+     glass sits over it; a plain colour gradient, never a masked blur (see the title fade). */
+  ${scope} [data-page-scroll-viewport] .sticky.bottom-0:has([data-app-composer])::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--bb-app-chrome-row-height, 3rem) + 0.75rem);
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to top, color-mix(in oklab, var(--cf-bg) 80%, transparent) 0%, color-mix(in oklab, var(--cf-bg) 55%, transparent) 55%, transparent 100%);
   }
   ${scope} header + * [data-page-scroll-viewport] {
     padding-top: var(--bb-app-chrome-row-height, 3rem);
