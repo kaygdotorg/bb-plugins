@@ -1,5 +1,5 @@
-import type { ExperimentalThreadContextCardProps, ExperimentalThreadContextSegmentProps } from "@get-bb/plugin-sdk/app";
-import { experimental_Icon as Icon, experimental_ThreadContextCardRow as CardRow, experimental_useThreadContextKind, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import type { ExperimentalThreadContextCardProps, ExperimentalThreadContextSegmentProps, ExperimentalThreadInfoProps } from "@get-bb/plugin-sdk/app";
+import { experimental_DetailRow as DetailRow, experimental_Icon as Icon, experimental_ThreadContextCardRow as CardRow, experimental_useThreadContextKind, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { ConclusionView } from "../lib/contract";
 import { useMemoryRpc, useNow, useRemote } from "./data";
 import { ORIGIN_WORDS, STATUS_LOADING, originOf, statusLine } from "./format";
@@ -34,6 +34,21 @@ function useThreadMemory(threadId: string) {
 export function ThreadStatusRow({ threadId }: ExperimentalThreadContextCardProps) {
   const m = useThreadMemory(threadId);
   return <CardRow icon="Brain" label={m.line} title={m.title} onClick={m.clickable ? () => void m.toggle() : undefined} />;
+}
+
+/** The Info tab row: renders wherever the right panel does, even when a theme hides the composer's context strip. */
+export function ThreadInfoStatusRow({ threadId }: ExperimentalThreadInfoProps) {
+  const m = useThreadMemory(threadId);
+  const nav = useBbNavigate();
+  const link = "text-xs underline-offset-2 hover:underline disabled:cursor-default disabled:no-underline";
+  return (
+    <DetailRow icon="Brain" label="Memory">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2">
+        <button type="button" title={m.title} aria-label={`${m.line}. ${m.title}`} disabled={!m.clickable} onClick={() => void m.toggle()} className={link}>{m.line}</button>
+        <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className={`${link} text-muted-foreground hover:text-foreground`}>open memory</button>
+      </span>
+    </DetailRow>
+  );
 }
 
 export function ThreadStatusSegment({ threadId }: ExperimentalThreadContextSegmentProps) {

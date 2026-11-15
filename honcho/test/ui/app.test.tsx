@@ -19,6 +19,7 @@ describe("registrations", () => {
     const a = await app();
     expect(a.navPanels[0]).toMatchObject({ id: "memory", title: "Memory", icon: "Brain", path: "memory" });
     expect(typeof a.navPanels[0]!.experimental_useBadge).toBe("function");
+    expect(a.threadInfoRows).toHaveLength(1);
     expect(a.threadContextCardRows).toHaveLength(1);
     expect(a.threadContextCardSections[0]).toMatchObject({ title: "memory" });
     expect(a.threadContextSegments).toHaveLength(1);
@@ -68,6 +69,49 @@ describe("thread context card row", () => {
   it("does not toggle a thread that isn't captured", async () => {
     const a = await app();
     const slot = renderSlot(a.threadContextCardRows[0]!, props, { rpc: { "thread.status": () => status({ state: "not-captured", reason: "denied by remote" }) } });
+    fireEvent.click(await slot.findByText(/not captured/));
+    expect(slot.inspection.rpcCalls.some((c) => c.method === "pause.set")).toBe(false);
+  });
+});
+
+describe("thread info row", () => {
+  it("renders each state", async () => {
+    const a = await app();
+    for (const [patch, text] of [
+      [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · \d+s ago/],
+      [{ state: "paused" }, /memory · paused/],
+      [{ state: "offline", queued: 3 }, /memory · offline · 3 waiting/],
+      [{ state: "not-captured", reason: "denied by remote" }, /memory · not captured/],
+    ] as const) {
+      const slot = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status(patch as Partial<ThreadMemoryStatus>) } });
+      expect(await slot.findByText(text)).toBeTruthy();
+      expect(slot.getByText("Memory")).toBeTruthy();
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("shows a placeholder while loading and offline text on error", async () => {
+    const a = await app();
+    const slot = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => { throw new Error("down"); } } });
+    expect(await slot.findByText(/memory · offline/)).toBeTruthy();
+  });
+
+  it("toggles pause both ways and opens memory", async () => {
+    const a = await app();
+    const saving = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "saving" }), "pause.set": () => ({ ok: true }) } });
+    fireEvent.click(await saving.findByText(/memory · saving/));
+    await waitFor(() => expect(saving.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: true }));
+    fireEvent.click(saving.getByText("open memory"));
+    expect(saving.inspection.navigateCalls[0]).toMatchObject({ method: "toPluginPanel", path: "memory" });
+    saving.lifecycle.unmount();
+    const paused = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "paused" }), "pause.set": () => ({ ok: true }) } });
+    fireEvent.click(await paused.findByText(/memory · paused/));
+    await waitFor(() => expect(paused.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: false }));
+  });
+
+  it("does not toggle a thread that isn't captured", async () => {
+    const a = await app();
+    const slot = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "not-captured" }) } });
     fireEvent.click(await slot.findByText(/not captured/));
     expect(slot.inspection.rpcCalls.some((c) => c.method === "pause.set")).toBe(false);
   });
