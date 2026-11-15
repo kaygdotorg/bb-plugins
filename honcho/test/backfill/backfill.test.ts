@@ -42,7 +42,7 @@ describe("dedupe", () => {
       thread({ id: "thr_c2", providerId: "claude-code", providerThreadIds: ["Other-2"] }, 1),
     ]);
     seed(env, "sess-abc-1", [{ content: "anything", at: T0 }]);
-    expect(await env.service.dryRun()).toEqual({ threads: 1, messages: 2, tokens: expect.any(Number), skippedAlreadyInHoncho: 4, reasoningMessages: 1 });
+    expect(await env.service.dryRun()).toEqual({ threads: 1, messages: 2, tokens: expect.any(Number), skippedAlreadyInHoncho: 4, reasoningMessages: 1, notYetSeenByCapture: 0 });
   });
   it("codex chat-instance: matched by folder-<first 8 of the chat id>", async () => {
     env = await setup([

@@ -2,9 +2,10 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { BackfillPlan, BackfillService } from "../contract";
 import { HonchoError, type MessageDraft } from "../honcho-client";
 import { scopeSlug, sessionMetadata, sessionPeers } from "../mapping";
-import { transformEvents, type CaptureEvent, type TransformContext } from "../transform";
+import { isEditMessage, transformEvents, type CaptureEvent, type TransformContext } from "../transform";
 import { redact } from "../redact";
-import { backfillCursorEnd, isBackfilled } from "../capture/switchover";
+import { backfillCursorEnd, gateAlwaysOpen, isBackfilled } from "../capture/switchover";
+import { FORK_SCAN_TYPES, forkBoundarySeq } from "../capture/fork";
 import { claudeSessionName, codexChatInstanceName, codexPerDirectoryName, TimeIndex } from "./dedupe";
 import { honchoPort, type BackfillDeps, type HonchoPort, type ThreadSummary } from "./ports";
 import { defaultSleep, RateLimiter } from "./rate";
@@ -16,8 +17,10 @@ export { RateLimiter } from "./rate";
 export * from "./dedupe";
 
 export interface BackfillOptions { projectId?: string; since?: string; includeArchived?: boolean; includeHidden?: boolean }
+/** The dry run also counts gate-open threads live capture hasn't claimed yet: they are skipped. */
+export type BackfillDryRun = BackfillPlan & { notYetSeenByCapture: number };
 export type BackfillHandle = BackfillService & {
-  dryRun(opts?: BackfillOptions): Promise<BackfillPlan>;
+  dryRun(opts?: BackfillOptions): Promise<BackfillDryRun>;
   start(opts?: BackfillOptions): Promise<void>;
   /** Resolves when the current run (if any) has finished or been stopped. */
   whenIdle(): Promise<void>;
@@ -33,8 +36,15 @@ interface ScanResult {
   messages: MessageDraft[]; skipped: number; redactions: number;
   /** Cursor to store once everything in `messages` is uploaded. */
   finalCursor: number;
+  /** Newest system/operation seq when scanned: a later edit_message means the scan is stale. */
+  opsSeq: number;
+  /** A gate-open thread with no switch-over marker yet: live capture hasn't decided where it starts. */
+  notYetSeen?: boolean;
 }
-const empty = (finalCursor = 0): ScanResult => ({ messages: [], skipped: 0, redactions: 0, finalCursor });
+const empty = (finalCursor = 0): ScanResult => ({ messages: [], skipped: 0, redactions: 0, finalCursor, opsSeq: 0 });
+const OPS: readonly [string, ...string[]] = ["system/operation"];
+/** A thread edited again on every rescan is given up on for this run (it keeps its cursor). */
+const MAX_RESCANS = 5;
 
 export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): BackfillHandle {
   const store = new BackfillStore(bb.storage.database());
@@ -82,9 +92,29 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     }
   }
 
+  /** A sender bb doesn't have is truly unknown (undefined); any other failure rejects, so the
+   * thread fails this run and keeps its cursor instead of dropping the sender's messages. */
   async function providerOf(threadId: string | null | undefined): Promise<string | undefined> {
     if (!threadId) return undefined;
-    try { return (await bb.sdk.threads.get({ threadId } as never) as { providerId?: string }).providerId; } catch { return undefined; }
+    try { return (await bb.sdk.threads.get({ threadId } as never) as { providerId?: string } | undefined)?.providerId; }
+    catch (error) {
+      const { status, code } = (error ?? {}) as { status?: number; code?: string };
+      if (status === 404 || code === "thread_not_found") return undefined;
+      throw error;
+    }
+  }
+
+  /** Same rule as capture's gate: these threads get a switch-over marker the first time live capture sees them. */
+  async function gateOpen(thread: ThreadSummary): Promise<boolean> {
+    return gateAlwaysOpen(thread.providerId) || !((await deps.captureRequiresSwitchover?.()) ?? true);
+  }
+  /** Operations are rare, so all of them are read: the baseline never depends on list order. */
+  async function newestOpSeq(threadId: string): Promise<number> {
+    return (await readEvents(threadId, 0, undefined, OPS)).at(-1)?.seq ?? 0;
+  }
+  /** An edit since the scan deleted part of the log: the scan's drafts may no longer exist. */
+  async function editedSince(threadId: string, opsSeq: number): Promise<boolean> {
+    return (await readEvents(threadId, opsSeq, undefined, OPS)).some(isEditMessage);
   }
 
   // Per-run caches of Honcho lookups keyed by session name.
@@ -93,13 +123,19 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
 
   async function scanThread(port: HonchoPort, thread: ThreadSummary, opts: BackfillOptions, caches: Caches): Promise<ScanResult> {
     if (await deps.isDenied?.(thread)) return empty();
-    const cursor = store.cursor(thread.id);
     const marker = deps.outbox.switchOver(thread.id); // live capture owns events from here on
+    // Racing live capture for a gate-open thread it hasn't seen: its marker isn't decided yet.
+    if (marker === undefined && await gateOpen(thread)) return { ...empty(store.cursor(thread.id)), notYetSeen: true };
+    // A fork's copied prefix belongs to its source thread: start after it, like capture.
+    const fork = deps.outbox.forkSource(thread.id)?.boundarySeq
+      ?? await forkBoundarySeq(thread, () => readEvents(thread.id, 0, undefined, FORK_SCAN_TYPES)) ?? 0;
+    const cursor = Math.max(store.cursor(thread.id), fork);
     if (marker !== undefined && cursor >= backfillCursorEnd(marker)) return empty(cursor);
+    const opsSeq = await newestOpSeq(thread.id);
     const events = await readEvents(thread.id, cursor, marker, EVENT_TYPES);
     const identities = (await readEvents(thread.id, 0, undefined, ["thread/identity"])) as Array<CaptureEvent & { type: "thread/identity" }>;
     const providerThreadIds = [...new Set(identities.map(e => e.data.providerThreadId).filter(Boolean))];
-    if (events.length === 0) return empty(marker !== undefined ? backfillCursorEnd(marker) : cursor);
+    if (events.length === 0) return { ...empty(marker !== undefined ? Math.max(cursor, backfillCursorEnd(marker)) : cursor), opsSeq };
 
     const config = await deps.config();
     const extra = await deps.redaction?.();
@@ -149,7 +185,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     } else if (thread.providerId === "codex" && cwd) {
       for (const id of providerThreadIds) if (await hasSession(codexChatInstanceName(cwd, id))) { wholeThread = true; break; }
     }
-    if (wholeThread) { skip([]); return { messages, skipped, redactions: 0, finalCursor }; }
+    if (wholeThread) { skip([]); return { messages, skipped, redactions: 0, finalCursor, opsSeq }; }
 
     // 2. Already uploaded by this plugin (live capture or an earlier backfill run).
     if (messages.length) {
@@ -172,16 +208,17 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
       skip(messages.filter(m => !index!.has(m.content, Date.parse(m.created_at!))));
     }
     const redactions = result.redactionCount;
-    return { messages, skipped, redactions, finalCursor };
+    return { messages, skipped, redactions, finalCursor, opsSeq };
   }
 
-  const plan = async (opts: BackfillOptions, signal?: AbortSignal): Promise<BackfillPlan> => {
+  const plan = async (opts: BackfillOptions, signal?: AbortSignal): Promise<BackfillDryRun> => {
     const port = await honcho();
     const caches = newCaches();
-    const out: BackfillPlan = { threads: 0, messages: 0, tokens: 0, skippedAlreadyInHoncho: 0, reasoningMessages: 0 };
+    const out: BackfillDryRun = { threads: 0, messages: 0, tokens: 0, skippedAlreadyInHoncho: 0, reasoningMessages: 0, notYetSeenByCapture: 0 };
     for (const thread of await listThreads(opts)) {
       if (signal?.aborted) break;
       const scan = await scanThread(port, thread, opts, caches);
+      if (scan.notYetSeen) out.notYetSeenByCapture++;
       out.skippedAlreadyInHoncho += scan.skipped;
       if (!scan.messages.length) continue;
       out.threads++;
@@ -216,8 +253,14 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     return out;
   }
 
-  async function upload(port: HonchoPort, thread: ThreadSummary, scan: ScanResult, signal: AbortSignal, filtered = false): Promise<boolean> {
+  /** Uploads a scan in batches. Right before each POST, the thread is checked for an edit since
+   * the scan (the log may have lost those drafts: rescan, which also drops what was already
+   * uploaded) and each draft for a pause or supersession. Returns the scan that was finished and
+   * the number of messages sent, or null when stopped. */
+  async function upload(port: HonchoPort, thread: ThreadSummary, first: ScanResult, signal: AbortSignal, opts: BackfillOptions, caches: Caches): Promise<{ scan: ScanResult; sent: number } | null> {
+    const filtered = Boolean(opts.since);
     const config = await deps.config();
+    let scan = first, sent = 0;
     if (scan.messages.length) {
       const scope = scopeSlug(await deps.scopeFor?.(thread) ?? thread.projectId);
       const providers = [...new Set(scan.messages.map(m => m.peer_id).filter(p => p !== config.config.peerName))];
@@ -227,30 +270,42 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
         scopes: [scope],
       });
     }
-    for (const batch of batches(scan.messages)) {
-      if (signal.aborted) return false;
-      await limiter.take(batch.messages.length, await rate(), signal);
-      if (signal.aborted) return false;
-      for (let attempt = 0; ; attempt++) {
-        try { await port.createMessages(thread.id, batch.messages); break; } catch (error) {
-          if (!(error instanceof HonchoError) || error.kind !== "rate-limited" || attempt >= 3) throw error;
-          await sleep(Math.min(300, Number(error.retryAfter ?? 60)) * 1000, signal);
-          if (signal.aborted) return false;
+    const project = thread.projectId;
+    const live = (m: MessageDraft) => deps.outbox.shouldSend(thread.id, Number(m.metadata?.bb_seq), project ? { id: project, createdAt: Date.parse(m.created_at!) } : undefined);
+    for (let stale = true, rescans = 0; stale; rescans++) {
+      stale = false;
+      if (rescans > MAX_RESCANS) throw new Error("thread kept changing during backfill");
+      for (const batch of batches(scan.messages)) {
+        if (signal.aborted) return null;
+        await limiter.take(batch.messages.length, await rate(), signal);
+        if (signal.aborted) return null;
+        let ready: MessageDraft[] = [];
+        for (let attempt = 0; ; attempt++) {
+          if (await editedSince(thread.id, scan.opsSeq)) { stale = true; break; }
+          ready = batch.messages.filter(live);
+          try { if (ready.length) await port.createMessages(thread.id, ready); break; } catch (error) {
+            if (!(error instanceof HonchoError) || error.kind !== "rate-limited" || attempt >= 3) throw error;
+            await sleep(Math.min(300, Number(error.retryAfter ?? 60)) * 1000, signal);
+            if (signal.aborted) return null;
+          }
         }
+        if (stale) break;
+        // a --since run only filters: it never moves the cursor, so a later full run still imports older messages
+        // (bb_seq dedupe keeps the overlap from uploading twice)
+        const cursorAfter = filtered ? store.cursor(thread.id) : batch.cursorAfter ?? store.cursor(thread.id);
+        store.advance(thread.id, cursorAfter, ready.length, now());
+        sent += ready.length;
+        state.done += ready.length;
+        store.updateRun(state.done, state.total);
       }
-      // a --since run only filters: it never moves the cursor, so a later full run still imports older messages
-      // (bb_seq dedupe keeps the overlap from uploading twice)
-      const cursorAfter = filtered ? store.cursor(thread.id) : batch.cursorAfter ?? store.cursor(thread.id);
-      store.advance(thread.id, cursorAfter, batch.messages.length, now());
-      state.done += batch.messages.length;
-      store.updateRun(state.done, state.total);
+      if (stale) scan = await scanThread(port, thread, opts, caches);
     }
     if (!filtered) store.advance(thread.id, scan.finalCursor, 0, now());
-    return true;
+    return { scan, sent };
   }
 
   async function run(opts: BackfillOptions, signal: AbortSignal): Promise<void> {
-    let failedThreads = 0;
+    let failedThreads = 0, notYetSeen = 0;
     try {
       const port = await honcho();
       const caches = newCaches();
@@ -267,10 +322,12 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
         if (signal.aborted) break;
         try {
           const scan = await scanThread(port, thread, opts, caches);
-          if (!(await upload(port, thread, scan, signal, Boolean(opts.since)))) break;
-          if (scan.messages.length || scan.skipped) deps.activity.record({
-            kind: "backfill", threadId: thread.id, messages: scan.messages.length, redactions: scan.redactions,
-            summary: `backfilled ${scan.messages.length} messages${scan.skipped ? `, ${scan.skipped} already in honcho` : ""}`,
+          if (scan.notYetSeen) { notYetSeen++; continue; }
+          const done = await upload(port, thread, scan, signal, opts, caches);
+          if (!done) break;
+          if (done.sent || done.scan.skipped) deps.activity.record({
+            kind: "backfill", threadId: thread.id, messages: done.sent, redactions: done.scan.redactions,
+            summary: `backfilled ${done.sent} messages${done.scan.skipped ? `, ${done.scan.skipped} already in honcho` : ""}`,
           });
         } catch (error) {
           if (error instanceof HonchoError) throw error;
@@ -278,6 +335,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
           deps.activity.record({ kind: "failure", threadId: thread.id, summary: "backfill skipped a thread after an error", error: "thread" });
         }
       }
+      if (notYetSeen) deps.activity.record({ kind: "backfill", summary: `backfill skipped ${notYetSeen} thread(s) not yet seen by live capture` });
       if (failedThreads) state.error = `${failedThreads} thread(s) failed`;
     } catch (error) {
       state.error = error instanceof HonchoError ? error.kind : "error";

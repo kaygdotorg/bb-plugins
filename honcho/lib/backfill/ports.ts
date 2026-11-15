@@ -53,6 +53,8 @@ export interface BackfillDeps extends Deps {
   redaction?(): Promise<RedactionOptions> | RedactionOptions;
   /** True when the privacy deny list covers the thread (remote glob / path glob). */
   isDenied?(thread: ThreadSummary): Promise<boolean> | boolean;
+  /** The `captureRequiresSwitchover` setting (default true); decides which threads are gate-open. */
+  captureRequiresSwitchover?(): Promise<boolean> | boolean;
   /** Scope for the thread's session; must match capture's. Default: the project id. */
   scopeFor?(thread: ThreadSummary): Promise<string> | string;
   /** Replaceable Honcho seam; default wraps `deps.client()`. */
