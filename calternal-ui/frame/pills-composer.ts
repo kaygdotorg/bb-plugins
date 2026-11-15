@@ -92,6 +92,25 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
    keyboard is up, and the model pill gets its name back. Short of room (the keyboard button and an
    attachment chip beside it), the name truncates rather than running under its neighbours. */
 @media (max-width: 767px) {
+  /* ── Like Claude's iOS composer (measured, 2026-11-15): collapsed it is a 52pt capsule, its +, mic and send
+     36pt circles 8pt inside its edge with 8pt between them, the text 17pt; expanded, the corners (26pt)
+     stay concentric with that capsule. Dark: Apple's secondary fill, so the composer reads against the
+     page (it was level with it). */
+  ${R} {
+    --cf-cp: ${s(36)};
+    --cf-ci: ${s(18)};
+    --cf-cinset: ${s(8)};
+  }
+  ${C} form[data-promptbox] { border-radius: ${s(26)} !important; }
+  ${C}[data-cf-collapsed] form[data-promptbox] { border-radius: 999px !important; }
+  ${C} [contenteditable="true"] { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
+  ${R}.dark ${C.slice(R.length + 1)} form[data-promptbox]::before { background: rgb(120 120 128 / 0.32); }
+  ${R}.dark ${C.slice(R.length + 1)} form[data-promptbox] { border-color: rgb(255 255 255 / 0.08) !important; }
+  /* The model pill matches the circles' height; the composer sits on the chat text's 16pt margin. */
+  ${PILL}[aria-label^="Provider, model"] { height: var(--cf-cp); }
+  ${C} [data-composer-box] { padding-inline: ${s(8)}; }
+  /* The keyboard-down button copies the mic's classes (touch.ts), filled colour included: it is a quiet pill. */
+  ${ROW} [data-cf-kb] { background-color: var(--cf-pill-quiet) !important; color: var(--foreground) !important; }
   ${ROW} > [data-promptbox-standard-actions][data-promptbox-expanded-only] { min-width: 0; }
   ${PILL}[aria-label^="Provider, model"] { flex: 0 1 auto; min-width: var(--cf-cp); overflow: hidden; }
   ${ROW} button[aria-label^="Provider, model"] .truncate { min-width: 0; }
