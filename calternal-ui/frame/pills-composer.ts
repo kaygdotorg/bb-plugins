@@ -109,8 +109,8 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
   ${ROW} [data-cf-attach-chip] img { width: ${s(26)}; height: ${s(26)}; border-radius: ${s(7)}; }
   ${ROW} [data-cf-attach-chip] img + img { margin-left: ${s(-14)}; }
   ${ROW} [data-cf-attach-chip]:active { scale: 0.97; background-color: var(--cf-pill-hover); }
-  ${R}:not([data-cf-keyboard]) [data-app-composer] [data-promptbox-action-row] button[aria-label^="Provider, model"] :is(.truncate, [data-promptbox-hide-compact]) { display: none; }
-  ${R}[data-cf-keyboard] [data-app-composer] [data-follow-up-composer-footer] { display: none !important; }
+  ${R} [data-app-composer]:not([data-cf-keyboard]) [data-promptbox-action-row] button[aria-label^="Provider, model"] :is(.truncate, [data-promptbox-hide-compact]) { display: none; }
+  ${R} [data-app-composer][data-cf-keyboard] [data-follow-up-composer-footer] { display: none !important; }
 }
 
 /* Voice recording (frame/voice.ts): bb's recording row covers the row and brings its own padding

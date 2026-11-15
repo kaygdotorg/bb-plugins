@@ -436,7 +436,7 @@ ${R} [data-promptbox-failed-voice-recordings] button.bg-secondary {
 
 /* Keyboard-down button in the composer's submit group (frame/touch.ts): only while the keyboard is up. */
 ${R} [data-cf-kb] { display: none; }
-${R}[data-cf-keyboard] [data-cf-kb] { display: inline-flex; }
+${R} [data-cf-keyboard] [data-cf-kb] { display: inline-flex; }
 
 /* Times revealed by a right-to-left swipe on the chat (frame/swipe.ts): one fixed layer
    over the chat, labels at its right edge, uncovered as the conversation slides left. */
@@ -777,8 +777,8 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${R} [data-persistent-drawer-backdrop] { background: rgb(0 0 0 / 0.22) !important; }
   /* Short visible area (keyboard up): the sidebar scrolls as one column so the thread
      list keeps its rows instead of being squeezed to nothing. Set by frame/touch.ts. */
-  ${R}[data-cf-short] [data-testid="app-layout-root"] [data-sidebar="sidebar"] { overflow-y: auto; }
-  ${R}[data-cf-short] [data-testid="app-layout-root"] [data-sidebar="sidebar"] [data-sidebar="content"] { flex: 0 0 auto; min-height: auto; overflow: visible; }
+  ${R} [data-testid="app-layout-root"] [data-sidebar="sidebar"][data-cf-short] { overflow-y: auto; }
+  ${R} [data-testid="app-layout-root"] [data-sidebar="sidebar"][data-cf-short] [data-sidebar="content"] { flex: 0 0 auto; min-height: auto; overflow: visible; }
   /* Pull-down-to-search pill (frame/touch.ts). */
   ${R} [data-cf-pull] {
     position: absolute;
@@ -803,7 +803,7 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   /* While typing (keyboard up), the composer stays small enough to keep the chat in view:
      attachments are a chip (attachments.ts), and the text area is capped to a share of the visible height
      (--cf-vvh is the visual viewport height, set by frame/touch.ts). */
-  ${R}[data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
+  ${R} [data-cf-keyboard] [data-promptbox-editor-scroll] { max-height: calc(var(--cf-vvh, 100dvh) * 0.28) !important; }
   /* Composer attachments on phones (frame/attachments.ts): bb's grid collapses into a chip
      in the button row; open, the grid becomes one horizontal swipeable strip. */
   ${R} [data-app-composer][data-cf-attach="collapsed"] [data-cf-attach-strip] { display: none !important; }

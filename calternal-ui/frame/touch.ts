@@ -41,17 +41,38 @@ function watchDrawer(): () => void {
   return () => { window.clearInterval(timer); observer.disconnect(); };
 }
 
-/** Marks a short visible area (keyboard up, landscape) so the sidebar scrolls as one column. */
+/**
+ * Marks a short visible area (keyboard up, landscape) so the sidebar scrolls as one column, and gives the
+ * composer the visible height (--cf-vvh, for its editor's max height).
+ *
+ * Both go on the elements that use them, never on <html>, and only when they change: the visual viewport
+ * resizes on every frame of the iOS keyboard's animation, and a custom property or attribute on the root
+ * restyled the whole document each time (iPhone simulator, 2026-11-15: keyboard up 263ms worst frame,
+ * keyboard down 83ms with 6 missed frames).
+ */
 function watchViewport(): () => void {
   const vv = window.visualViewport;
   if (!vv) return () => {};
   const update = () => {
-    document.documentElement.toggleAttribute("data-cf-short", vv.height < SHORT_VIEWPORT);
-    document.documentElement.style.setProperty("--cf-vvh", `${Math.round(vv.height)}px`);
+    const short = vv.height < SHORT_VIEWPORT;
+    const vvh = `${Math.round(vv.height)}px`;
+    for (const s of document.querySelectorAll('[data-testid="app-layout-root"] [data-sidebar="sidebar"]')) {
+      if (s.hasAttribute("data-cf-short") !== short) s.toggleAttribute("data-cf-short", short);
+    }
+    for (const c of document.querySelectorAll<HTMLElement>("[data-app-composer]")) {
+      if (c.style.getPropertyValue("--cf-vvh") !== vvh) c.style.setProperty("--cf-vvh", vvh);
+    }
   };
   update();
   vv.addEventListener("resize", update, { passive: true });
-  return () => { vv.removeEventListener("resize", update); document.documentElement.removeAttribute("data-cf-short"); };
+  document.addEventListener("focusin", update); // a composer or sidebar re-created on navigation
+  const timer = window.setInterval(update, 2000);
+  return () => {
+    vv.removeEventListener("resize", update);
+    document.removeEventListener("focusin", update);
+    window.clearInterval(timer);
+    document.querySelectorAll("[data-cf-short]").forEach((e) => e.removeAttribute("data-cf-short"));
+  };
 }
 
 function openSearch() {
@@ -194,9 +215,17 @@ function keyboardButton(): () => void {
       anchor.prepend(button);
     }
   };
+  // The mark goes on the composer, not <html> (a root attribute flip restyled the whole document while the
+  // keyboard animated in; everything that reads it is inside the composer).
+  let marked: Element | null = null;
   const update = () => {
     const editor = document.activeElement?.closest(COMPOSER_EDITOR) ?? null;
-    document.documentElement.toggleAttribute("data-cf-keyboard", !!editor);
+    const composer = editor?.closest("[data-app-composer]") ?? null;
+    if (marked !== composer) {
+      marked?.removeAttribute("data-cf-keyboard");
+      composer?.setAttribute("data-cf-keyboard", "");
+      marked = composer;
+    }
     if (editor) place(editor);
   };
   const onFocusOut = () => setTimeout(update, 0);
@@ -206,7 +235,7 @@ function keyboardButton(): () => void {
     document.removeEventListener("focusin", update);
     document.removeEventListener("focusout", onFocusOut);
     button.remove();
-    document.documentElement.removeAttribute("data-cf-keyboard");
+    marked?.removeAttribute("data-cf-keyboard");
   };
 }
 

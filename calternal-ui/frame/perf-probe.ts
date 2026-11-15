@@ -53,7 +53,7 @@ export function mountPerfProbe(): () => void {
   hud.setAttribute("data-cf-perf-hud", "");
   hud.setAttribute("aria-hidden", "true");
   hud.style.cssText = "position:fixed;top:calc(env(safe-area-inset-top) + 56px);right:8px;z-index:2147483647;pointer-events:none;"
-    + "font:11px/1.35 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.72);padding:6px 8px;border-radius:8px;white-space:pre;max-width:46vw;overflow:hidden";
+    + "font:11px/1.35 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.72);padding:6px 8px;border-radius:8px;white-space:pre;max-width:calc(100vw - 16px);overflow:hidden";
   document.body.append(hud);
 
   const finish = (): Stats | null => {
@@ -71,7 +71,8 @@ export function mountPerfProbe(): () => void {
   };
   const render = () => {
     const rows = episodes.slice(-8).map((e) =>
-      `${e.label.slice(0, 18).padEnd(18)} n${String(e.frames).padStart(3)} worst${e.worst.toFixed(1).padStart(6)} p95${e.p95.toFixed(1).padStart(6)} miss${String(e.missed).padStart(3)}${e.longTasks ? ` LT${e.longTasks}` : ""}`);
+      // Compact enough for a phone (the iPhone run found the 46vw version cut off after `worst`).
+      `${e.label.slice(0, 14).padEnd(14)} n${String(e.frames).padStart(3)} w${e.worst.toFixed(0).padStart(4)} p95 ${e.p95.toFixed(0).padStart(3)} m${String(e.missed).padStart(2)}${e.longTasks ? ` LT${e.longTasks}` : ""}`);
     hud.textContent = `cf-perf  vsync ${vsync.toFixed(1)}ms (${Math.round(1000 / vsync)}Hz)\n${rows.join("\n")}`;
   };
 
