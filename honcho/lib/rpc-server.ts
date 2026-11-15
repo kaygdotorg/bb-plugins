@@ -15,6 +15,8 @@ export interface Services {
   harness: HarnessService;
   backfill: BackfillService;
   deps: Deps;
+  /** bb-secrets values for redaction (privacy.test). */
+  secrets?: () => Promise<string[]>;
 }
 
 // The host validates against these; the contract types already describe the shapes, and the
@@ -117,7 +119,7 @@ function presetFor(baseUrl: string): ConnectionView["preset"] {
 }
 
 export function registerRpc(bb: BbPluginApi, services: Services): () => void {
-  const { capture, recall, harness, backfill, deps } = services;
+  const { capture, recall, harness, backfill, deps, secrets } = services;
   const kv = bb.storage.kv;
   const ok = { ok: true } as const;
   /** Tells open pages that durable state changed; they refetch over rpc. */
@@ -172,7 +174,7 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
     "privacy.test": async ({ text }) => {
       const privacy = await readPrivacy(kv);
       const { keys } = await deps.config();
-      return redact(text, { deny: keys, patterns: compilePatterns(privacy.patterns) });
+      return redact(text, { deny: [...keys, ...((await secrets?.()) ?? [])], patterns: compilePatterns(privacy.patterns) });
     },
 
     "connection.get": async (): Promise<ConnectionView> => {
