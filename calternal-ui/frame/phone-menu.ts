@@ -107,6 +107,28 @@ export function mountPhoneMenu(): () => void {
   const watched = new WeakSet<Element>();
 
   const actions = () => document.querySelector<HTMLElement>(ACTIONS_SEL);
+
+  /**
+   * Keep the keyboard up. Tapping ⋯ while typing closed the iOS keyboard: bb's ⋯ click handler blur()s the
+   * text field on purpose (its bottom sheet would sit under the keyboard), and iOS hides the keyboard when the
+   * field loses focus. Our menu is anchored at the top, clear of the keyboard, so for a short window after a ⋯
+   * press made while a text field had focus, that field's blur() and focus() calls on elements inside a drawer
+   * are skipped (traced in headless Chrome, 2026-11-15). Tapping a menu item still moves focus as usual. The
+   * originals are restored on unmount.
+   */
+  let keep: { el: HTMLElement; until: number } | null = null;
+  const nativeFocus = HTMLElement.prototype.focus;
+  const guardedFocus = function (this: HTMLElement, options?: FocusOptions) {
+    if (keep && performance.now() < keep.until && keep.el.isConnected && this !== keep.el && this.closest(DRAWER_SEL)) return;
+    return nativeFocus.call(this, options);
+  };
+  HTMLElement.prototype.focus = guardedFocus;
+  const nativeBlur = HTMLElement.prototype.blur;
+  const guardedBlur = function (this: HTMLElement) {
+    if (keep && performance.now() < keep.until && this === keep.el && phone()) return;
+    return nativeBlur.call(this);
+  };
+  HTMLElement.prototype.blur = guardedBlur;
   const inMenu = (t: EventTarget | null) => !!live && t instanceof Node && live.drawer.contains(t);
 
   // ── Input: remember the press (or key) on ⋯ that is about to open a drawer.
@@ -116,6 +138,10 @@ export function mountPhoneMenu(): () => void {
     if (!btn || !(e.target instanceof Node) || !btn.contains(e.target)) return;
     armed = { t: performance.now(), still: false };
     swallowUntil = armed.t + SWALLOW_MS;
+    // The keyboard stays up: see keepFocus below.
+    const active = document.activeElement as HTMLElement | null;
+    const editing = !!active && (active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement);
+    keep = editing ? { el: active!, until: armed.t + ARM_MS + 400 } : null;
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (!phone() || !["Enter", " "].includes(e.key)) return;
@@ -167,8 +193,10 @@ export function mountPhoneMenu(): () => void {
 
     // Place it: top on the pill's top, right edge on the toolbar's, never closer than INSET to the screen's edges.
     const p = btn.getBoundingClientRect();
+    // The header's right toolbar is hidden on phones (its buttons are this menu's first items), so the
+    // ⋯ pill is the header's right end. (A visible toolbar still widens the anchor, e.g. mid-resize.)
     const tb = btn.closest("main")?.querySelector(TOOLBAR_SEL)?.getBoundingClientRect();
-    const right = Math.max(INSET, innerWidth - Math.max(p.right, tb?.right ?? p.right));
+    const right = Math.max(INSET, innerWidth - Math.max(p.right, tb && tb.width > 0 ? tb.right : p.right));
     const top = Math.max(INSET / 2, p.top);
     drawer.style.setProperty("--cf-am-top", `${top}px`);
     drawer.style.setProperty("--cf-am-right", `${right}px`);
@@ -185,6 +213,7 @@ export function mountPhoneMenu(): () => void {
     void (async () => {
       for (let i = 0; i < 20 && !drawer.querySelector('[role="menuitem"]'); i++) await frame();
       if (live !== me) return;
+      inject(drawer);
       drawer.setAttribute("data-cf-anchored", "on");
       snapshot();
       if (motion) void run(drawer, btn, true);
@@ -195,8 +224,44 @@ export function mountPhoneMenu(): () => void {
   let pending = 0;
   function schedule() {
     if (pending) return;
-    pending = requestAnimationFrame(() => { pending = 0; snapshot(); });
+    pending = requestAnimationFrame(() => { pending = 0; if (live) inject(live.drawer); snapshot(); });
   }
+  /**
+   * The header's right toolbar (the right-panel button, and any workflow buttons bb adds there) is hidden on
+   * phones (pills-phone.ts): its buttons become this menu's first items, in the menu's own item style, then a
+   * separator. A tap closes the menu (a tap on bb's backdrop, as outside) and presses bb's own button. bb
+   * re-renders the items when a submenu goes back, so this runs again on every content change.
+   */
+  function inject(drawer: HTMLElement) {
+    if (drawer.querySelector("[data-cf-am-tool]")) return;
+    const first = drawer.querySelector<HTMLElement>('[role="menuitem"]');
+    const tools = [...document.querySelectorAll<HTMLButtonElement>(`${TOOLBAR_SEL} button`)].filter((b) => !b.disabled);
+    if (!first?.parentElement || !tools.length) return;
+    const list = first.parentElement;
+    const anchor = list.firstElementChild;
+    for (const tool of tools) {
+      const item = document.createElement("div");
+      item.setAttribute("role", "menuitem");
+      item.setAttribute("tabindex", "-1");
+      item.setAttribute("data-cf-am-tool", "");
+      item.className = first.className;
+      // "Show right panel (Ctrl + J)" → "Show right panel": shortcuts mean nothing on a phone.
+      const label = (tool.getAttribute("aria-label") ?? tool.textContent ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+      item.innerHTML = `${tool.querySelector("svg")?.outerHTML ?? ""}<span></span>`;
+      item.querySelector("span")!.textContent = label;
+      item.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const backdrop = live?.backdrop;
+        if (backdrop) for (const type of ["pointerdown", "pointerup", "click"]) backdrop.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true }));
+        tool.click();
+      });
+      list.insertBefore(item, anchor);
+    }
+    const hr = drawer.querySelector("hr")?.cloneNode(true) as HTMLElement | undefined;
+    if (hr) { hr.setAttribute("data-cf-am-tool", ""); list.insertBefore(hr, anchor); }
+  }
+
   function snapshot() {
     if (!live || live.drawer.getAttribute("data-state") !== "open" || !live.drawer.querySelector('[role="menuitem"]')) return;
     live.snap = { clone: live.drawer.cloneNode(true) as HTMLElement, rect: live.drawer.getBoundingClientRect() };
@@ -256,6 +321,9 @@ export function mountPhoneMenu(): () => void {
   document.querySelectorAll(DRAWER_SEL).forEach(watch);
 
   return () => {
+    if (HTMLElement.prototype.focus === guardedFocus) HTMLElement.prototype.focus = nativeFocus;
+    if (HTMLElement.prototype.blur === guardedBlur) HTMLElement.prototype.blur = nativeBlur;
+    keep = null;
     document.removeEventListener("pointerdown", onPointerDown, true);
     document.removeEventListener("pointerdown", onLaterDown, true);
     document.removeEventListener("keydown", onKeyDown, true);

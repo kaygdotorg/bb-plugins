@@ -3,16 +3,15 @@
  *
  * On a phone (<768px) the chat header is no band, only floating glass over the page, 44px tall on one centre line:
  *   - back: bb's drawer button (a fixed overlay outside the header), a round glass pill on the left;
- *   - the title: a glass capsule, centred on the screen, padded 16px, truncating;
- *   - a toolbar on the right: the ⋯ thread actions and the right-panel button as two segments of one glass capsule
- *     (44px tall, 48px segments: iOS 27's metrics, pills.ts). bb keeps ⋯ beside the title in its DOM, so ⋯ is
- *     flattened out of its wrappers and the toolbar's glass (a ::before of the right-hand container) reaches left
- *     to take it in.
+ *   - the title: a glass capsule, leading (one gap after the back pill), padded 16px, truncating;
+ *   - ⋯ on the right: a 44px glass circle. bb's right toolbar (the right-panel button) is hidden; its buttons are
+ *     the ⋯ menu's first items (phone-menu.ts). bb keeps ⋯ beside the title in its DOM, so ⋯ is flattened out of
+ *     its wrappers and pushed to the row's end.
  * Side insets are equal; the top inset leaves the pills clear of the 62px screen corner the pane takes on when it slides
  * aside (--cf-device-radius). The wrappers are flattened with display: contents (bb's DOM stays as it is).
  */
 import { R } from "./selectors";
-import { GLASS_LAYER, SEGMENT, s } from "./pills";
+import { GLASS_LAYER, s } from "./pills";
 
 const ROW = `${R} main header [data-testid="app-page-header-content-row"]`;
 const TOGGLE = `${R} [data-testid="app-sidebar-trigger-overlay"]`;
@@ -73,21 +72,22 @@ ${GLASS_LAYER}}
     white-space: nowrap;
   }
 
-  /* ── The title: a glass capsule on the screen's centre. Its wrappers (and the ⋯ span) are flattened. */
+  /* ── The title: a glass capsule, leading: one gap after the back pill (kayg: left, not centred; like the
+     drawer's wordmark). Its wrappers (and the ⋯ span) are flattened. */
   ${ROW} > div:first-child,
   ${ROW} > div:first-child > div,
   ${ROW} > div:first-child > div > span:has(> ${ACTIONS}) { display: contents; }
   ${ROW} > div:first-child > div > div:has(.bb-thread-title) {
     position: absolute;
-    left: 50%;
+    left: calc(var(--cf-ph-side) + var(--cf-pill) + var(--cf-ctl-gap));
     top: 50%;
-    translate: -50% -50%;
+    translate: 0 -50%;
     display: flex;
     align-items: center;
     isolation: isolate;
     height: var(--cf-text-h);
-    /* Both sides reserve the toolbar's room (two segments), so the capsule stays centred. */
-    max-width: calc(100% - 2 * (var(--cf-ph-side) + 2 * var(--cf-seg-w) + 2 * var(--cf-tb-pad) + var(--cf-tb-gap) + var(--cf-ctl-gap)));
+    /* Up to one gap before the ⋯ pill on the right. */
+    max-width: calc(100% - 2 * (var(--cf-ph-side) + var(--cf-pill) + var(--cf-ctl-gap)));
     padding: 0 ${s(16)};
     border-radius: 999px;
     /* Words sit on this glass, and page text passes under it: a denser tint than the icon pills' keeps >= 4.5:1. */
@@ -104,21 +104,26 @@ ${GLASS_LAYER}}
     color: var(--foreground);
   }
 
-  /* ── The toolbar: ⋯ and the right-hand buttons as segments of one glass capsule. The container's glass reaches
-     left over ⋯ (one segment, plus the toolbar's gap and padding, both 0 with segments). */
-  ${ROW} { --cf-tb-reach: calc(var(--cf-seg-w) + var(--cf-tb-gap) + var(--cf-tb-pad)); }
-  ${ROW} > ${TOOLBAR} { margin-left: auto; }
-  ${ROW}[data-cf-has-actions] > ${TOOLBAR} { padding-left: 0; }
-  ${ROW}[data-cf-has-actions] > ${TOOLBAR}::before { left: calc(-1 * var(--cf-tb-reach)); }
+  /* ── The right end: ⋯ alone, a 44px glass circle like the back pill. bb's right toolbar (the right-panel
+     button, workflow buttons) is hidden: its buttons are the ⋯ menu's first items (phone-menu.ts). */
+  ${ROW} > ${TOOLBAR} { display: none !important; }
   ${ROW} ${ACTIONS} {
-${SEGMENT}    z-index: 1;
-    margin: 0 var(--cf-tb-gap) 0 auto;
+    position: relative;
+    isolation: isolate;
+    z-index: 1;
+    width: var(--cf-pill);
+    height: var(--cf-pill);
+    min-width: var(--cf-pill);
+    margin: 0 0 0 auto;
+    padding: 0;
+    border-radius: 999px;
     background-color: transparent;
+    color: var(--foreground);
+    transition: scale 150ms var(--cf-ease-out);
   }
-  ${ROW} ${ACTIONS}:not(:disabled):active { background-color: var(--cf-pill-hover); }
-  ${ROW} ${ACTIONS}::before { content: none; }
+  ${ROW} ${ACTIONS}::before {
+${GLASS_LAYER}}
+  ${ROW} ${ACTIONS}:not(:disabled):active { scale: 0.97; }
   ${ROW} ${ACTIONS} :is(svg, span.size-4) { width: var(--cf-pill-icon); height: var(--cf-pill-icon); }
-  /* The thread's actions are the toolbar's first pill: it carries the toolbar's left padding. */
-  ${ROW}[data-cf-has-actions] > ${TOOLBAR} { margin-left: 0; }
 }
 `;

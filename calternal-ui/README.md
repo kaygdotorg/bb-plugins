@@ -30,6 +30,7 @@ It only restyles bb. Your threads, settings and data are untouched, and turning 
 - **Motion:** animations follow the mouse but never the keyboard, so typing always feels instant.
 
 **On phones**
+- **The header:** the thread title sits on the left; the ⋯ menu also holds the right panel, and opening it keeps your keyboard up.
 - **Swipe a thread** left to archive it, right to pin it.
 - **Swipe a message** right to reply, left to see its time.
 - **Pull down** from the top to search.
