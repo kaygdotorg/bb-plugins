@@ -6,7 +6,7 @@
  * Tab focuses it, Enter/Space opens the menu, with no animation).
  *   - A press opens bb's own thread actions menu as a MORPH, on pointer-down, with no wait: the menu
  *     starts at the pill's exact rect and radius and grows to its own (clip-path, ~200ms, a strong
- *     ease-out); the pill hides while it is open, and closing runs it backwards (~150ms).
+ *     ease-out, driven by clip-morph.ts); the pill hides while it is open, and closing runs it backwards (~150ms).
  *   - A second press within DOUBLE_MS (a double click) closes the menu at once, with no animation, and
  *     renames the thread inline: bb's own "Rename" item swaps the title for its inline editor (Enter
  *     saves, Escape cancels, blur saves); it runs with the menu invisible (html[data-cf-silent-menu],
@@ -30,6 +30,7 @@
  */
 import { R } from "./selectors";
 import { GLASS_LAYER, s } from "./pills";
+import { clipMorph, stopMorph } from "./clip-morph";
 
 const ROW = `${R} main header [data-testid="app-page-header-content-row"]`;
 /** The pill: the row's left cell's only child (bb: title wrapper + the ⋯ span). */
@@ -43,7 +44,6 @@ const DOUBLE_MS = 400;
 /** After a press the menu ignores the pointer for this long (see the header comment). */
 const GUARD_MS = 450;
 /** Emil Kowalski's strong ease-out. */
-const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
 const OPEN_MS = 200;
 const CLOSE_MS = 150;
 
@@ -211,6 +211,7 @@ export function mountTitlePill(): () => void {
       if (open) {
         // Opened by the first press of this double click: drop the morph, no animation.
         open.setAttribute("data-cf-morph", "still");
+        stopMorph(open);
         open.getAnimations({ subtree: true }).forEach((a) => a.cancel());
       } else pressActions();
       for (let i = 0; i < 40; i++) {
@@ -228,7 +229,6 @@ export function mountTitlePill(): () => void {
   /** The menu mounted: move it over the pill, and open it as a morph if our press asked for it. */
   async function begin(wrapper: HTMLElement, menu: HTMLElement, pillEl: HTMLElement) {
     const animated = performance.now() - armedAt < 600;
-    pillEl.setAttribute("data-cf-open", "");
     menu.setAttribute("data-cf-morph", "prep");
     if (animated) {
       menu.setAttribute("data-cf-guard", "");
@@ -248,6 +248,8 @@ export function mountTitlePill(): () => void {
     const p = pillEl.getBoundingClientRect();
     wrapper.style.translate = `${p.left - m.left}px ${p.top - m.top}px`;
 
+    // The pill hides only now, in the same frame the menu appears over it (not while it is placed).
+    pillEl.setAttribute("data-cf-open", "");
     if (!animated) { menu.setAttribute("data-cf-morph", "still"); return; }
     menu.setAttribute("data-cf-morph", "on");
     run(menu, pillEl, true);
@@ -263,7 +265,6 @@ export function mountTitlePill(): () => void {
 
   /** One direction of the morph. The open one is origin-aware: it grows from the pill's own rect and radius. */
   function run(menu: HTMLElement, pillEl: HTMLElement, opening: boolean) {
-    const kids = [...menu.children] as HTMLElement[];
     if (still()) {
       // Reduced motion: a short fade in place of the movement.
       const ms = opening ? 120 : 90;
@@ -271,22 +272,10 @@ export function mountTitlePill(): () => void {
       if (opening) void a.finished.then(() => a.cancel(), () => {});
       return;
     }
-    const m = menu.getBoundingClientRect();
-    const p = pillEl.getBoundingClientRect();
-    const r1 = parseFloat(getComputedStyle(menu).borderTopLeftRadius) || 14;
-    const small = `inset(${p.top - m.top}px ${m.right - p.right}px ${m.bottom - p.bottom}px ${p.left - m.left}px round ${p.height / 2}px)`;
-    const full = `inset(0px round ${r1}px)`;
-    const ms = opening ? OPEN_MS : CLOSE_MS;
-    const clip = menu.animate({ clipPath: opening ? [small, full] : [full, small] }, { duration: ms, easing: EASE_OUT, fill: "both" });
-    const fades = kids.map((k) =>
-      k.animate({ opacity: opening ? [0, 1] : [1, 0] }, opening
-        ? { duration: 140, delay: 40, easing: EASE_OUT, fill: "both" }
-        : { duration: 70, easing: "linear", fill: "both" }),
-    );
-    if (opening) {
-      // Done: let go, so the menu's own shadow and edge are never clipped.
-      void Promise.all([clip.finished, ...fades.map((f) => f.finished)]).then(() => [clip, ...fades].forEach((a) => a.cancel()), () => {});
-    }
+    // Main-thread clip (clip-morph.ts explains the compositor flicker this avoids).
+    void clipMorph(menu, pillEl, opening, opening
+      ? { ms: OPEN_MS, fadeDelay: 40, fadeMs: 140, fadeEase: "out" }
+      : { ms: CLOSE_MS, fadeDelay: 0, fadeMs: 70, fadeEase: "linear" });
   }
 
   /** Watches only the body's direct children (portals): a menu of ⋯ arriving, or its wrapper leaving. */

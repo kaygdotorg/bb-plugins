@@ -20,6 +20,7 @@
  * keyboard, the menu is anchored without any motion; reduced motion swaps the morph for a short fade.
  */
 import { R } from "./selectors";
+import { clipMorph, stopMorph } from "./clip-morph";
 
 const ACTIONS_SEL = `main header button[aria-label="Thread actions"]`;
 const TOOLBAR_SEL = `main header div:has(> [data-thread-header-pane-actions])`;
@@ -29,7 +30,6 @@ const DRAWER_SEL = `[data-persistent-drawer-content]`;
 const ARM_MS = 600;
 /** The opening press's trailing events are swallowed inside the menu for this long at most. */
 const SWALLOW_MS = 600;
-const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
 const OPEN_MS = 220;
 const CLOSE_MS = 160;
 /** Screen inset (Apple's phone margin) and the widest the menu gets. */
@@ -209,6 +209,7 @@ export function mountPhoneMenu(): () => void {
     if (pending) { cancelAnimationFrame(pending); pending = 0; }
     live = null;
     swallowUntil = 0;
+    stopMorph(drawer);
     drawer.getAnimations({ subtree: true }).forEach((a) => a.cancel());
     drawer.setAttribute("data-cf-anchored", "parked");
     backdrop?.removeAttribute("data-cf-anchored");
@@ -236,27 +237,14 @@ export function mountPhoneMenu(): () => void {
 
   /** One direction of the morph: a clip from the pill's rect and radius to the menu's own, and back. */
   function run(menu: HTMLElement, pill: HTMLElement, opening: boolean): Promise<unknown> {
-    const kids = [...menu.children] as HTMLElement[];
     if (still()) {
       const a = menu.animate({ opacity: opening ? [0, 1] : [1, 0] }, { duration: opening ? 120 : 90, easing: "linear", fill: "both" });
       return a.finished.then(() => { if (opening) a.cancel(); }, () => {});
     }
-    const m = menu.getBoundingClientRect();
-    const p = pill.getBoundingClientRect();
-    const cs = getComputedStyle(pill);
-    const pr = Math.min(parseFloat(cs.borderTopLeftRadius) || p.height / 2, p.height / 2, p.width / 2);
-    const r1 = parseFloat(getComputedStyle(menu).borderTopLeftRadius) || 14;
-    const small = `inset(${p.top - m.top}px ${m.right - p.right}px ${m.bottom - p.bottom}px ${p.left - m.left}px round ${pr}px)`;
-    const full = `inset(0px round ${r1}px)`;
-    const clip = menu.animate({ clipPath: opening ? [small, full] : [full, small] }, { duration: opening ? OPEN_MS : CLOSE_MS, easing: EASE_OUT, fill: "both" });
-    const fades = kids.map((k) =>
-      k.animate({ opacity: opening ? [0, 1] : [1, 0] }, opening
-        ? { duration: 150, delay: 50, easing: EASE_OUT, fill: "both" }
-        : { duration: 80, easing: "linear", fill: "both" }),
-    );
-    const all = Promise.all([clip.finished, ...fades.map((f) => f.finished)]);
-    // Opened: let go, so the menu's shadow and edge are never clipped.
-    return all.then(() => { if (opening) [clip, ...fades].forEach((a) => a.cancel()); }, () => {});
+    // Main-thread clip (clip-morph.ts explains the compositor flicker this avoids).
+    return clipMorph(menu, pill, opening, opening
+      ? { ms: OPEN_MS, fadeDelay: 50, fadeMs: 150, fadeEase: "out" }
+      : { ms: CLOSE_MS, fadeDelay: 0, fadeMs: 80, fadeEase: "linear" });
   }
 
   document.addEventListener("pointerdown", onPointerDown, true);
