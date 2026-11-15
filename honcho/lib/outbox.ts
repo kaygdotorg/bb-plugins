@@ -30,7 +30,20 @@ export const OUTBOX_MIGRATIONS = [
   // v4: per-thread upload leases, so two plugin generations (old one still uploading during a reload,
   // new one catching up) never POST or recover the same thread at once.
   `CREATE TABLE leases (thread TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);`,
+  // v5: switch-over markers record which gate rule made them. Rows made before this (gate_version 1)
+  // trusted any BB_HONCHO env event, steers included; capture re-evaluates them at startup.
+  // built_seq/built_at: the qualifying session build. probation: uploads wait until the first turn
+  // after the build passed the tripwire. harness_writes: harness messages seen after a build (epoch ms);
+  // only a build newer than that can switch the thread over again.
+  `ALTER TABLE switch_over ADD COLUMN gate_version INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE switch_over ADD COLUMN built_seq INTEGER;
+   ALTER TABLE switch_over ADD COLUMN built_at INTEGER;
+   ALTER TABLE switch_over ADD COLUMN probation INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE harness_writes (thread TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);`,
 ] as const;
+/** The switch-over gate rule new markers are made with (see capture's gate()). */
+export const GATE_VERSION = 2;
+export interface SwitchOverMarker { startSeq: number; gateVersion: number; builtSeq: number | null; builtAt: number | null; probation: boolean }
 export interface InFlight { thread: string; firstSeq: number; lastSeq: number; startedAt: number }
 export interface PauseRange { kind: "thread" | "project"; id: string; from: number; to: number | null; sinceAt: number | null }
 export interface RetryState { attempts: number; nextAt: number; lastError: string }
@@ -128,12 +141,46 @@ export class Outbox {
   recordFirstStart(now: number): number {
     return Number(this.setMetaOnce("first_started_at", String(now)));
   }
-  markSwitchOver(thread: string, startSeq: number): void {
+  /** Records the thread's switch-over marker (the first one wins), made by the current gate rule.
+   * `probation`: uploads wait until passProbation(). */
+  markSwitchOver(thread: string, startSeq: number, build: { builtSeq?: number; builtAt?: number; probation?: boolean } = {}): void {
     seq(startSeq);
-    this.db.prepare("INSERT INTO switch_over VALUES (?,?) ON CONFLICT(thread) DO NOTHING").run(thread, startSeq);
+    this.db.prepare(`INSERT INTO switch_over (thread,start_seq,gate_version,built_seq,built_at,probation) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(thread) DO NOTHING`).run(thread, startSeq, GATE_VERSION, build.builtSeq ?? null, build.builtAt ?? null, build.probation ? 1 : 0);
+  }
+  /** Replaces the marker (a re-evaluation of an older gate rule's marker). Cursors are not touched. */
+  replaceSwitchOver(thread: string, startSeq: number, build: { builtSeq?: number; builtAt?: number; probation?: boolean } = {}): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM switch_over WHERE thread=?").run(thread);
+      this.markSwitchOver(thread, startSeq, build);
+    })();
   }
   switchOver(thread: string): number | undefined {
     return (this.db.prepare("SELECT start_seq FROM switch_over WHERE thread=?").get(thread) as { start_seq: number } | undefined)?.start_seq;
+  }
+  switchOverMarker(thread: string): SwitchOverMarker | undefined {
+    const row = this.db.prepare("SELECT start_seq,gate_version,built_seq,built_at,probation FROM switch_over WHERE thread=?").get(thread) as
+      { start_seq: number; gate_version: number; built_seq: number | null; built_at: number | null; probation: number } | undefined;
+    return row && { startSeq: row.start_seq, gateVersion: row.gate_version, builtSeq: row.built_seq, builtAt: row.built_at, probation: row.probation === 1 };
+  }
+  /** Threads whose marker an older gate rule made. */
+  staleSwitchOvers(): string[] {
+    return (this.db.prepare("SELECT thread FROM switch_over WHERE gate_version<? ORDER BY thread").all(GATE_VERSION) as Array<{ thread: string }>).map(r => r.thread);
+  }
+  passProbation(thread: string): void {
+    this.db.prepare("UPDATE switch_over SET probation=0 WHERE thread=?").run(thread);
+  }
+  /** Drops the marker; the thread is not switched over again. With `harnessSeenAt`, the harness was seen
+   * writing then, and only a session build after that time may switch it over. Cursors are not touched. */
+  dropSwitchOver(thread: string, harnessSeenAt?: number): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM switch_over WHERE thread=?").run(thread);
+      if (harnessSeenAt !== undefined) this.db.prepare("INSERT INTO harness_writes VALUES (?,?) ON CONFLICT(thread) DO UPDATE SET seen_at=MAX(seen_at,excluded.seen_at)").run(thread, harnessSeenAt);
+    })();
+  }
+  /** When harness writes were last seen after one of the thread's session builds (epoch ms). */
+  harnessSeenAt(thread: string): number | undefined {
+    return (this.db.prepare("SELECT seen_at FROM harness_writes WHERE thread=?").get(thread) as { seen_at: number } | undefined)?.seen_at;
   }
   /** Pauses are inclusive ranges, closed or open at the end, checked when an item is about to be sent.
    * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of time
@@ -217,7 +264,7 @@ export class Outbox {
   /** Every thread the outbox holds state for (startup checks them for deletions missed while down). */
   knownThreads(): string[] {
     return (this.db.prepare(`SELECT thread FROM cursors UNION SELECT thread FROM in_flight UNION SELECT thread FROM retries
-      UNION SELECT thread FROM switch_over UNION SELECT thread FROM fork_sources ORDER BY thread`).all() as Array<{ thread: string }>).map(r => r.thread);
+      UNION SELECT thread FROM switch_over UNION SELECT thread FROM fork_sources UNION SELECT thread FROM harness_writes ORDER BY thread`).all() as Array<{ thread: string }>).map(r => r.thread);
   }
   /** The newest seq of a thread that the outbox has a record of (cursor, in-flight range, markers, edits). */
   newestKnownSeq(thread: string): number {
@@ -230,7 +277,7 @@ export class Outbox {
   /** Removes the thread's state, including its pause ranges. Project pauses stay. */
   deleteThread(thread: string): void {
     this.db.transaction(() => {
-      for (const table of ["cursors", "in_flight", "retries", "switch_over", "fork_sources", "superseded", "provider_threads", "leases"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
+      for (const table of ["cursors", "in_flight", "retries", "switch_over", "fork_sources", "superseded", "provider_threads", "leases", "harness_writes"]) this.db.prepare(`DELETE FROM ${table} WHERE thread=?`).run(thread);
       this.db.prepare("DELETE FROM pause_ranges WHERE kind='thread' AND id=?").run(thread);
     })();
   }
