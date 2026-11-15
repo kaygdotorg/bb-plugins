@@ -13,6 +13,7 @@
       "icon": "Brain"
     },
     "server": "./server.ts",
+    "host": "./host.ts",
     "app": "./app.tsx",
     "skills": []
   },
@@ -20,6 +21,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "bb plugin build"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.132",
