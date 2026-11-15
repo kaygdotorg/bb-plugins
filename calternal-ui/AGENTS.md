@@ -21,7 +21,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
 | `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `assets` (storage list and removal) |
-| `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `preblur` (blurs rendered once), `prefs`, `accent`, `color`, `events` (event names, localStorage cache), `font-preview`, `clock` (24-hour time); behaviour: `composer`, `voice`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
+| `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `preblur` (blurs rendered once), `prefs`, `accent`, `color`, `events` (event names, localStorage cache), `font-preview`, `clock` (24-hour time), `pills` + `pills-sidebar` / `pills-composer` / `pills-phone` (the pill UI); behaviour: `composer`, `voice`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
 | `ui/` | React: `overlay` (sync), `nav` + `nav-actions` (footer + and search), `settings/` (wallpaper, glass, appearance, fonts, storage) |
 
 ## Rules learned the hard way
@@ -69,6 +69,12 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **The nav lines up with bb's thread rows:** the same `text-sm`, a 14px icon centred in a 16px slot, a fixed 8px left inset (bb's is px, not the scaled spacing unit), and the same gap. Rows are only shorter, for density. Never give the nav its own font size.
 - **Sidebar defaults:** the nav follows bb's own "Customize navigation" (hidden items go under More); kayg hides New thread and Search threads there, so never filter them in code. The footer's `+` and search (`app.tsx`) run those nav actions through `ui/nav-actions.ts`. The footer row reads `usage ···· + search settings …`; `css.ts` only sets `order` on bb's `li[data-footer-item]`, so bb's overflow keeps working.
 - **Quiet sidebar:** "More" shows only while the pointer is over the top navigation (`[data-cf-nav]`), and the footer "…" only while it is over the footer row, or focus is inside them (kayg: "hover near it", not anywhere on the sidebar) (`@media (hover: hover)`; touch always shows them). They slide and fade in and take space only then: max-height / width 0 → full, and the hidden "…" cancels the row gap with a negative margin. Headless Chromium reports no hover: to test, copy the rules out of the media block into a temporary style.
+- **Pill UI (`frame/pills*.ts`), after calternal's Pill / Toolbar / Glass** (read-only reference: `~/Developer/calternal`, `packages/ui`; never write there):
+  - A pill is a round button: 0.97 press, 9% ink hover, one icon size, the warm tooltip.
+  - Separate actions are separate pills. Only a toolbar groups buttons, as pills within one pill: outer full-round, 3px padding, 2px gaps, so the radii are concentric.
+  - Floating over content: the one floating glass (`GLASS_LAYER` on a `::before`, calternal's tint, blur 24, saturate, inner shade, hairline edge, float shadow). Inside glass or flat on the sidebar: a quiet 6.5% ink tint.
+  - Sizes are calternal's px at 100% interface size, scaled with it (`s()`): toolbar 32 with 26px pills, pill alone 30, icons 20; phones 44 and 22.
+  - The card's top-right toolbar is inset 30px: the 62px corner otherwise crowds it.
 - **Every floating menu uses the context-menu glass**, and panels inside popovers (`bg-popover`, `bg-card`, …) go clear, including their border and shadow (otherwise: a card inside the card). So do lists nested in a menu, picker or dialog (no second glass layer). Modal dialogs (the desktop search palette) get the same glass; phone sheets keep theirs.
 - **Outside the card, bb's light surfaces are opaque white.** Audit light mode separately: the strip above the composer (`section.bg-surface-raised-solid`) uses the composer glass, mention pills get a faint tint (bb also paints them with a gradient), and amber text uses `--cf-warn-ink`, darker in light mode.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
