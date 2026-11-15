@@ -18,6 +18,7 @@ import { mountInputMode } from "./input-mode";
 import { mountPhoneMenu } from "./phone-menu";
 import { mountSidebarTop } from "./sidebar-top";
 import { mountFooterUsage } from "./footer-usage";
+import { mountPerfProbe } from "./perf-probe";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -47,6 +48,7 @@ export function mountFrame(): () => void {
   const unmountPhoneMenu = mountPhoneMenu();
   const unmountSidebarTop = mountSidebarTop();
   const unmountFooterUsage = mountFooterUsage();
+  const unmountPerfProbe = mountPerfProbe(); // opt-in: ?cf-perf
 
   return () => {
     uninstallClock();
@@ -55,6 +57,7 @@ export function mountFrame(): () => void {
     unmountPhoneMenu();
     unmountSidebarTop();
     unmountFooterUsage();
+    unmountPerfProbe();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();
