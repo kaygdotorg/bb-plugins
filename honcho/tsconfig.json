@@ -1,4 +1,4 @@
 {
-  "compilerOptions": { "strict": true, "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler", "lib": ["ES2022", "DOM"], "types": ["node"], "noEmit": true, "skipLibCheck": false },
-  "include": ["server.ts", "lib", "test"]
+  "compilerOptions": { "strict": true, "jsx": "react-jsx", "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler", "lib": ["ES2022", "DOM"], "types": ["node"], "noEmit": true, "skipLibCheck": false },
+  "include": ["server.ts", "app.tsx", "ui", "lib", "test"]
 }
