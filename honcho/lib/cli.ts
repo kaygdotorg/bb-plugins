@@ -15,7 +15,6 @@ export function ago(at: number | null | undefined, now = Date.now()): string {
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;
   return `${Math.round(s / 86400)}d ago`;
 }
-const yn = (v: boolean | null) => (v === null ? "unknown" : v ? "yes" : "no");
 export function formatPlan(plan: BackfillPlan): string {
   return [
     "backfill dry run (nothing was written)",
@@ -27,12 +26,14 @@ export function formatPlan(plan: BackfillPlan): string {
     ...(plan.notYetSeenByCapture ? [`  waiting for capture:    ${plan.notYetSeenByCapture} (skipped until live capture sees them)`] : []),
   ].join("\n");
 }
+const HOOK_HINT = "needed for per-turn recall; add it with: bb honcho harness connect";
+const trustedText = (trusted: boolean | null) => (trusted === null ? "unknown" : trusted ? "yes" : "no (codex asks you to approve the new hook once)");
 export function formatHarness(state: HarnessState): string {
   return [
     `machine ${state.machineId}`,
-    `  claude: hook ${state.claude.hookInstalled ? "installed" : "not installed"}, claude-honcho ${state.claude.handedOver ? "handed over" : "active"}${state.claude.pluginVersion ? ` (${state.claude.pluginVersion})` : ""}`,
-    `  codex:  hook ${state.codex.hookInstalled ? "installed" : "not installed"}, honcho ${state.codex.handedOver ? "handed over" : "active"}, hook trusted: ${yn(state.codex.trusted)}`,
-    `  backups: ${state.backups.length ? state.backups.join(", ") : "none"}`,
+    `  claude: hook ${state.claude.hookInstalled ? "installed" : `not installed (${HOOK_HINT})`}, claude-honcho ${state.claude.handedOver ? "handed over" : "active"}${state.claude.pluginVersion ? ` (${state.claude.pluginVersion})` : ""}`,
+    `  codex:  hook ${state.codex.hookInstalled ? "installed" : `not installed (${HOOK_HINT})`}, honcho ${state.codex.handedOver ? "handed over" : "active"}, hook trusted: ${trustedText(state.codex.trusted)}`,
+    `  backups: ${state.backups.length ? `${state.backups.join(", ")} (harness undo can restore these)` : "none (nothing to undo)"}`,
   ].join("\n");
 }
 /** `--since` takes a date or timestamp; normalized to ISO so every layer agrees. */
@@ -42,9 +43,35 @@ export function parseSince(value: string | undefined): string | undefined {
   if (Number.isNaN(t)) throw new PluginCliError(`invalid --since "${value}"`, { code: "invalid_value", hint: "Use a date like 2026-01-31 or a full ISO timestamp." });
   return new Date(t).toISOString();
 }
-function needThread(ctx: PluginCliContext): string {
-  if (!ctx.threadId) throw new PluginCliError("no current thread", { code: "missing_thread", hint: "Run inside a bb thread, or pass --project to pause the project." });
-  return ctx.threadId;
+/** `--json` works anywhere in the argv: the parser only reads it after the command, so move every copy to the end. */
+export function moveJsonFlagLast(argv: string[]): string[] {
+  if (!argv.includes("--json")) return argv;
+  return [...argv.filter(arg => arg !== "--json"), "--json"];
+}
+/** The chat's title from bb, or null when bb can't say; the CLI still works without it. */
+async function chatTitle(bb: BbPluginApi, threadId: string): Promise<string | null> {
+  try {
+    const thread = await bb.sdk.threads.get({ threadId }) as { title?: string | null } | undefined;
+    return thread?.title?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+const chatLabel = (title: string | null, threadId: string) => (title ? `"${title}" (${threadId})` : threadId);
+/** The tripwire message names the chat that the old plugin is still saving (see capture's checkTripwire). */
+async function tripwireSentence(bb: BbPluginApi, tripwire: string): Promise<string> {
+  const threadId = tripwire.match(/capturing thread (\S+)$/)?.[1];
+  const tail = "it stops by itself after that chat restarts";
+  if (!threadId) return `the old honcho plugin is still saving a chat; ${tail}`;
+  return `the old honcho plugin is still saving chat ${chatLabel(await chatTitle(bb, threadId), threadId)}; ${tail}`;
+}
+const isNotFound = (error: unknown) => (error as { status?: unknown } | null)?.status === 404
+  || /\bHTTP 404\b/.test(error instanceof Error ? error.message : String(error));
+/** Turns a bb 404 into a plain sentence; anything else is rethrown unchanged. */
+function plainNotFound(error: unknown, projectId: string | undefined): never {
+  if (!isNotFound(error)) throw error;
+  if (projectId) throw new PluginCliError(`no project "${projectId}". list projects with: bb project list`, { code: "project_not_found" });
+  throw new PluginCliError(`not found: ${error instanceof Error ? error.message : String(error)}`, { code: "not_found" });
 }
 
 export function registerCli(bb: BbPluginApi, services: CliServices): void {
@@ -57,7 +84,7 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
       return out(state, formatHarness(state), options.json);
     },
   });
-  bb.cli.register(defineCli({
+  const cli = defineCli({
     name: "honcho",
     summary: "Honcho memory: status, pause, backfill and harness hand-over",
     commands: {
@@ -67,10 +94,12 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
         async run({ options }, ctx) {
           const health = await capture.health();
           const thread = ctx.threadId ? await capture.threadStatus(ctx.threadId) : null;
+          if (options.json) return out({ health, thread }, "", true);
+          const tripwire = health.tripwire ? `  ${await tripwireSentence(bb, health.tripwire)}` : null;
           const lines = [
-            `honcho: ${health.authFailing ? "auth failing" : health.tripwire ? "tripwire" : "ok"}`,
+            `honcho: ${health.authFailing ? "auth failing" : health.tripwire ? "needs attention" : "ok"}`,
             `  queued: ${health.queued}${health.oldestPendingAt ? ` (oldest ${ago(health.oldestPendingAt)})` : ""}`,
-            ...(health.tripwire ? [`  tripwire: ${health.tripwire}`] : []),
+            ...(tripwire ? [tripwire] : []),
             ...(thread ? [`thread ${thread.threadId}: ${thread.state}${thread.reason ? ` (${thread.reason})` : ""}`,
               `  last upload: ${ago(thread.lastUploadAt)}, queued: ${thread.queued}, scope: ${thread.scope ?? "none"}`] : []),
           ];
@@ -87,11 +116,17 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
         async run({ options }, ctx) {
           let target: { kind: "thread" | "project"; id: string };
           if (options.project) {
-            if (!ctx.projectId) throw new PluginCliError("no current project", { code: "missing_project", hint: "Run inside a bb thread." });
+            if (!ctx.projectId) throw new PluginCliError("--project needs a current project", { code: "missing_project", hint: "Run it from a chat that belongs to a project." });
             target = { kind: "project", id: ctx.projectId };
-          } else target = { kind: "thread", id: needThread(ctx) };
+          } else {
+            if (!ctx.threadId) throw new PluginCliError("pause must run inside a chat", { code: "missing_thread", hint: "Run it from a chat, or pass --project to pause the current project." });
+            target = { kind: "thread", id: ctx.threadId };
+          }
           await capture.setPaused(target, !options.off);
-          return out({ ok: true, ...target, paused: !options.off }, `memory ${options.off ? "resumed" : "paused"} for ${target.kind} ${target.id}`, options.json);
+          if (options.json) return out({ ok: true, ...target, paused: !options.off }, "", true);
+          const label = target.kind === "thread" ? chatLabel(await chatTitle(bb, target.id), target.id) : `project ${target.id}`;
+          const undo = `bb honcho pause${options.project ? " --project" : ""}${options.off ? "" : " --off"}`;
+          return out({ ok: true, ...target, paused: !options.off }, `${options.off ? "resumed" : "paused"} memory for ${label}. undo: ${undo}`, false);
         },
       }),
       backfill: cliCommand({
@@ -109,8 +144,9 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
         constraints: [{ kind: "exactly-one", options: ["dry-run", "start", "stop", "progress"] }],
         async run({ options }) {
           const filter = { ...(options.project ? { projectId: options.project } : {}), ...(options.since ? { since: parseSince(options.since) } : {}) };
-          if (options["dry-run"]) { const plan = await backfill.dryRun(filter); return out(plan, formatPlan(plan), options.json); }
-          if (options.start) { await backfill.start(filter); return out({ ok: true, started: true }, "backfill started; check `bb honcho backfill --progress`", options.json); }
+          const fail = (error: unknown) => plainNotFound(error, options.project);
+          if (options["dry-run"]) { const plan = await backfill.dryRun(filter).catch(fail); return out(plan, formatPlan(plan), options.json); }
+          if (options.start) { await backfill.start(filter).catch(fail); return out({ ok: true, started: true }, "backfill started; check `bb honcho backfill --progress`", options.json); }
           if (options.stop) { await backfill.stop(); return out({ ok: true, stopped: true }, "backfill stopped", options.json); }
           const p = await backfill.progress();
           const pct = p.total ? ` (${Math.floor((p.done / p.total) * 100)}%)` : "";
@@ -134,5 +170,7 @@ export function registerCli(bb: BbPluginApi, services: CliServices): void {
         },
       }),
     },
-  }));
+  });
+  // `--json` is accepted before the command too; the registration keeps its help rendering.
+  bb.cli.register({ ...cli, run: (argv, ctx) => cli.run(moveJsonFlagLast(argv), ctx) });
 }

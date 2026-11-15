@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { registerCli, ago, formatPlan } from "../../lib/cli";
+import { registerCli, ago, formatPlan, formatHarness, moveJsonFlagLast } from "../../lib/cli";
 import type { BackfillService, CaptureService, HarnessService, HarnessState } from "../../lib/contract";
 
 const state: HarnessState = { machineId: "m1", claude: { hookInstalled: true, handedOver: false, pluginVersion: "0.4.0" }, codex: { hookInstalled: false, handedOver: false, trusted: null }, backups: [] };
@@ -42,15 +42,27 @@ describe("bb honcho CLI", () => {
   });
   it("pause defaults to the current thread, --project to the project, --off resumes", async () => {
     const t = use();
-    expect((await t.run(["pause"], { threadId: "thr_1", projectId: "proj_1" })).stdout).toContain("paused for thread thr_1");
+    t.host.harness.sdk.stub("threads.get", async () => ({ title: "bb-plugins/honcho" }));
+    const paused = await t.run(["pause"], { threadId: "thr_1", projectId: "proj_1" });
+    expect(paused.stdout).toBe('paused memory for "bb-plugins/honcho" (thr_1). undo: bb honcho pause --off\n');
     expect(t.capture.setPaused).toHaveBeenLastCalledWith({ kind: "thread", id: "thr_1" }, true);
-    await t.run(["pause", "--project", "--off"], { threadId: "thr_1", projectId: "proj_1" });
+    const projectPause = await t.run(["pause", "--project"], { threadId: "thr_1", projectId: "proj_1" });
+    expect(projectPause.stdout).toContain("paused memory for project proj_1. undo: bb honcho pause --project --off");
+    const resumed = await t.run(["pause", "--project", "--off"], { threadId: "thr_1", projectId: "proj_1" });
+    expect(resumed.stdout).toContain("resumed memory for project proj_1. undo: bb honcho pause --project\n");
     expect(t.capture.setPaused).toHaveBeenLastCalledWith({ kind: "project", id: "proj_1" }, false);
   });
-  it("pause without a thread or project fails with a hint", async () => {
+  it("pause without a title still names the chat id and the undo", async () => {
+    const t = use();
+    t.host.harness.sdk.stub("threads.get", async () => { throw new Error("not found"); });
+    expect((await t.run(["pause"], { threadId: "thr_7" })).stdout).toBe("paused memory for thr_7. undo: bb honcho pause --off\n");
+  });
+  it("pause outside a chat refuses, names --project, and pauses nothing", async () => {
     const t = use();
     const result = await t.run(["pause"]);
-    expect(result.exitCode).not.toBe(0); expect(result.stderr).toContain("no current thread");
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("pause must run inside a chat"); expect(result.stderr).toContain("--project");
+    expect(t.capture.setPaused).not.toHaveBeenCalled();
     const asJson = JSON.parse((await t.run(["pause", "--json"])).stdout);
     expect(asJson).toMatchObject({ ok: false, error: { code: "missing_thread" } });
   });
@@ -99,6 +111,47 @@ describe("bb honcho CLI", () => {
     const bad = await t.run(["harness", "undo", "--step", "everything"]);
     expect(bad.exitCode).not.toBe(0);
     expect(t.hs.undo).toHaveBeenCalledTimes(3);
+  });
+  it("accepts --json before the command, as well as after it", async () => {
+    const t = use();
+    const before = JSON.parse((await t.run(["--json", "status"], { threadId: "thr_1" })).stdout);
+    expect(before).toMatchObject({ health: { queued: 2 }, thread: { threadId: "thr_1" } });
+    expect(JSON.parse((await t.run(["harness", "--json", "state"])).stdout)).toMatchObject({ machineId: "m1" });
+    expect(JSON.parse((await t.run(["--json", "pause"])).stdout)).toMatchObject({ ok: false, error: { code: "missing_thread" } });
+    expect(moveJsonFlagLast(["--json", "backfill", "--progress"])).toEqual(["backfill", "--progress", "--json"]);
+    expect(moveJsonFlagLast(["status"])).toEqual(["status"]);
+  });
+  it("backfill --dry-run for a missing project prints a plain message, not the raw HTTP error", async () => {
+    const t = use();
+    const missing = () => Promise.reject(Object.assign(new Error("HTTP 404: Project not found"), { status: 404 }));
+    vi.mocked(t.backfill.dryRun).mockImplementationOnce(missing as never);
+    const result = await t.run(["backfill", "--dry-run", "--project", "proj_bad"]);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain('no project "proj_bad". list projects with: bb project list');
+    expect(result.stderr).not.toContain("failed: HTTP 404");
+    vi.mocked(t.backfill.start).mockImplementationOnce(async () => { throw new Error("HTTP 404: Project not found"); });
+    expect((await t.run(["backfill", "--start", "--project", "proj_bad"])).stderr).toContain('no project "proj_bad"');
+    vi.mocked(t.backfill.dryRun).mockImplementationOnce(missing as never);
+    const asJson = JSON.parse((await t.run(["backfill", "--dry-run", "--project", "proj_bad", "--json"])).stdout);
+    expect(asJson).toMatchObject({ ok: false, error: { code: "project_not_found" } });
+  });
+  it("status says plainly what the tripwire means, and keeps --json raw", async () => {
+    const t = use();
+    const message = 'harness session "claude-1" is still capturing thread thr_9';
+    vi.mocked(t.capture.health).mockImplementationOnce(async () => ({ oldestPendingAt: null, queued: 0, authFailing: false, tripwire: message }));
+    t.host.harness.sdk.stub("threads.get", async () => ({ title: "bb-plugins/honcho" }));
+    const text = (await t.run(["status"])).stdout;
+    expect(text).toContain('the old honcho plugin is still saving chat "bb-plugins/honcho" (thr_9); it stops by itself after that chat restarts');
+    expect(text).not.toContain("tripwire");
+    vi.mocked(t.capture.health).mockImplementationOnce(async () => ({ oldestPendingAt: null, queued: 0, authFailing: false, tripwire: message }));
+    expect(JSON.parse((await t.run(["status", "--json"])).stdout).health.tripwire).toBe(message);
+  });
+  it("harness state explains a missing hook, untrusted codex hook and empty backups in one line each", () => {
+    const text = formatHarness({ ...state, claude: { ...state.claude, hookInstalled: false }, codex: { hookInstalled: true, handedOver: false, trusted: false }, backups: [] });
+    expect(text).toContain("claude: hook not installed (needed for per-turn recall; add it with: bb honcho harness connect)");
+    expect(text).toContain("hook trusted: no (codex asks you to approve the new hook once)");
+    expect(text).toContain("backups: none (nothing to undo)");
+    expect(formatHarness({ ...state, backups: ["config-1"] })).toContain("backups: config-1 (harness undo can restore these)");
   });
   it("formats helpers", () => {
     expect(ago(null)).toBe("never"); expect(ago(1000, 5000)).toBe("4s ago"); expect(ago(0, 7_200_000)).toBe("2h ago");
