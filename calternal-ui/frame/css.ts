@@ -28,7 +28,8 @@ ${R} {
   /* Interface size: bb sizes text and spacing in rem, so the root size scales both.
      The plugin's 100% is bb's 110%: bb's own 16px reads small on a glass layout. */
   font-size: calc(17.6px * var(--cf-ui-scale, 1)) !important;
-  --cf-gap: 8px;
+  /* Side gap between the sidebars and the card: room for its shadow (bb clips beyond it). */
+  --cf-gap: 12px;
   /* The iPhone 16 Pro Max's display corner (~62pt): sheets and the sliding pane follow it. */
   --cf-device-radius: 62px;
   /* One radius scale for everything. bb derives md / lg / xl from --radius (-2, 0, +4px),
@@ -43,7 +44,9 @@ ${R} {
   --cf-glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
   --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
   --cf-edge: rgb(255 255 255 / 0.55);
-  --cf-shadow: 0 6px 14px -7px rgb(60 40 20 / 0.28);
+  /* The card floats: a tight contact shadow plus a soft wide one. Its blur minus spread
+     reaches exactly --cf-gap (12px), so bb's clipping never cuts it in a straight line. */
+  --cf-shadow: 0 1px 3px rgb(60 40 20 / 0.16), 0 8px 20px -8px rgb(60 40 20 / 0.34);
   /* Warning text (Full Access): bb's amber is too light to read on a light
      glass, so light mode inks it darker. */
   --cf-warn-ink: oklch(0.55 0.15 50);
@@ -54,7 +57,7 @@ ${R}.dark {
   --cf-edge: rgb(255 255 255 / 0.09);
   --cf-warn-ink: var(--warning, oklch(0.75 0.15 70));
   /* Must stay inside --cf-gap: bb clips the center region, so a wider shadow is cut off in a straight line. */
-  --cf-shadow: 0 6px 14px -7px rgb(0 0 0 / 0.55);
+  --cf-shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 8px 20px -8px rgb(0 0 0 / 0.75);
 }
 ${R} body, ${R} #root, ${SHELL}, ${R} [data-app-content-shell] {
   background: transparent !important;

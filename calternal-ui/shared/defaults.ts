@@ -7,9 +7,9 @@ import type { FramePrefs } from "./contract";
 export const DEFAULT_PREFS: FramePrefs = {
   wallpaperUrl: "",
   wallpaperCredit: null,
-  // A visible wallpaper around a calm, tinted chat card.
-  sidebar: { blur: { on: true, value: 12 }, tint: { on: true, value: 50 }, dim: { on: false, value: 20 } },
-  chat: { blur: { on: true, value: 75 }, tint: { on: true, value: 75 }, dim: { on: true, value: 25 } },
+  // A bright wallpaper around a deeper chat card: the contrast is what makes the card float.
+  sidebar: { blur: { on: true, value: 12 }, tint: { on: true, value: 35 }, dim: { on: false, value: 20 } },
+  chat: { blur: { on: true, value: 75 }, tint: { on: true, value: 85 }, dim: { on: true, value: 30 } },
   fonts: {
     ui: { on: false, family: "Inter" },
     chat: { on: false, family: "Source Serif 4" },

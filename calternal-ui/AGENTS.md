@@ -8,7 +8,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 - **Window backdrop:** the wallpaper, blurred and tinted. One seamless surface.
 - **Sidebars:** the left one and the right panel have no surface of their own. They sit flat on the backdrop: no fill, edges or seams.
-- **Chat card:** touches the window's top and bottom, with an 8px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
+- **Chat card:** touches the window's top and bottom, with a 12px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides; 12px since 2026-11-15, to give the shadow room). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
 - **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, a denser composer, and compact navigation. (Usage in the sidebar footer belongs to the sibling `cliproxy-usage` plugin.)
@@ -27,7 +27,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 ## Rules learned the hard way
 
 - **Never put `mask`, `filter`, `backdrop-filter`, `opacity < 1` or `clip-path` on an ancestor of the composer.** Chromium treats such an ancestor as a *backdrop root*, and the composer stops blurring. That's why the card's glass lives in `::before`/`::after` layers. Never put a mask on a backdrop-filter either: Aside's Chromium draws it as a block with a hard edge. The title fade is a plain colour gradient on `header::before`.
-- **Shadows must fit inside `--cf-gap`.** bb clips the centre region, so a wider shadow gets cut off in a straight line.
+- **Shadows must fit inside `--cf-gap`.** bb clips the centre region, so a wider shadow gets cut off in a straight line. The card's float comes from a two-layer shadow (contact + soft, blur minus spread = the gap) and from contrast: bright sidebars (35% tint), deep card (85% tint, 30% dim). kayg declined a lit border.
 - **Inside the card, `--background` is transparent.** Anything floating must use `bg-popover`. bb's inverse controls (`bg-foreground` + `text-background`) and switches are re-styled in `css.ts`.
 - **Selectors target bb 0.49.** When bb changes its DOM, fix `frame/selectors.ts` first. Desktop "framed" mode is `[data-framed]`.
 - **The collapsed-sidebar toggle shifts only while collapsed.** Expanded, it lines up with the sidebar row.
