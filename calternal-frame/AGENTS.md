@@ -26,7 +26,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 
 ## Rules learned the hard way
 
-- **Never put `mask`, `filter`, `backdrop-filter`, `opacity < 1` or `clip-path` on an ancestor of the composer.** Chromium treats such an ancestor as a *backdrop root*, and the composer stops blurring. That's why the card's glass lives in `::before`/`::after` layers, and the header fade is a frost on `header::before`, not a mask on the scroll area.
+- **Never put `mask`, `filter`, `backdrop-filter`, `opacity < 1` or `clip-path` on an ancestor of the composer.** Chromium treats such an ancestor as a *backdrop root*, and the composer stops blurring. That's why the card's glass lives in `::before`/`::after` layers. Never put a mask on a backdrop-filter either: Aside's Chromium draws it as a block with a hard edge. The title fade is a plain colour gradient on `header::before`.
 - **Shadows must fit inside `--cf-gap`.** bb clips the centre region, so a wider shadow gets cut off in a straight line.
 - **Inside the card, `--background` is transparent.** Anything floating must use `bg-popover`. bb's inverse controls (`bg-foreground` + `text-background`) and switches are re-styled in `css.ts`.
 - **Selectors target bb 0.49.** When bb changes its DOM, fix `frame/selectors.ts` first. Desktop "framed" mode is `[data-framed]`.
@@ -40,7 +40,8 @@ A bb plugin that restyles bb's own shell, after Craft's window:
   - Pulling down at the top of the sidebar opens search. It's vertical only, so bb's sideways edge swipes stay bb's.
   - To test headless, enable CDP `Emulation.setTouchEmulationEnabled`, then use `p.touchscreen`.
 - **Your messages have iMessage tails:** an SVG-masked `::after` beside the bubble (never over it, so translucent fills don't double), with the bubble's border removed and its bottom-right corner tightened.
-- **Below the composer, text fades out behind a plain colour gradient** (`[data-scroll-footer]::before`, 56px soft ramp up to 92%). A masked backdrop blur there drew a hard edge in some Chromium builds, which read as a solid band.
+- **Nothing is drawn behind the composer.** Both a masked blur band and a colour fade there read as a block; kayg wants neither.
+- **The composer's glass is a `form::before` layer, not a backdrop-filter on the form.** With the filter on the form, Chromium re-composited its content on every keystroke and attachment thumbnails flickered. Apply the same rule to any glass that holds images or text being edited.
 - **Shared glass tokens:** `--cf-glass-fill`, `-blur`, `-highlight` and `-shadow` (in `css.ts`) are the one look for floating panes: the composer and inset sheets. Reuse them; don't invent new values.
 - **Swipe actions (`frame/swipe.ts`)** run bb's own actions:
   - Thread row: left archives (the row's own Archive button), right toggles pin (the context menu, opened silently; on touch it's an action sheet).

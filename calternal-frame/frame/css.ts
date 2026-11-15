@@ -496,45 +496,46 @@ function cardInterior(scope: string): string {
     pointer-events: none;
   }
   ${scope} header:has(+ * [data-page-scroll-viewport]) > * { pointer-events: auto; }
-  /* The fade is a progressive frost on the header's own layer, never a mask on the scroll
-     area: a masked ancestor becomes a backdrop root and the composer could no longer blur. */
+  /* Text sliding under the title fades out behind a short plain colour gradient, only as
+     tall as the title row. No blur: a masked backdrop blur rendered as a frosted block with a
+     hard edge in some Chromium builds. */
   ${scope} header:has(+ * [data-page-scroll-viewport])::before {
     content: "";
     position: absolute;
-    inset: 0 0 -24px 0;
+    inset: 0 0 -0.75rem 0;
     z-index: -1;
     pointer-events: none;
-    background: linear-gradient(to bottom, color-mix(in oklab, var(--cf-bg) 62%, transparent) 0%, color-mix(in oklab, var(--cf-bg) 40%, transparent) 55%, transparent 100%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0, #000 50%, transparent 100%);
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--cf-bg) 80%, transparent) 0%, color-mix(in oklab, var(--cf-bg) 55%, transparent) 55%, transparent 100%);
   }
   ${scope} header + * [data-page-scroll-viewport] {
     padding-top: var(--bb-app-chrome-row-height, 3rem);
     scroll-padding-top: var(--bb-app-chrome-row-height, 3rem);
   }
   ${scope} [data-scroll-footer] { background: transparent !important; }
-  ${scope} [data-scroll-footer]::before {
-    content: "";
-    position: absolute;
-    inset: -56px 0 0 0;
-    z-index: -1;
-    pointer-events: none;
-    /* A plain colour fade, no blur: a masked backdrop blur drew a hard top edge in some
-       Chromium builds (a "solid band"). The composer keeps its own frost. */
-    background: linear-gradient(to bottom, transparent 0, color-mix(in oklab, var(--cf-bg) 60%, transparent) 28px, color-mix(in oklab, var(--cf-bg) 92%, transparent) 56px);
-  }
   /* bb's own fade above the composer blends into --background, which is clear here. */
   ${scope} [data-overflow-fade] { display: none !important; }
 
   /* The composer: its own frosted pane, blurring the chat and wallpaper under it. */
+  /* The glass lives on its own ::before layer, behind the content: with backdrop-filter on
+     the form itself, Chromium re-composited everything inside (attachment thumbnails too)
+     on every keystroke, and images flickered while typing. */
   ${scope} form[data-promptbox] {
-    background: var(--cf-glass-fill) !important;
-    -webkit-backdrop-filter: var(--cf-glass-blur);
-    backdrop-filter: var(--cf-glass-blur);
+    /* No isolation here: it would make the form a backdrop root, and the glass layer
+       below would blur nothing. */
+    background: transparent !important;
     border-color: var(--cf-edge) !important;
     box-shadow: var(--cf-glass-highlight), var(--cf-glass-shadow) !important;
+  }
+  ${scope} form[data-promptbox]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--cf-glass-fill);
+    -webkit-backdrop-filter: var(--cf-glass-blur);
+    backdrop-filter: var(--cf-glass-blur);
   }
 `;
 }
