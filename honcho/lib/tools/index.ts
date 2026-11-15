@@ -19,9 +19,10 @@ const fail = (text: string): PluginAgentToolResult => ({ content: [{ type: "text
 const ok = (text: string): PluginAgentToolResult => truncateBytes(text, RESULT_BUDGET);
 
 const ORIGIN_LABEL = { agent: "agent-written", learned: "learned from the user", confirmed: "confirmed by the user" } as const;
-/** forget: the semantic query is cut to the closest matches so unrelated conclusions survive. */
-const FORGET_TOP_K = 20;
-const FORGET_DISTANCE = 0.5;
+/** forget only proposes: semantic distance alone deleted 19 unrelated conclusions live (2026-11-15),
+ * so the agent must pick the ids that are really about the subject and delete those. */
+const FORGET_TOP_K = 10;
+const MAX_DELETE_IDS = 10;
 
 const scopeParam = z.string().trim().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/, "scope ids are slugs like my-repo").optional()
   .describe("Limit to one scope (a repo name, or the bb project when not in git). Omit for the user's whole memory.");
@@ -147,43 +148,42 @@ export function registerTools(bb: BbPluginApi, deps: Deps): void {
   bb.agents.registerTool({
     name: "honcho_conclusions",
     description: "List, semantically query, delete or forget conclusions Honcho holds about the user. "
-      + "When the user asks you to forget something, use `forget` with `query` (the subject, e.g. \"my cat\"): it removes every copy, including ones Honcho derived itself from the user's messages. "
-      + "`delete` removes one conclusion by id and leaves other copies.",
+      + "When the user asks you to forget something: call `forget` with `query` (the subject, e.g. \"my cat\"). It deletes NOTHING; it lists candidates. "
+      + "Read them, then call `delete` with `ids` set to only the ones that are clearly about that subject (Honcho may hold several copies). Never delete a conclusion that is about something else.",
     parameters: z.object({
       action: z.enum(["list", "query", "delete", "forget"]),
       query: z.string().trim().min(1).max(2000).optional().describe("Required for query and forget (the subject to forget)"),
-      id: z.string().trim().min(1).max(200).optional().describe("Conclusion id, required for delete"),
+      id: z.string().trim().min(1).max(200).optional().describe("One conclusion id to delete"),
+      ids: z.array(z.string().trim().min(1).max(200)).min(1).max(MAX_DELETE_IDS).optional().describe(`Up to ${MAX_DELETE_IDS} conclusion ids to delete, each one checked to be about the subject`),
       limit: z.number().int().min(1).max(50).default(20),
     }).strict(),
     presentation: { label: { pending: "Reading memory conclusions", completed: "Read memory conclusions" }, icon: brain },
     execute: (params, ctx) => guarded(deps, shared, "honcho_conclusions", ctx.threadId, async () => {
       const { client, peer } = await shared.client();
       if (params.action === "delete") {
-        if (!params.id) throw new ToolRefusal("`id` is required for delete.");
-        const outcome = await client.deleteConclusion(params.id);
-        shared.store.forget(params.id);
+        const targets = [...new Set([...(params.id ? [params.id] : []), ...(params.ids ?? [])])];
+        if (!targets.length) throw new ToolRefusal("`id` or `ids` is required for delete.");
+        if (targets.length > MAX_DELETE_IDS) throw new ToolRefusal(`delete at most ${MAX_DELETE_IDS} ids at a time.`);
+        const lines: string[] = [];
+        for (const id of targets) {
+          const outcome = await client.deleteConclusion(id);
+          shared.store.forget(id);
+          lines.push(outcome === "gone" ? `- ${id}: already gone` : `- ${id}: deleted`);
+        }
         await shared.invalidateMemory();
-        return outcome === "gone"
-          ? { text: `Conclusion ${params.id} was already gone; nothing to delete.`, summary: "delete: already gone" }
-          : { text: `Deleted conclusion ${params.id}.`, summary: "deleted 1 conclusion" };
+        deps.activity.record({ kind: "delete", threadId: ctx.threadId, summary: `deleted ${targets.length} conclusion${targets.length === 1 ? "" : "s"} by id` });
+        return { text: lines.join("\n"), summary: `deleted ${targets.length}` };
       }
       if (params.action === "forget") {
         if (!params.query) throw new ToolRefusal("`query` is required for forget.");
-        const matches = await client.queryConclusions({ query: params.query, top_k: FORGET_TOP_K, distance: FORGET_DISTANCE, filters: { observer: peer, observed: peer } });
-        const removed: Conclusion[] = [];
-        for (const c of matches) {
-          await client.deleteConclusion(c.id);
-          shared.store.forget(c.id);
-          removed.push(c);
-        }
-        if (removed.length) deps.activity.record({ kind: "delete", threadId: ctx.threadId, summary: `forgot ${removed.length} conclusion${removed.length === 1 ? "" : "s"}` });
-        await shared.invalidateMemory();
-        const list = removed.map(c => `- ${c.id} ${c.content}`).join("\n");
+        const matches = await client.queryConclusions({ query: params.query, top_k: FORGET_TOP_K, filters: { observer: peer, observed: peer } });
+        const list = matches.map(c => `- ${c.id} ${c.content}`).join("\n");
         return {
-          text: removed.length
-            ? `Forgot ${removed.length} conclusion${removed.length === 1 ? "" : "s"} about "${params.query}":\n${list}\nTell the user what was removed. Honcho may re-derive a fact if the user states it again.`
-            : `No conclusions matched "${params.query}"; nothing was forgotten.`,
-          summary: `forgot ${removed.length}`,
+          text: matches.length
+            ? `Nothing was deleted. Candidates for "${params.query}" (semantic matches; many may be unrelated):\n${list}\n`
+              + `Delete only the ones clearly about "${params.query}" with action delete and ids. If none are, tell the user nothing matched.`
+            : `No conclusions matched "${params.query}"; nothing to forget.`,
+          summary: `forget: ${matches.length} candidates, nothing deleted`,
         };
       }
       if (params.action === "query" && !params.query) throw new ToolRefusal("`query` is required for query.");

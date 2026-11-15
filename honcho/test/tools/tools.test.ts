@@ -64,7 +64,7 @@ describe("honcho tools", () => {
     expect(listed).toContain("con_d [learned from the user, deductive] likes tea");
     expect(text(await call(s, "honcho_conclusions", { action: "query", query: "tea" }))).toContain("likes tea");
     expect(isError(await call(s, "honcho_conclusions", { action: "query" }))).toBe(true);
-    expect(text(await call(s, "honcho_conclusions", { action: "delete", id: created.id }))).toContain("Deleted");
+    expect(text(await call(s, "honcho_conclusions", { action: "delete", id: created.id }))).toContain("deleted");
     expect(s.mock.conclusions.some(c => c.id === created.id)).toBe(false);
   });
 
@@ -87,26 +87,27 @@ describe("honcho tools", () => {
     expect(text(r)).toContain("already gone");
   });
 
-  it("forget removes every copy of a subject, including the deriver's own, and refreshes recall memory", async () => {
+  it("forget deletes nothing: it lists candidates, and only explicit ids get deleted (live incident 2026-11-15)", async () => {
     const cards: string[][] = [["Has a cat TESTER-Biscuit"], []];
     const s = await make({ ports: { peerCard: async () => cards.shift() ?? [] } });
     await call(s, "honcho_conclude", { content: "user's cat is TESTER-Biscuit" });
     seedConclusion(s.mock, { id: "con_derived", content: "The user's cat is called TESTER-Biscuit", level: "explicit" });
     seedConclusion(s.mock, { id: "con_tea", content: "likes tea" });
     await s.internals.cache.refresh();
-    expect(s.internals.cache.snapshot().card).toEqual(["Has a cat TESTER-Biscuit"]);
+    const before = s.mock.conclusions.length;
     const r = await call(s, "honcho_conclusions", { action: "forget", query: "cat" });
     expect(isError(r)).toBe(false);
-    expect(text(r)).toContain("Forgot 2 conclusions");
+    expect(text(r)).toContain("Nothing was deleted");
     expect(text(r)).toContain("con_derived");
+    expect(s.mock.conclusions.length).toBe(before); // a semantic match alone never deletes
+    expect(s.mock.requests.some(q => q.method === "DELETE")).toBe(false);
+    const own = s.mock.conclusions.find(c => c.content.includes("user's cat"))!;
+    const d = await call(s, "honcho_conclusions", { action: "delete", ids: [own.id, "con_derived"] });
+    expect(text(d)).toContain(`${own.id}: deleted`);
     expect(s.mock.conclusions.map(c => c.id)).toEqual(["con_tea"]);
-    const snap = s.internals.cache.snapshot();
-    expect(snap.card).toEqual([]);
-    expect(snap.recent.map(c => c.id)).toEqual(["con_tea"]);
-    const query = s.mock.requests.find(q => q.path.endsWith("/conclusions/query"))!;
-    expect(query.body.top_k).toBeGreaterThan(1);
-    expect(query.body.distance).toBeGreaterThan(0);
-    expect(text(await call(s, "honcho_conclusions", { action: "forget", query: "dog" }))).toContain("nothing was forgotten");
+    expect(s.internals.cache.snapshot().card).toEqual([]); // memory refreshed after the delete
+    expect(isError(await call(s, "honcho_conclusions", { action: "delete" }))).toBe(true);
+    await expect(call(s, "honcho_conclusions", { action: "delete", ids: Array.from({ length: 11 }, (_, i) => `c${i}`) })).rejects.toThrow(/<=10/); // schema caps a delete at 10 ids
     expect(isError(await call(s, "honcho_conclusions", { action: "forget" }))).toBe(true);
   });
 
