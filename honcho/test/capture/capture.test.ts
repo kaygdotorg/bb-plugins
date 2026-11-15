@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCaptureService, type CaptureHandle } from "../../lib/capture/service";
 import { HonchoClient, HonchoError, type MessageDraft } from "../../lib/honcho-client";
 import { Outbox } from "../../lib/outbox";
@@ -81,6 +81,89 @@ describe("capture pipeline", () => {
     await pass(svc);
     expect(sent()).toHaveLength(130);
     expect(posts().map(r => r.body.messages.length)).toEqual([100, 30]);
+  });
+});
+
+/** A client whose message POSTs land in honcho, then hang until released: an upload in flight. */
+function holdingClient(after: "before-post" | "after-post") {
+  let release!: () => void;
+  const gate = new Promise<void>(r => { release = r; });
+  let entered!: () => void;
+  const inPost = new Promise<void>(r => { entered = r; });
+  class Holding extends HonchoClient {
+    override async createMessages(session: string, messages: readonly MessageDraft[]) {
+      entered();
+      if (after === "before-post") { await gate; return super.createMessages(session, messages); }
+      const result = await super.createMessages(session, messages);
+      await gate;
+      return result;
+    }
+  }
+  const client = new Holding({ baseUrl: mock.baseUrl, workspace: "test" });
+  return { client: async () => client, release, inPost };
+}
+
+describe("reload overlap", () => {
+  it("the new generation's catch-up waits for the old one's upload instead of posting twice", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "hello");
+    fake.agent("thr_a", "hi there");
+    const held = holdingClient("before-post");
+    const old = service({ client: held.client, leaseOwner: "gen-old" });
+    clock.advance(GRACE + 1);
+    const oldDone = old.svc.flushNow();
+    await held.inPost; // the old generation is mid-POST, lease held
+
+    // Reload: the new generation registers and runs its startup catch-up on the same database.
+    stops.shift()!();
+    const next = service({ outbox: new Outbox(fake.db), leaseOwner: "gen-new" });
+    await next.svc.flushNow();
+    expect(posts()).toHaveLength(0); // the old POST is still held, the new one never started
+    expect(next.deps.outbox.leaseOwner("thr_a", clock.now())).toBe("gen-old");
+
+    held.release();
+    await oldDone;
+    expect(texts()).toEqual(["hello", "hi there"]);
+    expect(next.deps.outbox.leaseOwner("thr_a", clock.now())).toBeUndefined();
+
+    clock.advance(5_001); await next.svc.flushNow(); // the new generation's retry finds nothing left
+    expect(posts()).toHaveLength(1);
+    expect(texts()).toEqual(["hello", "hi there"]);
+    expect(next.deps.outbox.inFlight()).toHaveLength(0);
+    expect(next.deps.activity.entries.filter(e => e.kind === "failure")).toEqual([]);
+  });
+
+  it("recovers a dead generation's interrupted upload only after its lease expires, without resending", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "hello");
+    const held = holdingClient("after-post"); // the POST lands, then the old generation hangs
+    const old = service({ client: held.client, leaseOwner: "gen-old" });
+    clock.advance(GRACE + 1);
+    void old.svc.flushNow();
+    await held.inPost;
+    await vi.waitFor(() => expect(sent()).toHaveLength(1));
+
+    const next = service({ outbox: new Outbox(fake.db), leaseOwner: "gen-new" });
+    await next.svc.flushNow();
+    expect(next.deps.outbox.inFlight("thr_a")).toHaveLength(1); // not recovered under a live lease
+
+    clock.advance(60_001); await next.svc.flushNow(); // the old lease is stale now
+    clock.advance(5_001); await next.svc.flushNow(); // and the new generation's next try takes it
+    expect(next.deps.outbox.inFlight("thr_a")).toHaveLength(0);
+    expect(posts()).toHaveLength(1); // recovery listed the landed messages and sent nothing again
+    expect(texts()).toEqual(["hello"]);
+    held.release();
+  });
+
+  it("never posts a thread whose lease another generation holds", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "hello");
+    const outbox = new Outbox(fake.db);
+    const { svc } = service({ outbox, leaseOwner: "gen-old" });
+    outbox.acquireLease("thr_a", "gen-other", clock.now() + GRACE + 1, 60_000);
+    await pass(svc);
+    expect(posts()).toHaveLength(0);
+    expect(outbox.inFlight()).toHaveLength(0);
   });
 });
 

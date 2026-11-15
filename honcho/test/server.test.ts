@@ -15,16 +15,16 @@ vi.mock("../lib/capture/index.js", async (load) => {
   const m = await load<typeof import("../lib/capture/index.js")>();
   return { ...m, createCaptureService: (...args: Parameters<typeof m.createCaptureService>) => {
     const s = m.createCaptureService(...args);
-    const start = s.start;
-    return Object.assign(s, { start: () => { const stop = start(); return () => { stopped.push("capture"); stop(); }; } });
+    const stop = s.stop;
+    return Object.assign(s, { stop: () => { stopped.push("capture"); stop(); } });
   } };
 });
 vi.mock("../lib/recall/index.js", async (load) => {
   const m = await load<typeof import("../lib/recall/index.js")>();
   return { ...m, createRecallService: (...args: Parameters<typeof m.createRecallService>) => {
     const s = m.createRecallService(...args);
-    const start = s.start;
-    return Object.assign(s, { start: () => { const stop = start(); return () => { stopped.push("recall"); stop(); }; } });
+    const stop = s.stop;
+    return Object.assign(s, { stop: () => { stopped.push("recall"); stop(); } });
   } };
 });
 vi.mock("../lib/backfill/index.js", async (load) => {
@@ -66,14 +66,15 @@ const HOST_RESULTS: Record<string, unknown> = {
 };
 
 const open: Array<{ dispose(): Promise<void> }> = [];
-afterEach(async () => { for (const h of open.splice(0)) await h.dispose(); stopped.length = 0; });
+let listCalls = 0;
+afterEach(async () => { for (const h of open.splice(0)) await h.dispose(); stopped.length = 0; listCalls = 0; });
 
 async function load(settings: Record<string, string | number | boolean> = {}) {
   const fake = createFakePluginHost({
     pluginId: "honcho",
     settings,
     sdk: {
-      threads: { list: async () => [] },
+      threads: { list: async () => { listCalls++; return []; } },
       hosts: { list: async () => [makeHostResponse({ id: "host_a" })] },
     },
     experimental_callHostRpc: ({ method }) => {
@@ -103,7 +104,7 @@ describe("plugin factory", () => {
     expect(r.instructionProvider).toBeNull();
     expect(r.hooks["message.dispatch"]).not.toBeNull();
     expect([...r.providerEnvResolvers.keys()].sort()).toEqual(["claude-code", "codex", "pi"]);
-    expect(r.services).toEqual([]);
+    expect(r.services.map(x => x.name).sort()).toEqual(["capture-reconcile", "recall-refresh"]);
     expect(r.schedules).toEqual([]);
     expect(r.threadEventHandlers).toMatchObject({ "thread.created": 1, "thread.idle": 1, "thread.archived": 1, "thread.deleted": 1 });
     expect(r.threadEventHandlers["thread.active"]).toBe(2); // capture schedules, recall refreshes
@@ -155,5 +156,17 @@ describe("plugin factory", () => {
     expect(stopped).toEqual([]);
     await h.lifecycle.dispose();
     expect(stopped).toEqual(["backfill", "recall", "capture"]);
+  });
+
+  it("runs the startup catch-up and the recall refresh as services that end when aborted", async () => {
+    const h = await load();
+    // Nothing reads the thread list until the catch-up service runs.
+    expect(listCalls).toBe(0);
+    const capture = h.behavior.runService("capture-reconcile");
+    const recall = h.behavior.runService("recall-refresh");
+    await vi.waitFor(() => expect(listCalls).toBe(1));
+    capture.controller.abort(); recall.controller.abort();
+    await capture.done; await recall.done;
+    expect(stopped).toEqual([]); // an abort ends the run; dispose stops the slices
   });
 });

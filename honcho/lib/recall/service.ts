@@ -6,7 +6,15 @@ import { clampHookBudget, RECALL_SETTING_DESCRIPTORS, type RecallPorts, type Rec
 import { recallShared, toView, type RecallShared } from "./shared.js";
 
 export type RecallDeps = Deps & { recall?: RecallPorts };
-export type RecallRuntime = RecallService & { start(): () => void };
+export type RecallRuntime = RecallService & {
+  /** The periodic cache refresh, until `signal` aborts. Run it from a background service:
+   * it starts once the factory completed, and bb aborts it on reload, disable and shutdown. */
+  run(signal: AbortSignal): Promise<void>;
+  /** Cancels the debounce timer; idempotent. */
+  stop(): void;
+  /** run() without a service, returning its stopper: for tests. */
+  start(): () => void;
+};
 
 export interface RecallInternals {
   shared: RecallShared;
@@ -89,14 +97,20 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
       shared.store.confirm(id);
       cache.request(true);
     },
-    start() {
+    async run(signal) {
+      if (signal.aborted) return;
       void cache.refresh().catch(() => undefined);
       const interval = setInterval(() => { void cache.refresh().catch(() => undefined); }, REFRESH_INTERVAL_MS);
       interval.unref?.();
-      let stopped = false;
-      const stop = () => { if (stopped) return; stopped = true; clearInterval(interval); cache.cancel(); };
-      bb.onDispose(stop);
-      return stop;
+      await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+      clearInterval(interval);
+      cache.cancel();
+    },
+    stop() { cache.cancel(); },
+    start() {
+      const controller = new AbortController();
+      void recall.run(controller.signal);
+      return () => { controller.abort(); recall.stop(); };
     },
   };
   internals.set(recall, { shared, cache, settings, deps });

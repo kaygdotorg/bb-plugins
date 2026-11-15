@@ -118,4 +118,7 @@ export interface CaptureDeps extends Deps {
   random?: () => number;
   graceMs?: number;
   concurrency?: number;
+  /** Upload lease owner id (default: random per service, i.e. per plugin generation). */
+  leaseOwner?: string;
+  leaseTtlMs?: number;
 }

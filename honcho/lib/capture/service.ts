@@ -2,6 +2,7 @@
 // "Privacy and deletion". Nothing here blocks a turn: every bb notification only
 // schedules work, and uploads run on timers after the grace window.
 
+import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { PluginThreadEventPayloads } from "@get-bb/plugin-sdk";
 import type { CaptureService, PrivacySettings, ThreadMemoryStatus } from "../contract.js";
@@ -27,6 +28,11 @@ const BATCH = 100;
 const PURGE_SCAN_PAGES = 50;
 /** A prompt that never got turn/input/accepted stops holding the cursor back after this. */
 const STALE_PENDING_MS = 10 * 60_000;
+/** A thread's upload lease outlives any one POST (the client times out at 8 s) and is
+ * renewed before each, so a live uploader never loses it; a crashed one's expires. */
+export const LEASE_TTL_MS = 60_000;
+/** How soon a thread whose lease another generation holds is tried again. */
+const LEASE_RETRY_MS = 5_000;
 export const SWITCHOVER_ENV = "BB_HONCHO";
 export const NOT_SWITCHED_OVER = "harness capture still active until the session rebuilds";
 
@@ -89,9 +95,22 @@ function batches(messages: MessageDraft[]): MessageDraft[][] {
   if (current.length) out.push(current);
   return out;
 }
+/** Another plugin generation holds this thread's upload lease (a reload overlap). */
+class LeaseBusy extends Error { constructor() { super("lease held by another generation"); this.name = "LeaseBusy"; } }
+/** This generation was disposed mid-thread; the in-flight marker lets the next one recover. */
+class Stopped extends Error { constructor() { super("capture stopped"); this.name = "Stopped"; } }
+
 const chunks = <T>(items: T[]) => Array.from({ length: Math.ceil(items.length / BATCH) }, (_, i) => items.slice(i * BATCH, (i + 1) * BATCH));
 
 export type CaptureHandle = CaptureService & {
+  /** Registers the bb event listeners. Call it inside the plugin factory, as bb requires. */
+  listen(): void;
+  /** Startup catch-up (pending deletes, interrupted uploads, every thread's cursor). Run it from a
+   * background service, which starts only once the factory completed and is aborted on dispose. */
+  reconcile(signal?: AbortSignal): Promise<void>;
+  /** Stops scheduling and further POSTs; idempotent. */
+  stop(): void;
+  /** listen() plus reconcile(), returning stop: for tests and callers without a service. */
   start(): () => void;
   /** The plugin's one scope resolver and cache; backfill and recall use it too. */
   scopeFor(thread: ThreadRef): Promise<string>;
@@ -117,6 +136,15 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   let tripwire: string | null = null;
   let disposed = false;
   let booting: Promise<void> = Promise.resolve();
+  let listening = false;
+  /** This generation's lease owner id. A reload's new generation gets a new one. */
+  const owner = deps.leaseOwner ?? randomUUID();
+  const leaseTtl = deps.leaseTtlMs ?? LEASE_TTL_MS;
+  /** Renewed before every POST: a lease that lapsed and was taken over stops this uploader. */
+  const holdLease = (id: string) => {
+    if (disposed) throw new Stopped();
+    if (!outbox.acquireLease(id, owner, clock.now(), leaseTtl)) throw new LeaseBusy();
+  };
 
   const state = (id: string): ThreadState => {
     let st = states.get(id);
@@ -168,7 +196,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function run(id: string): Promise<void> {
     const st = state(id);
     if (st.running) { st.again = true; return st.running; }
-    st.running = limit(() => processThread(st))
+    st.running = limit(() => leased(st))
       .catch(error => failed(st, error))
       .finally(() => {
         st.running = undefined;
@@ -176,8 +204,17 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       });
     return st.running;
   }
-  function failed(st: ThreadState, error: unknown): void {
+  /** One generation at a time per thread: the lease is taken before anything is posted or
+   * recovered, and released after. Another generation's live lease means try again soon. */
+  async function leased(st: ThreadState): Promise<void> {
     if (disposed || deleted.has(st.id)) return;
+    if (!outbox.acquireLease(st.id, owner, clock.now(), leaseTtl)) throw new LeaseBusy();
+    try { await processThread(st); }
+    finally { try { outbox.releaseLease(st.id, owner); } catch { /* database closed on dispose: the lease expires */ } }
+  }
+  function failed(st: ThreadState, error: unknown): void {
+    if (disposed || deleted.has(st.id) || error instanceof Stopped) return;
+    if (error instanceof LeaseBusy) { schedule(st.id, LEASE_RETRY_MS); return; }
     const kind: RetryError = error instanceof HonchoError ? error.kind : "offline";
     if (kind === "auth") authFailing = true;
     const now = clock.now();
@@ -336,7 +373,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   async function post(client: HonchoClient, threadId: string, messages: MessageDraft[]): Promise<number> {
     let skipped = 0;
     const send = async (group: MessageDraft[]): Promise<void> => {
-      try { for (const chunk of chunks(group)) await client.createMessages(threadId, chunk); }
+      try { for (const chunk of chunks(group)) { holdLease(threadId); await client.createMessages(threadId, chunk); } }
       catch (error) {
         if (!(error instanceof HonchoError) || error.kind !== "validation") throw error;
         if (group.length === 1) {
@@ -568,12 +605,12 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   // ---------- startup ----------
 
-  async function boot(): Promise<void> {
+  async function boot(signal?: AbortSignal): Promise<void> {
     tripwire = (await bb.storage.kv.get<string>(KV.tripwire)) ?? null;
     for (const key of await bb.storage.kv.list(KV.pendingDeletePrefix)) void onDeleted(key.slice(KV.pendingDeletePrefix.length)).catch(() => undefined);
     for (const marker of outbox.inFlight()) schedule(marker.thread, 0);
     // Startup reconcile: catch up on everything missed while the plugin was down.
-    for (let offset = 0; !disposed;) {
+    for (let offset = 0; !disposed && !signal?.aborted;) {
       const page = await bb.sdk.threads.list({ archived: false, includeHidden: true, limit: 100, offset });
       for (const t of page) schedule(t.id, 0);
       if (page.length < 100) break;
@@ -581,20 +618,36 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     }
   }
 
+  function stop(): void {
+    if (disposed) return;
+    disposed = true;
+    for (const st of states.values()) if (st.timer !== undefined) clock.clearTimeout(st.timer);
+    for (const timer of deleteTimers.values()) clock.clearTimeout(timer);
+    // Leases of threads mid-upload are released when that upload stops (it checks before each POST).
+    for (const st of states.values()) if (!st.running) { try { outbox.releaseLease(st.id, owner); } catch { /* closed */ } }
+  }
+  function listen(): void {
+    if (listening) return;
+    listening = true;
+    const later = (event: { thread: Thread }) => { if (!disposed) schedule(event.thread.id, grace); };
+    // experimental_thread.events fires at most once a second per thread; the
+    // timer it arms reads once the grace window has passed, not per event.
+    for (const name of ["thread.created", "thread.active", "thread.idle", "thread.archived", "experimental_thread.events"] as const) bb.events.on(name, later);
+    bb.events.on("thread.deleted", ({ thread }) => disposed ? undefined
+      : onDeleted(thread.id).catch(error => bb.log.error(`honcho capture: delete of ${thread.id} failed: ${(error as Error).name}`)));
+  }
+  function reconcile(signal?: AbortSignal): Promise<void> {
+    if (disposed) return Promise.resolve();
+    booting = boot(signal).catch(error => bb.log.warn(`honcho capture: reconcile failed: ${(error as Error).name}`));
+    return booting;
+  }
+
   return {
+    listen, reconcile, stop,
     start() {
-      const later = (event: { thread: Thread }) => { if (!disposed) schedule(event.thread.id, grace); };
-      // experimental_thread.events fires at most once a second per thread; the
-      // timer it arms reads once the grace window has passed, not per event.
-      for (const name of ["thread.created", "thread.active", "thread.idle", "thread.archived", "experimental_thread.events"] as const) bb.events.on(name, later);
-      bb.events.on("thread.deleted", ({ thread }) => disposed ? undefined
-        : onDeleted(thread.id).catch(error => bb.log.error(`honcho capture: delete of ${thread.id} failed: ${(error as Error).name}`)));
-      booting = boot().catch(error => bb.log.warn(`honcho capture: reconcile failed: ${(error as Error).name}`));
-      return () => {
-        disposed = true;
-        for (const st of states.values()) if (st.timer !== undefined) clock.clearTimeout(st.timer);
-        for (const timer of deleteTimers.values()) clock.clearTimeout(timer);
-      };
+      listen();
+      void reconcile();
+      return stop;
     },
 
     scopeFor: thread => facts.scopeFor(thread),
