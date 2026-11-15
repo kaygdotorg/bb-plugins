@@ -40,6 +40,8 @@ function visibleText(el: HTMLElement): string {
 /** The tooltip text for an element, or null when it needs none (it shows its own text). */
 function labelOf(el: HTMLElement): { text: string; keys: string | null } | null {
   if (el.closest("[data-cf-tip]") || (el as HTMLButtonElement).disabled) return null;
+  // A trigger whose menu or popover is open is already showing what it does.
+  if (el.getAttribute("aria-expanded") === "true" || el.dataset.state === "open") return null;
   // Text fields never get one (their title/placeholder is not a tooltip).
   if (el.isContentEditable || el.matches("input, textarea, select")) return null;
   const title = el.getAttribute("title") ?? el.dataset.cfTitle ?? null;
