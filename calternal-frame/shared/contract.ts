@@ -17,7 +17,7 @@ const creditSchema = z.object({ name: z.string(), profile: z.string(), photo: z.
 /** The pooled Claude/Codex bars in the sidebar footer. */
 const usagePrefsSchema = z.object({
   enabled: z.boolean(),
-  /** Show the percentage next to each bar. */
+  /** Unused since the footer shows percentages only (kept so stored prefs still parse). */
   showPercent: z.boolean(),
   /** Show the provider's icon instead of its name. */
   showIcons: z.boolean(),
