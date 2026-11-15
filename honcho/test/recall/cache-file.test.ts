@@ -38,12 +38,12 @@ describe("recall cache file", () => {
 });
 
 describe("host entry", () => {
-  it("recall.dir is dataDir/recall and keeps the worker warm; dispose releases it", async () => {
+  it("recall.write goes to dataDir/recall and keeps the worker warm; dispose releases it", async () => {
     const dataDir = await temp();
     const host = experimental_createHostEntryHarness(hostEntry, { experimental_paths: { dataDir, tempDir: join(dataDir, "t") } });
-    expect(await host.experimental_call("recall.dir", {})).toEqual({ dir: join(dataDir, "recall") });
+    expect((await host.experimental_call("recall.write", { threadId: "thr_d", text: "a", memory: "", createdAt: 1 })).path).toBe(join(dataDir, "recall", "thr_d.json"));
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
-    await host.experimental_call("recall.dir", {});
+    await host.experimental_call("recall.write", { threadId: "thr_d", text: "b", memory: "", createdAt: 2 });
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
     await host.experimental_dispose();
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
@@ -56,12 +56,6 @@ describe("host entry", () => {
     const file = JSON.parse(await readFile(join(dataDir, "recall", "thr_w.json"), "utf8"));
     expect(file.entries.map((e: { counter: number }) => e.counter)).toEqual([2, 3, 4, 5, 6]);
     await expect(host.experimental_call("recall.write", { threadId: "a/b", text: "x", memory: "", createdAt: 1 })).rejects.toThrow();
-    await host.experimental_dispose();
-  });
-  it("recall.gitCommonDir reports null outside git", async () => {
-    const dataDir = await temp();
-    const host = experimental_createHostEntryHarness(hostEntry, { experimental_paths: { dataDir, tempDir: join(dataDir, "t") } });
-    expect(await host.experimental_call("recall.gitCommonDir", { cwd: dataDir })).toEqual({ commonDir: null });
     await host.experimental_dispose();
   });
 });

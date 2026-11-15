@@ -13,16 +13,5 @@ export const recallHostContract = defineRpcContract({
     }).strict(),
     output: z.object({ counter: z.number().int(), path: z.string() }).strict(),
   },
-  "recall.dir": {
-    input: z.object({}).strict(),
-    output: z.object({ dir: z.string() }).strict(),
-    experimental_retryable: true,
-  },
-  /** `git rev-parse --git-common-dir` on the thread's own host (null outside git). */
-  "recall.gitCommonDir": {
-    input: z.object({ cwd: z.string().min(1).max(4096) }).strict(),
-    output: z.object({ commonDir: z.string().nullable() }).strict(),
-    experimental_retryable: true,
-  },
 });
 export type RecallHostContract = typeof recallHostContract;

@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExperimentalHostRpcContext, ExperimentalHostWorkerLease } from "@get-bb/plugin-sdk";
 import { writeRecallEntry } from "./cache-file.js";
@@ -47,18 +45,6 @@ export function createRecallHostHandlers() {
           if (chains.get(input.threadId) === run) chains.delete(input.threadId);
         }
       },
-      "recall.dir": async (_input: Record<string, never>, context: ExperimentalHostRpcContext) => {
-        warm(context);
-        const dir = recallDir(context);
-        await mkdir(dir, { recursive: true, mode: 0o700 });
-        return { dir };
-      },
-      "recall.gitCommonDir": (input: { cwd: string }, context: ExperimentalHostRpcContext) =>
-        new Promise<{ commonDir: string | null }>(resolve => {
-          execFile("git", ["rev-parse", "--git-common-dir"], { cwd: input.cwd, timeout: 5_000, signal: context.signal }, (error, stdout) => {
-            resolve({ commonDir: error ? null : String(stdout).trim() || null });
-          });
-        }),
     },
     dispose: release,
   };
