@@ -9,6 +9,7 @@ import { applyCachedWallpaper, clearWallpaper } from "./wallpaper";
 import { applyCachedPrefs, clearPrefs } from "./prefs";
 import { applyCachedAccent, clearAccent } from "./accent";
 import { mountTouch } from "./touch";
+import { mountTooltips } from "./tooltip";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -28,9 +29,11 @@ export function mountFrame(): () => void {
   applyCachedPrefs();
   applyCachedAccent();
   const unmountTouch = mountTouch();
+  const unmountTooltips = mountTooltips();
 
   return () => {
     unmountTouch();
+    unmountTooltips();
     style.remove();
     backdrop.remove();
     root.removeAttribute(ROOT_ATTR);
