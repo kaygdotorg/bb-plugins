@@ -35,10 +35,15 @@ export const GLASS_LAYER = `
 
 export const PILL_CSS = `
 ${R} {
-  /* calternal's floating glass, light (tokens.css). */
+  /* The pill glass, measured from iOS 27's own (Safari's toolbar pills over stripes, in the
+     simulator): ~3px of blur and a strong light tint (~63% white) in light mode, ~3px and a
+     light dark tint (~10%) in dark mode. calternal's 24px blur flattened a 44px pill into a
+     smoky slab; Apple's keeps what is behind it recognisable. Dark uses 30%, not 10%: our pills
+     sit over lines of chat text, and iOS adapts its tint to busy content, which CSS cannot.
+     Pills that carry words (the title capsule) set a denser alpha of their own for contrast. */
   --cf-pill-tint: 253 250 245;
-  --cf-pill-alpha: 0.42;
-  --cf-pill-filter: blur(24px) saturate(170%) brightness(1.03);
+  --cf-pill-alpha: 0.6;
+  --cf-pill-filter: blur(3px) saturate(170%) brightness(1.03);
   --cf-pill-shade: inset 0 0 20px rgb(253 250 245 / 0.3);
   --cf-pill-edge: inset 0 0 0 1px rgb(255 255 255 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.6);
   --cf-pill-shadow: 0 0 0 1px rgb(31 27 23 / 0.05), 0 10px 28px -8px rgb(60 40 20 / 0.26), 0 2px 4px -1px rgb(60 40 20 / 0.08);
@@ -54,8 +59,8 @@ ${R} {
 }
 ${R}.dark {
   --cf-pill-tint: 30 28 26;
-  --cf-pill-alpha: 0.5;
-  --cf-pill-filter: blur(24px) saturate(160%) brightness(0.92);
+  --cf-pill-alpha: 0.3;
+  --cf-pill-filter: blur(3px) saturate(160%) brightness(0.92);
   --cf-pill-shade: inset 0 0 20px rgb(16 15 14 / 0.3);
   --cf-pill-edge: inset 0 0 0 1px rgb(255 255 255 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.14);
   --cf-pill-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 12px 30px -10px rgb(0 0 0 / 0.55);
