@@ -138,6 +138,16 @@ describe("plugin factory", () => {
     expect(await h.behavior.callRpc("privacy.test", { text: "x synthetic-deny-value-1 y" })).toMatchObject({ text: "x [REDACTED] y", count: 1 });
   });
 
+  it("privacy.set reports every invalid field together and saves nothing", async () => {
+    const h = await load();
+    const bad = { denyPaths: ["*"], denyRemotes: ["/specific/ok", "**"], patterns: ["(a+)+$"], deleteOnDelete: false };
+    const error = (await h.behavior.callRpc("privacy.set", bad).catch((e: unknown) => e)) as { message: string; issues?: Array<{ message: string; path?: unknown[] }> };
+    expect(error.message).toMatch(/denyRemotes line 2.*denyPaths line 1.*patterns line 1/);
+    expect((error.issues ?? []).map(i => i.path)).toEqual([["denyRemotes", 1], ["denyPaths", 0], ["patterns", 0]]);
+    expect(await h.behavior.callRpc("privacy.get", {})).toMatchObject({ denyPaths: [], patterns: [], deleteOnDelete: true });
+    expect(await h.behavior.callRpc("privacy.set", { denyPaths: ["/work/client"], patterns: ["acme-\\d+"] })).toMatchObject({ denyPaths: ["/work/client"] });
+  });
+
   it("routes rpc, cli and the dispatch hook through the wired services", async () => {
     const h = await load();
     expect(await h.behavior.callRpc("harness.undo", { step: "connect" })).toMatchObject({ machineId: "host_a" });

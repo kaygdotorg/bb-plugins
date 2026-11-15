@@ -34,3 +34,25 @@ export function denyReason(input: { remotes: Array<string | null | undefined>; p
   }
   return null;
 }
+
+/** Limits on one deny entry and on a deny list. */
+export const DENY_ENTRY_MAX = 1_000;
+export const DENY_LIST_MAX = 200;
+
+/** Why a deny entry is refused, or null when it is fine. A pattern also covers everything below
+ * it, so one made only of `*`, `?` and `/` (or empty) would deny every thread; a path pattern
+ * that matches the filesystem root does too. */
+export function denyEntryProblem(entry: string, kind: "path" | "remote"): string | null {
+  const glob = entry.trim();
+  const what = kind === "path" ? "path" : "remote";
+  if (!glob) return `Empty ${what} pattern: it would deny every thread. Remove the blank line.`;
+  if (glob.length > DENY_ENTRY_MAX) return `Longer than ${DENY_ENTRY_MAX} characters.`;
+  if (!glob.replace(/[*?/]/g, "").trim()) {
+    return `"${glob}" would deny every thread, because a pattern also covers everything below it. Name a specific ${kind === "path" ? "directory, such as /work/client" : "remote, such as git@host:org/*"}.`;
+  }
+  if (kind === "path") {
+    const re = globMatcher(glob);
+    if (re && (re.test("") || re.test("/"))) return `"${glob}" matches the filesystem root, so it would deny every thread. Name a specific directory.`;
+  }
+  return null;
+}

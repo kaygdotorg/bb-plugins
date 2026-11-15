@@ -8,11 +8,13 @@ import type {
 } from "./contract.js";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { redact } from "./redact.js";
+import { redact, unsafePattern } from "./redact.js";
+import { DENY_ENTRY_MAX, DENY_LIST_MAX, denyEntryProblem } from "./capture/deny.js";
 import { PROVIDER_PEERS } from "./mapping.js";
 
 export interface Services {
-  capture: CaptureService;
+  /** `privacyChanged` (capture) drops cached deny decisions and re-evaluates held threads. */
+  capture: CaptureService & { privacyChanged?(): void };
   recall: RecallService;
   harness: HarnessService;
   backfill: BackfillService;
@@ -28,7 +30,7 @@ function typed<T>(): StandardSchemaV1<T, T> {
 const text = (max = 2_000) => z.string().min(1).max(max);
 const empty = z.preprocess((value) => value ?? {}, z.object({}).loose());
 const machine = z.object({ machineId: text(200).optional() });
-const stringList = z.array(z.string().max(2_000)).max(500);
+const privacyList = z.array(z.string().max(100_000)).max(5_000).optional();
 export const rpcInputs = {
   "thread.status": z.object({ threadId: text(200) }),
   "thread.context": z.object({ threadId: text(200) }),
@@ -46,7 +48,8 @@ export const rpcInputs = {
   "peers.rename": z.object({ providerId: text(200), peer: z.string().max(200) }),
   "privacy.get": empty,
   "privacy.set": z.object({
-    denyRemotes: stringList.optional(), denyPaths: stringList.optional(), patterns: stringList.optional(),
+    // Generous bounds only: the handler reports every over-limit entry with its index.
+    denyRemotes: privacyList, denyPaths: privacyList, patterns: privacyList,
     deleteOnDelete: z.boolean().optional(), purgeConclusionsOnDelete: z.boolean().optional(),
   }),
   "privacy.test": z.object({ text: z.string().max(200_000) }),
@@ -150,11 +153,37 @@ export async function readPrivacy(kv: Kv): Promise<PrivacySettings> {
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean))] : [];
 
+/** Run-time compile for privacy.test: anything saved before the safety check existed is skipped. */
 function compilePatterns(patterns: readonly string[]): RegExp[] {
-  return patterns.map((source) => {
-    try { return new RegExp(source); }
-    catch { throw new experimental_PluginRpcRefusal({ code: "invalid", message: `Not a valid regular expression: ${source}` }); }
+  return patterns.flatMap((source) => {
+    try { return unsafePattern(source) === null ? [new RegExp(source)] : []; }
+    catch { return []; }
   });
+}
+
+/** One problem with one line of a privacy field (`index` -1: the whole list). */
+export interface PrivacyIssue { field: "denyRemotes" | "denyPaths" | "patterns"; index: number; message: string }
+
+/** Checks every list field of a privacy.set patch and returns all the problems together. */
+export function privacyIssues(patch: { denyRemotes?: string[]; denyPaths?: string[]; patterns?: string[] }): PrivacyIssue[] {
+  const issues: PrivacyIssue[] = [];
+  const list = (field: PrivacyIssue["field"], entries: string[] | undefined, check: (entry: string) => string | null) => {
+    if (!entries) return;
+    if (entries.length > DENY_LIST_MAX) issues.push({ field, index: -1, message: `At most ${DENY_LIST_MAX} entries; this list has ${entries.length}.` });
+    entries.forEach((entry, index) => {
+      if (entry.length > (field === "patterns" ? 500 : DENY_ENTRY_MAX)) { issues.push({ field, index, message: `Longer than ${field === "patterns" ? 500 : DENY_ENTRY_MAX} characters.` }); return; }
+      const message = check(entry);
+      if (message) issues.push({ field, index, message });
+    });
+  };
+  list("denyRemotes", patch.denyRemotes, (e) => denyEntryProblem(e, "remote"));
+  list("denyPaths", patch.denyPaths, (e) => denyEntryProblem(e, "path"));
+  list("patterns", patch.patterns, (source) => {
+    if (!source.trim()) return null; // blank lines are dropped
+    try { new RegExp(source); } catch { return "Not a valid regular expression."; }
+    return unsafePattern(source);
+  });
+  return issues;
 }
 
 // ---------- connection ----------
@@ -220,13 +249,23 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
 
     "privacy.get": () => readPrivacy(kv),
     "privacy.set": async (patch) => {
+      // Validate every field first and save nothing unless all of them pass.
+      const issues = privacyIssues(patch);
+      if (issues.length) {
+        throw new experimental_PluginRpcRefusal({
+          code: "invalid",
+          message: `Privacy settings not saved: ${issues.map((i) => `${i.field}${i.index >= 0 ? ` line ${i.index + 1}` : ""}: ${i.message}`).join(" ")}`,
+          issues: issues.map((i) => ({ message: i.message, path: i.index >= 0 ? [i.field, i.index] : [i.field] })),
+        });
+      }
       const next = await readPrivacy(kv);
       if (patch.denyRemotes) next.denyRemotes = strings(patch.denyRemotes);
       if (patch.denyPaths) next.denyPaths = strings(patch.denyPaths);
-      if (patch.patterns) { next.patterns = strings(patch.patterns); compilePatterns(next.patterns); }
+      if (patch.patterns) { next.patterns = strings(patch.patterns); }
       if (typeof patch.deleteOnDelete === "boolean") next.deleteOnDelete = patch.deleteOnDelete;
       if (typeof patch.purgeConclusionsOnDelete === "boolean") next.purgeConclusionsOnDelete = patch.purgeConclusionsOnDelete;
       await kv.set(PRIVACY_KEY, next);
+      capture.privacyChanged?.();
       changed("privacy");
       return next;
     },

@@ -83,7 +83,7 @@ describe("rpc server", () => {
     const { bb, call } = fakeBb();
     registerRpc(bb, fakeServices().services);
     expect(await call("privacy.get")).toEqual(PRIVACY_DEFAULTS);
-    const next = await call("privacy.set", { denyPaths: [" /work/client/** ", ""], deleteOnDelete: false });
+    const next = await call("privacy.set", { denyPaths: [" /work/client/** "], deleteOnDelete: false });
     expect(next.denyPaths).toEqual(["/work/client/**"]);
     expect(next.deleteOnDelete).toBe(false);
     expect(next.purgeConclusionsOnDelete).toBe(true);

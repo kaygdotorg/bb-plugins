@@ -640,4 +640,17 @@ describe("pause since", () => {
     expect([...fake.kv.keys()].some(k => k.includes("pause-since"))).toBe(false);
     expect(await svc.pauses()).toEqual([{ kind: "thread", id: "thr_a", since: clock.now() }]);
   });
+
+  it("re-evaluates held threads as soon as privacy changes, without waiting for a retry", async () => {
+    fake.addThread("thr_a");
+    fake.prompt("thr_a", "client work");
+    let privacy: PrivacySettings = { denyRemotes: [], denyPaths: ["/synthetic/work"], patterns: [], deleteOnDelete: true, purgeConclusionsOnDelete: true };
+    const { svc } = service({ privacy: () => privacy });
+    await pass(svc);
+    expect(await svc.threadStatus("thr_a")).toMatchObject({ state: "not-captured", reason: expect.stringContaining("deny list") });
+    privacy = { ...privacy, denyPaths: [] };
+    svc.privacyChanged();
+    await svc.flushNow();
+    expect((await svc.threadStatus("thr_a")).state).not.toBe("not-captured");
+  });
 });
