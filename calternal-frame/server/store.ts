@@ -49,7 +49,15 @@ export function createStore(bb: BbPluginApi) {
   const savePrefs = (next: FramePrefs) => set("prefs", JSON.stringify(next));
   const updatedAt = () => Number(get("updatedAt") ?? 0);
 
-  return { db, get, set, remove, prefs, savePrefs, updatedAt };
+  /**
+   * Gives deleted downloads' space back to the disk: SQLite keeps freed pages otherwise.
+   * The database is a few MB at most, so this takes milliseconds.
+   */
+  const vacuum = () => {
+    try { db.exec("VACUUM"); } catch { /* busy: the next removal retries */ }
+  };
+
+  return { db, get, set, remove, touch, prefs, savePrefs, updatedAt, vacuum };
 }
 
 export type Store = ReturnType<typeof createStore>;

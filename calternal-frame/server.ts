@@ -8,6 +8,7 @@ import { createStore } from "./server/store";
 import { createWallpapers, unsplashId, uploadId } from "./server/wallpapers";
 import { createUnsplash } from "./server/unsplash";
 import { createFonts } from "./server/fonts";
+import { createAssets } from "./server/assets";
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -27,10 +28,11 @@ export default async function plugin(bb: BbPluginApi) {
   const unsplash = createUnsplash(unsplashKey);
   const fonts = createFonts(store, bb.log);
   wallpapers.migrateLegacy();
+  const assets = createAssets(store, wallpapers, fonts);
 
   const state = (): FrameState => ({
     ...store.prefs(),
-    uploaded: store.get("wallpaper") ?? null,
+    uploaded: wallpapers.activeData() ?? null,
     wallpaperId: store.get("wallpaperActive") ?? null,
     unsplashReady: unsplashKey() !== "",
     updatedAt: store.updatedAt(),
@@ -39,7 +41,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.rpc.register(rpcContract, {
     frame_get: () => state(),
     frame_light: () => ({ ...state(), uploaded: null }),
-    wallpaper_active: () => ({ id: store.get("wallpaperActive") ?? null, dataUrl: store.get("wallpaper") ?? null }),
+    wallpaper_active: () => ({ id: store.get("wallpaperActive") ?? null, dataUrl: wallpapers.activeData() ?? null }),
 
     frame_set: async (patch) => {
       // Download a newly chosen font first, so a bad family name fails here, visibly.
@@ -93,6 +95,10 @@ export default async function plugin(bb: BbPluginApi) {
       wallpapers.activate(unsplashId(id));
       return state();
     },
+
+    assets_list: () => assets.list(),
+    asset_remove: ({ kind, id }) => assets.remove(kind, id),
+    assets_prune: ({ kind }) => assets.prune(kind),
 
     google_fonts: () => fonts.catalogue(),
     font_faces: async () => ({ css: await fonts.faces() }),

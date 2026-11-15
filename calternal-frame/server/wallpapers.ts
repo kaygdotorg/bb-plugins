@@ -1,7 +1,7 @@
 /**
  * The local wallpaper library. Every upload and Unsplash download is stored once (full
  * image + a small thumbnail); switching between stored wallpapers needs no network.
- * The active image is copied to the "wallpaper" key so reading it stays one lookup.
+ * "wallpaperActive" names the active row; the image itself is stored only in the table.
  */
 import { createHash } from "node:crypto";
 import type { LibraryEntry, FramePrefs } from "../shared/contract";
@@ -9,6 +9,10 @@ import type { Store } from "./store";
 
 type Credit = FramePrefs["wallpaperCredit"];
 type Row = { id: string; source: "upload" | "unsplash"; data: string; thumb: string | null; credit: string | null; added_at: number };
+type SizeRow = Omit<Row, "data"> & { bytes: number };
+
+/** A base64 data URL's decoded size, near enough for a storage list. */
+export const dataUrlBytes = (chars: number) => Math.round(chars * 0.75);
 
 /** Uploads are keyed by content, so the same image uploaded twice is stored once. */
 export const uploadId = (dataUrl: string) => `upload:${createHash("sha1").update(dataUrl).digest("hex").slice(0, 16)}`;
@@ -26,6 +30,10 @@ export function createWallpapers(store: Store) {
   );
   const setThumbRow = db.prepare<[string, string]>("UPDATE wallpapers SET thumb = ? WHERE id = ?");
   const deleteRow = db.prepare<[string]>("DELETE FROM wallpapers WHERE id = ?");
+  const sizeRows = db.prepare<[], SizeRow>(
+    `SELECT id, source, thumb, credit, added_at, length(data) + COALESCE(length(thumb), 0) AS bytes
+     FROM wallpapers ORDER BY added_at DESC`,
+  );
 
   const activeId = () => store.get("wallpaperActive");
 
@@ -37,7 +45,6 @@ export function createWallpapers(store: Store) {
   function activate(id: string): boolean {
     const row = getRow.get(id);
     if (!row) return false;
-    store.set("wallpaper", row.data);
     store.set("wallpaperActive", id);
     store.savePrefs({ ...store.prefs(), wallpaperCredit: row.credit ? JSON.parse(row.credit) : null });
     return true;
@@ -45,7 +52,6 @@ export function createWallpapers(store: Store) {
 
   /** Shows no wallpaper; the library keeps everything. */
   function clearActive() {
-    store.remove("wallpaper");
     store.remove("wallpaperActive");
     store.savePrefs({ ...store.prefs(), wallpaperCredit: null });
   }
@@ -62,23 +68,48 @@ export function createWallpapers(store: Store) {
     }));
   }
 
+  /** Deletes a stored wallpaper for good; deleting the active one shows no wallpaper. */
   function remove(id: string) {
     deleteRow.run(id);
     if (activeId() === id) clearActive();
+    else store.touch(); // the app re-reads the library when updatedAt moves
+  }
+
+  /** Every stored wallpaper with its size, for the storage list. */
+  function sizes() {
+    const active = activeId();
+    return sizeRows.all().map((r: SizeRow) => ({
+      id: r.id,
+      source: r.source,
+      thumb: r.thumb,
+      credit: r.credit ? JSON.parse(r.credit) as Credit : null,
+      bytes: dataUrlBytes(r.bytes),
+      active: r.id === active,
+    }));
   }
 
   const fullImage = (id: string) => getRow.get(id)?.data;
+  /** The active image, or undefined when none is set. */
+  const activeData = () => { const id = activeId(); return id ? getRow.get(id)?.data : undefined; };
   const setThumb = (id: string, thumb: string) => setThumbRow.run(thumb, id);
 
-  /** 0.1.x kept only the active wallpaper: file it in the library once. */
+  /**
+   * Older versions kept a copy of the active image under "wallpaper" (0.1.x: only that). File
+   * it in the library if it is not there yet, then drop the copy so the image is stored once.
+   */
   function migrateLegacy() {
     const current = store.get("wallpaper");
-    if (!current || activeId()) return;
-    const credit = store.prefs().wallpaperCredit;
-    const id = uploadId(current);
-    add(id, credit ? "unsplash" : "upload", current, null, credit);
-    store.set("wallpaperActive", id);
+    if (!current) return;
+    const active = activeId();
+    if (!active || !getRow.get(active)) {
+      const credit = store.prefs().wallpaperCredit;
+      const id = active ?? uploadId(current);
+      add(id, credit ? "unsplash" : "upload", current, null, credit);
+      store.set("wallpaperActive", id);
+    }
+    store.remove("wallpaper");
+    store.vacuum();
   }
 
-  return { add, activate, clearActive, list, remove, fullImage, setThumb, migrateLegacy };
+  return { add, activate, clearActive, list, remove, sizes, fullImage, activeData, setThumb, migrateLegacy };
 }

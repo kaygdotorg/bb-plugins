@@ -20,7 +20,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `app.tsx` / `server.ts` | Entry points; registration and wiring only |
 | `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
-| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts` |
+| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `assets` (storage list and removal) |
 | `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `prefs`, `accent`, `color`; behaviour: `composer`, `tooltip`, `touch`, `swipe`, `times`, `attachments` |
 | `ui/` | React: `overlay` (sync), `nav`, `settings/` |
 
@@ -77,6 +77,9 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **The sliding phone pane uses `--cf-device-radius`** (the screen's corner), like Claude's iOS app, plus `corner-shape: squircle` where supported.
 - **The search palette is bb's `[data-persistent-drawer-content]`.** On phones it's an inset sheet whose radius is concentric with the screen corners: `--cf-device-radius` (the 16 Pro Max's ~62pt) minus `--cf-sheet-inset`.
 - **A blur fades its own edges to transparent.** Blurred layers overhang by 160px (more than 2× the largest blur).
+- **Everything downloaded is listed in Settings → Storage** (`server/assets.ts`): wallpapers (the library table) and installed fonts (`font:<family>` keys). Removing really frees the space (`VACUUM`). Removing a font in use switches its override off. Any new kind of download must show up there too.
+- **Every library change must bump `updatedAt`** (`store.touch()`): the app re-reads lists when it moves. Deleting a wallpaper that wasn't active once left the tile on screen.
+- **The active wallpaper is stored once,** in the library table; `wallpaperActive` names it. Older versions also copied it under `wallpaper`; `migrateLegacy()` drops that copy.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
 - **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
 - **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.

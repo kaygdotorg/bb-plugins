@@ -7,6 +7,7 @@ import { AppearanceSection } from "./appearance";
 import { FontsSection } from "./fonts";
 import { GlassSection } from "./glass";
 import { messageOf, type Commit } from "./primitives";
+import { StorageSection } from "./storage";
 import { WallpaperSection } from "./wallpaper";
 
 export function FrameSettings() {
@@ -33,6 +34,7 @@ export function FrameSettings() {
       <GlassSection state={state} rpc={rpc} commit={commit} />
       <AppearanceSection state={state} rpc={rpc} commit={commit} />
       <FontsSection state={state} rpc={rpc} commit={commit} />
+      <StorageSection state={state} rpc={rpc} commit={commit} />
     </div>
   );
 }

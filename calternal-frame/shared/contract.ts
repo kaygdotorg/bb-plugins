@@ -81,6 +81,26 @@ export const libraryEntrySchema = z.object({
 });
 export type LibraryEntry = z.infer<typeof libraryEntrySchema>;
 
+/** Everything this plugin downloaded or stored, with sizes, for Settings → Storage. */
+const assetsSchema = z.object({
+  wallpapers: z.array(z.object({
+    id: z.string(),
+    source: z.enum(["upload", "unsplash"]),
+    thumb: z.string().nullable(),
+    credit: creditSchema,
+    bytes: z.number(),
+    active: z.boolean(),
+  })),
+  fonts: z.array(z.object({
+    family: z.string(),
+    bytes: z.number(),
+    /** The font overrides using it ("UI", "Chat", …); empty when nothing does. */
+    usedBy: z.array(z.string()),
+  })),
+});
+export type Assets = z.infer<typeof assetsSchema>;
+const assetRefSchema = z.object({ kind: z.enum(["wallpaper", "font"]), id: z.string().min(1).max(160) });
+
 /** Upload cap after the app downscales: a 2560px JPEG is far below this. */
 export const MAX_UPLOAD_CHARS = 12_000_000;
 
@@ -118,6 +138,12 @@ export const rpcContract = defineRpcContract({
   google_fonts: { input: z.object({}), output: z.array(googleFontSchema) },
   /** @font-face CSS for the enabled font overrides, with the font files inlined from local storage. */
   font_faces: { input: z.object({}), output: z.object({ css: z.string() }) },
+  /** Storage: every stored wallpaper and font with its size. */
+  assets_list: { input: z.object({}), output: assetsSchema },
+  /** Deletes one stored asset. A font in use is switched off first (bb's own font returns). */
+  asset_remove: { input: assetRefSchema, output: assetsSchema },
+  /** Deletes every stored asset of a kind that is not in use. */
+  assets_prune: { input: z.object({ kind: z.enum(["wallpaper", "font"]) }), output: assetsSchema },
   /** When each conversation row of a thread was created (ms), keyed by bb's timeline row id. */
   message_times: {
     input: z.object({ threadId: z.string().regex(/^thr_[\w-]+$/) }),

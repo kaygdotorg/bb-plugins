@@ -15,6 +15,9 @@ const GSTATIC_URL = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g;
 const DAY = 24 * 3600_000;
 
 export function createFonts(store: Store, log: BbPluginApi["log"]) {
+  const installedRows = store.db.prepare<[], { key: string; bytes: number }>(
+    "SELECT key, length(value) AS bytes FROM frame_kv WHERE key LIKE 'font:%' ORDER BY key",
+  );
   let catalogueCache: { at: number; fonts: GoogleFont[] } | null = null;
   /** font_faces runs on every app sync; memoise the joined CSS per set of families. */
   let facesCache: { key: string; css: string } | null = null;
@@ -84,5 +87,16 @@ export function createFonts(store: Store, log: BbPluginApi["log"]) {
     return css;
   }
 
-  return { catalogue, install, faces };
+  /** Installed families with their stored size (inlined woff2 is base64: ~3/4 of the text). */
+  function installed(): { family: string; bytes: number }[] {
+    return installedRows.all().map((r: { key: string; bytes: number }) => ({ family: r.key.slice("font:".length), bytes: Math.round(r.bytes * 0.75) }));
+  }
+
+  /** Deletes a family's files. Choosing it again downloads it again. */
+  function remove(family: string) {
+    store.remove(`font:${family}`);
+    facesCache = null;
+  }
+
+  return { catalogue, install, faces, installed, remove };
 }
