@@ -104,7 +104,7 @@ Out of v1: the "remember this" message action, the full conclusions review panel
 ### "from honcho" blocks (Q45-Q48, agreed 2026-11-15)
 
 - A block shows only when memory actually reached the agent. That means a per-turn hit that the hook confirms by writing a "served" note (hash and time only, no prompt text), and the one-time injection at a session (re)build (peer card, directives, scope summary). Misses, skips and paused threads show nothing.
-- It's a quiet chip above the user's message (`experimental_messageMetadata`, placement above): `from honcho · 3 memories · scope bb-plugins`. It's collapsed by default. When expanded, it shows the redacted excerpts with their date and source chat, plus "open memory".
+- It's a quiet chip above the agent's reply for that turn (`experimental_messageMetadata`, placement above, assistant messages only), because it shows what the agent knew when it answered. Session memory and per-turn memory merge into one line: `from honcho · session memory + 3 memories · scope bb-plugins`. (Revised 2026-11-16 by kayg; it was first placed above the user's message.) It's collapsed by default. When expanded, it shows the redacted excerpts with their date and source chat, plus "open memory".
 - Every injection is shown, with no "importance" filter.
 - The agent's own honcho_* tool calls stay as bb's tool rows, with no extra block.
 
