@@ -9,7 +9,8 @@ import { z } from "zod";
 /** One effect on a surface: a checkbox and its value. */
 const effectSchema = z.object({ on: z.boolean(), value: z.number().min(0).max(200) });
 const surfaceSchema = z.object({ blur: effectSchema, tint: effectSchema, dim: effectSchema });
-/** A font override for one of bb's text surfaces; family is a Google Fonts family name. */
+/** A font override for one of bb's text surfaces. family is a family name from any font source
+ *  (Google, Fontsource, Fontshare, an upload) or "System"; the server works out which (server/fonts.ts). */
 const fontSchema = z.object({ on: z.boolean(), family: z.string().max(120) });
 const fontsSchema = z.object({ ui: fontSchema, chat: fontSchema, code: fontSchema, terminal: fontSchema });
 const creditSchema = z.object({ name: z.string(), profile: z.string(), photo: z.string() }).nullable();
@@ -77,8 +78,15 @@ const unsplashPhotoSchema = z.object({
 });
 export type UnsplashPhoto = z.infer<typeof unsplashPhotoSchema>;
 
-const googleFontSchema = z.object({ family: z.string(), category: z.string() });
-export type GoogleFont = z.infer<typeof googleFontSchema>;
+/** Where a font comes from. "system" is the device's own font (SF Pro on Apple), never downloaded. */
+const fontSourceSchema = z.enum(["google", "fontsource", "fontshare", "upload", "system"]);
+export type FontSource = z.infer<typeof fontSourceSchema>;
+/** One family in the picker; category in Google's wording ("Sans Serif", "Monospace"). ref is the
+ *  Fontsource id or Fontshare slug, which Settings needs to load a preview. */
+const catalogFontSchema = z.object({ family: z.string(), category: z.string(), source: fontSourceSchema, ref: z.string().optional() });
+export type CatalogFont = z.infer<typeof catalogFontSchema>;
+/** A family name you give an uploaded font: letters, digits, spaces and . _ - (it goes into CSS). */
+export const uploadFamilySchema = z.string().trim().min(1).max(60).regex(/^[\p{L}\p{N}][\p{L}\p{N} ._-]*$/u, "Use letters, digits, spaces, dots, dashes or underscores.");
 
 export const libraryEntrySchema = z.object({
   id: z.string(),
@@ -102,6 +110,7 @@ const assetsSchema = z.object({
   })),
   fonts: z.array(z.object({
     family: z.string(),
+    source: fontSourceSchema,
     bytes: z.number(),
     /** The font overrides using it ("UI", "Chat", …); empty when nothing does. */
     usedBy: z.array(z.string()),
@@ -112,6 +121,8 @@ const assetRefSchema = z.object({ kind: z.enum(["wallpaper", "font"]), id: z.str
 
 /** Upload cap after the app downscales: a 2560px JPEG is far below this. */
 export const MAX_UPLOAD_CHARS = 12_000_000;
+/** One font file as a data URL: an 8 MB OTF is ~11M chars. Prefer woff2, a third of that. */
+export const MAX_FONT_UPLOAD_CHARS = 12_000_000;
 
 export const rpcContract = defineRpcContract({
   frame_get: { input: z.object({}), output: frameStateSchema },
@@ -144,7 +155,18 @@ export const rpcContract = defineRpcContract({
     output: z.object({ photos: z.array(unsplashPhotoSchema), totalPages: z.number() }),
   },
   unsplash_use: { input: z.object({ id: z.string().regex(/^[\w-]{1,40}$/) }), output: frameStateSchema },
-  google_fonts: { input: z.object({}), output: z.array(googleFontSchema) },
+  /** Every family the picker offers: uploads, Google Fonts, Fontsource's extras and Fontshare. */
+  font_catalog: { input: z.object({}), output: z.array(catalogFontSchema) },
+  /** Stores a font file you own under a family name. Several files (weights, italics) can share one name;
+   *  weight and style are read from the file name. The data URL is the file itself. */
+  font_upload: {
+    input: z.object({
+      family: uploadFamilySchema,
+      fileName: z.string().max(200),
+      dataUrl: z.string().max(MAX_FONT_UPLOAD_CHARS).regex(/^data:[\w.+/-]*;base64,/),
+    }),
+    output: z.object({ family: z.string() }),
+  },
   /** @font-face CSS for the enabled font overrides, with the font files inlined from local storage. */
   font_faces: { input: z.object({}), output: z.object({ css: z.string() }) },
   /** Storage: every stored wallpaper and font with its size. */

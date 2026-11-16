@@ -1,6 +1,6 @@
 /**
  * Storage: one view over everything this plugin keeps on the bb server (wallpapers in the
- * library, installed Google Fonts), and removal that really frees the space (VACUUM).
+ * library, installed fonts from every source), and removal that really frees the space (VACUUM).
  */
 import type { Assets, FontPrefs } from "../shared/contract";
 import type { Store } from "./store";

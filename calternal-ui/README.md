@@ -60,7 +60,7 @@ Open **Settings → Plugins → Calternal UI**.
 | Wallpaper | Upload a picture, paste a link, pick from your library or search Unsplash |
 | Glass | How strong the blur, tint and dimming are on the sidebars and the chat card |
 | Colour & size | Accent colour, interface size, chat layout (wide or centred), clock |
-| Fonts | Any Google Font for the interface, chat, code and terminal |
+| Fonts | A font for the interface, chat, code and terminal: from Google Fonts, Fontsource, Fontshare, your own font files, or your device's own (SF Pro on Apple) |
 | Wordmark | The name at the top of the sidebar and its font |
 | Storage | Every wallpaper and font kept on your bb server, with sizes. Remove what you don't need |
 
@@ -71,7 +71,10 @@ Open **Settings → Plugins → Calternal UI**.
 
 ## Good to know
 
-- **Fonts and wallpapers are stored on your bb server,** so pages never load anything from Google or Unsplash while you work.
+- **Fonts and wallpapers are stored on your bb server,** so pages never load anything from Google, Fontsource, Fontshare or Unsplash while you work.
+- **Font sources:** [Google Fonts](https://fonts.google.com); [Fontsource](https://fontsource.org) for open fonts Google lacks (Maple Mono, Geist Sans, Monaspace, Iosevka, iA Writer, Open Runde…); [Fontshare](https://www.fontshare.com) (Satoshi, General Sans, Switzer, Clash Display…). Each list's right column shows where a font comes from.
+- **SF Pro and SF Mono:** Apple doesn't allow them to be downloaded or shared, so pick **System**: Apple devices then show SF Pro (SF Mono for code), and other devices their own system font.
+- **Your own fonts:** under Fonts, **Add your own font…** takes .woff2, .woff, .ttf or .otf files you're licensed to use. Upload several files under one name for its weights and italics (read from the file names, like "Bold" or "SemiboldItalic").
 - **Safari before version 26** lacks one CSS feature used in the sidebar footer. A simpler layout takes over there automatically.
 - **Reload bb** if something looks unstyled after an update.
 

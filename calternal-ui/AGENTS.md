@@ -11,7 +11,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **Chat card:** touches the window's top and bottom, with a 12px gap to the sidebars at the sides (kayg's choice over Craft's gap on all sides; 12px since 2026-11-15, to give the shadow room). It has no top/bottom border (a translucent border at the window edge showed a strip of wallpaper) and the same corner as the phone pane (`--cf-device-radius`, squircle). It's heavy glass (blur, tint and dim).
 - **Composer:** its own frosted pane inside the card.
 - **Accent:** one colour (from the wallpaper or custom) drives bb's grey palette: primary, hover, selection, menus, switches.
-- **Extras:** Google Fonts stored locally, a wallpaper library with Unsplash, a denser composer, and compact navigation. (Usage in the sidebar footer belongs to the sibling `cliproxy-usage` plugin.)
+- **Extras:** fonts from Google Fonts, Fontsource, Fontshare or your own files, stored locally (plus the system font), a wallpaper library with Unsplash, a denser composer, and compact navigation. (Usage in the sidebar footer belongs to the sibling `cliproxy-usage` plugin.)
 
 ## Map
 
@@ -20,7 +20,7 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 | `app.tsx` / `server.ts` | Entry points; registration and wiring only |
 | `shared/contract.ts` | All data shapes and the RPC contract (zod). The app imports types only |
 | `shared/defaults.ts` | Opinionated defaults (no zod, so the UI can import them) |
-| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts`, `assets` (storage list and removal) |
+| `server/` | `store` (SQLite kv + prefs), `wallpapers` (library), `unsplash`, `fonts` (catalogue + installs; one module per source: `fonts-google`, `fonts-fontsource`, `fonts-fontshare`, `fonts-upload`, shared bits in `fonts-common`), `assets` (storage list and removal) |
 | `frame/` | Styling bb's DOM: `selectors`, `css`, `mount` (content script), `wallpaper`, `preblur` (blurs rendered once), `prefs`, `accent`, `color`, `events` (event names, localStorage cache), `font-preview`, `clock` (24-hour time), `pills` + `pills-sidebar` / `pills-composer` / `pills-phone` (the pill UI), `brand` (the sidebar wordmark), `title-pill` (header title pill, morph menu, inline rename), `input-mode` (animate for the mouse only), `phone-menu` (the phone ⋯ menu as a morph), `clip-morph` (the shared pill ⇄ menu clip morph), `sidebar-top` (sidebar top row: wordmark leading, toggle trailing), `footer-usage` (usage pill shows one provider when the sidebar is narrow), `perf-probe` (opt-in frame-timing HUD, `?cf-perf`), `marks` (attributes that replace non-subject `:has()`), `msg-times` (every message shows its time), `pills-settings` (the Settings sidebar row); behaviour: `composer`, `keyboard-follow` (the phone composer rides with the iOS keyboard), `voice`, `tooltip`, `touch`, `swipe`, `times` |
 | `ui/` | React: `overlay` (sync), `nav` + `nav-actions` (footer + and search), `settings/` (wallpaper, glass, appearance, fonts, wordmark, storage) |
 
@@ -166,7 +166,10 @@ A bb plugin that restyles bb's own shell, after Craft's window:
 - **The active wallpaper is stored once,** in the library table; `wallpaperActive` names it. Older versions also copied it under `wallpaper`; `migrateLegacy()` drops that copy.
 - **Browsers expose no desktop-wallpaper API.** Users upload, paste a URL, or pick from Unsplash.
 - **Unsplash terms:** call `download_location` on every new use, add UTM parameters to links, and show the credit.
-- **Fonts are installed on the server** (woff2, Latin and Latin Extended, inlined into CSS). Pages make no Google requests; only the picker's previews load from Google.
+- **Fonts are installed on the server** (woff2, Latin and Latin Extended, weights 400–700, inlined into CSS). Pages make no third-party requests; only the picker's previews load from the source (Google css2, jsDelivr for Fontsource, Fontshare's css API).
+- **Font sources (2026-11-16):** prefs keep only a family name; `server/fonts.ts` finds its source by name in the merged catalogue (uploads, then Google, Fontsource, Fontshare; the first wins), so saved Google picks need no migration. Fontsource contributes only its non-Google families (~110: Maple Mono, Geist Sans, Monaspace, Iosevka, iA Writer…); Fontshare the ~65 Google doesn't have (Satoshi, General Sans…). Fontshare's FFL allows self-hosting for your own use, not serving to third parties: each bb server downloads its own copy. Each catalogue is cached a day and keeps its last good list if the source is down. Stored CSS starts with `/* cf-source:<source> */` (none = Google, from before), which Storage shows.
+- **"System" is a reserved family** (`shared/fonts.ts`): `frame/prefs.ts` writes the device stack (`-apple-system, BlinkMacSystemFont, system-ui` / `ui-monospace, "SF Mono"`), nothing is installed. It's how SF Pro/SF Mono reach Apple devices; Apple's licence forbids downloading or serving SF. Not offered for the wordmark.
+- **Uploads (`font_upload`, one file per call):** the format comes from the magic bytes (woff2/woff/ttf/otf; TTC refused), weight and italic from the file name (`fonts-upload.ts`); more files under one family add faces, same weight+style replaces. Adding a weight to a family already in use reaches open pages only after a reload (the sync refetches fonts when the set of families changes).
 
 ## Performance
 

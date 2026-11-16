@@ -1,9 +1,9 @@
-// Wordmark section: the text at the top of the sidebar and its Google Font.
+// Wordmark section: the text at the top of the sidebar and its font (any catalogue font or upload).
 import { useEffect, useId, useState } from "react";
-import type { FrameState, GoogleFont } from "../../shared/contract";
+import type { FrameState } from "../../shared/contract";
 import { loadGoogleFontPreview } from "../../frame/font-preview";
-import { FontPicker } from "./fonts";
-import { ErrorLine, inputCls, messageOf, Row, Section, Spinner, useSave, type Commit, type Rpc } from "./primitives";
+import { FontPicker, useFontCatalog } from "./fonts";
+import { ErrorLine, inputCls, Row, Section, Spinner, useSave, type Commit, type Rpc } from "./primitives";
 
 /** Script faces that read well as a short wordmark, shown as one-click previews under "Try". */
 const SUGGESTED = [
@@ -18,19 +18,10 @@ const SUGGESTED = [
 export function BrandSection({ state, rpc, commit }: { state: FrameState; rpc: Rpc; commit: Commit }) {
   const { error, save } = useSave(rpc, commit);
   const [text, setText] = useState(state.brand.text);
-  const [fonts, setFonts] = useState<GoogleFont[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { fonts, error: loadError } = useFontCatalog(rpc);
   const id = useId();
 
   useEffect(() => setText(state.brand.text), [state.brand.text]);
-  useEffect(() => {
-    let cancelled = false;
-    rpc.call("google_fonts", {}).then(
-      (list) => { if (!cancelled) setFonts(list); },
-      (e: unknown) => { if (!cancelled) setLoadError(messageOf(e, "Could not load the font list.")); },
-    );
-    return () => { cancelled = true; };
-  }, [rpc]);
 
   // Previews of the suggested scripts (settings only; the chosen one is installed locally).
   useEffect(() => SUGGESTED.forEach(loadGoogleFontPreview), []);
@@ -38,7 +29,7 @@ export function BrandSection({ state, rpc, commit }: { state: FrameState; rpc: R
   const commitText = () => { if (text !== state.brand.text) void save({ brand: { text } }); };
 
   return (
-    <Section title="Wordmark" hint="The name at the top of the sidebar, in any Google Font. Leave it empty to hide it.">
+    <Section title="Wordmark" hint="The name at the top of the sidebar, in any font from the lists (Google, Fontsource, Fontshare or your own). Leave it empty to hide it.">
       <div className="flex flex-col gap-2">
         <Row label="Text" htmlFor={`${id}-text`}>
           <input

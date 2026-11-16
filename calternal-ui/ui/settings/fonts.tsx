@@ -1,8 +1,11 @@
-// Fonts section: per-surface Google Font overrides, each a checkbox + searchable picker + live sample.
+// Fonts section: per-surface font overrides, each a checkbox + searchable picker + live sample.
+// Sources (2026-11-16): Google Fonts, Fontsource's extras, Fontshare, your uploads, and the system font.
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { FrameState, GoogleFont } from "../../shared/contract";
-import { loadGoogleFontPreview as loadGoogleFont } from "../../frame/font-preview";
+import type { CatalogFont, FrameState } from "../../shared/contract";
+import { SOURCE_LABEL, SYSTEM_FONT, systemStack } from "../../shared/fonts";
+import { loadFontPreview } from "../../frame/font-preview";
+import { FontUpload } from "./font-upload";
 import { ErrorLine, inputCls, LABEL_COL, messageOf, Section, Spinner, useSave, type Commit, type Rpc } from "./primitives";
 
 type FontKey = keyof FrameState["fonts"];
@@ -16,10 +19,34 @@ const FONT_ROWS: { key: FontKey; label: string; note?: string; mono?: boolean }[
 const SAMPLE = "The quick brown fox \u2014 0123 {}";
 const MAX_MATCHES = 40;
 
+/** The device's own font, first in the text and code pickers. SF Pro can't be downloaded (Apple's licence). */
+const systemEntry = (mono: boolean): CatalogFont =>
+  ({ family: SYSTEM_FONT, category: mono ? "SF Mono on Apple" : "SF Pro on Apple", source: "system" });
+
+/** Short categories for the list's right column: "Mono · Fontsource". */
+const SHORT: Record<string, string> = { Monospace: "Mono", "Sans Serif": "Sans", Handwriting: "Script" };
+const detail = (f: CatalogFont) => (f.source === "system" || f.source === "upload" ? f.category : `${SHORT[f.category] ?? f.category} · ${SOURCE_LABEL[f.source]}`);
+
+/** Loads the font list once per Settings section. */
+export function useFontCatalog(rpc: Rpc) {
+  const [fonts, setFonts] = useState<CatalogFont[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    rpc.call("font_catalog", {}).then(
+      (list) => { if (!cancelled) setFonts(list); },
+      (e: unknown) => { if (!cancelled) setError(messageOf(e, "Could not load the font list.")); },
+    );
+    return () => { cancelled = true; };
+  }, [rpc, version]);
+  return { fonts, error, reload: () => setVersion((v) => v + 1) };
+}
+
 export function FontPicker({
   id, fonts, value, mono, disabled, onPick,
 }: {
-  id: string; fonts: GoogleFont[]; value: string; mono: boolean; disabled: boolean; onPick: (family: string) => void;
+  id: string; fonts: CatalogFont[]; value: string; mono: boolean; disabled: boolean; onPick: (family: string) => void;
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
@@ -69,9 +96,13 @@ export function FontPicker({
 
   const matches = useMemo(() => {
     const q = typed ? query.trim().toLowerCase() : "";
-    let list = q ? fonts.filter((f) => f.family.toLowerCase().includes(q)) : fonts;
+    // Family names first; typing a source ("fontshare") then lists that source's families.
+    let list = q
+      ? [...fonts.filter((f) => f.family.toLowerCase().includes(q)),
+        ...fonts.filter((f) => !f.family.toLowerCase().includes(q) && q.length >= 4 && SOURCE_LABEL[f.source].toLowerCase().startsWith(q))]
+      : fonts;
     if (mono) {
-      const isMono = (f: GoogleFont) => f.category.toLowerCase() === "monospace";
+      const isMono = (f: CatalogFont) => f.source === "system" || f.category === "Monospace";
       list = [...list.filter(isMono), ...list.filter((f) => !isMono(f))];
     }
     return list.slice(0, MAX_MATCHES);
@@ -118,7 +149,7 @@ export function FontPicker({
         disabled={disabled}
         className={`${inputCls} w-full`}
         value={query}
-        placeholder="Search Google Fonts"
+        placeholder="Search fonts"
         onFocus={(e) => { setOpen(true); e.currentTarget.select(); }}
         onClick={() => setOpen(true)}
         onChange={(e) => { setQuery(e.target.value); setTyped(true); setIndex(0); setOpen(true); }}
@@ -146,7 +177,7 @@ export function FontPicker({
               className={`flex cursor-pointer items-center justify-between gap-2 px-2 py-1 text-sm ${i === index ? "bg-accent" : ""}`}
             >
               <span className="truncate">{f.family}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{f.category}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{detail(f)}</span>
             </li>
           ))}
         </ul>,
@@ -156,12 +187,13 @@ export function FontPicker({
   );
 }
 
-function FontSample({ family }: { family: string }) {
-  useEffect(() => { if (family) loadGoogleFont(family); }, [family]);
+function FontSample({ family, font, mono }: { family: string; font: CatalogFont | undefined; mono: boolean }) {
+  const system = family === SYSTEM_FONT;
+  useEffect(() => { if (family && !system) loadFontPreview(font, family); }, [family, font, system]);
   return (
     <p
       className="truncate text-sm text-muted-foreground"
-      style={{ fontFamily: `"${family.replace(/["\\]/g, "")}", sans-serif` }}
+      style={{ fontFamily: system ? systemStack(mono) : `"${family.replace(/["\\]/g, "")}", ${mono ? "monospace" : "sans-serif"}` }}
     >
       {SAMPLE}
     </p>
@@ -169,24 +201,19 @@ function FontSample({ family }: { family: string }) {
 }
 
 export function FontsSection({ state, rpc, commit }: { state: FrameState; rpc: Rpc; commit: Commit }) {
-  const [fonts, setFonts] = useState<GoogleFont[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { fonts: catalog, error: loadError, reload } = useFontCatalog(rpc);
   const { error, save: savePatch } = useSave(rpc, commit);
   const baseId = useId();
-
-  useEffect(() => {
-    let cancelled = false;
-    rpc.call("google_fonts", {}).then(
-      (list) => { if (!cancelled) setFonts(list); },
-      (e: unknown) => { if (!cancelled) setLoadError(messageOf(e, "Could not load the font list.")); },
-    );
-    return () => { cancelled = true; };
-  }, [rpc]);
+  const withSystem = useMemo(() => catalog && {
+    text: [systemEntry(false), ...catalog],
+    mono: [systemEntry(true), ...catalog],
+  }, [catalog]);
+  const byFamily = useMemo(() => new Map((catalog ?? []).map((f) => [f.family, f])), [catalog]);
 
   const save = (key: FontKey, font: { on: boolean; family: string }) => void savePatch({ fonts: { [key]: font } });
 
   return (
-    <Section title="Fonts" hint="Override bb's fonts with any Google Font.">
+    <Section title="Fonts" hint="Override bb's fonts with a font from Google Fonts, Fontsource or Fontshare, your own font file, or your device's (SF Pro on Apple). Chosen fonts are stored on the bb server.">
       <ErrorLine message={loadError} />
       <div className="flex flex-col gap-4">
         {FONT_ROWS.map((row) => {
@@ -204,10 +231,10 @@ export function FontsSection({ state, rpc, commit }: { state: FrameState; rpc: R
                 {row.label}
               </label>
               <label className="sr-only" htmlFor={id}>{row.label} font family</label>
-              {fonts ? (
+              {withSystem ? (
                 <FontPicker
                   id={id}
-                  fonts={fonts}
+                  fonts={row.mono ? withSystem.mono : withSystem.text}
                   value={font.family}
                   mono={row.mono === true}
                   disabled={!font.on}
@@ -219,13 +246,14 @@ export function FontsSection({ state, rpc, commit }: { state: FrameState; rpc: R
                 </div>
               )}
               <div className="col-start-2 min-w-0">
-                <FontSample family={font.family} />
+                <FontSample family={font.family} font={byFamily.get(font.family)} mono={row.mono === true} />
                 {row.note ? <p className="text-xs text-muted-foreground">{row.note}</p> : null}
               </div>
             </div>
           );
         })}
       </div>
+      <FontUpload rpc={rpc} onAdded={reload} />
       <ErrorLine message={error} />
     </Section>
   );

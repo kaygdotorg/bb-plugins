@@ -8,6 +8,7 @@ import { CACHE, cache } from "./events";
 import { R } from "./selectors";
 import { preblurBlurs } from "./preblur";
 import { setClock } from "./clock";
+import { SYSTEM_FONT, systemStack } from "../shared/fonts";
 
 type Surface = FramePrefs["sidebar"];
 export type AppliedPrefs = Pick<FramePrefs, "sidebar" | "chat" | "fonts" | "uiScale"> & Partial<Pick<FramePrefs, "clock" | "chatWidth">>;
@@ -25,23 +26,25 @@ function surfaceVars(prefix: "side" | "card", base: "--cf-side" | "--cf-bg", s: 
 }
 
 const quote = (family: string) => `"${family.replace(/["\\]/g, "")}"`;
+/** A family for CSS; "System" becomes the device's font stack (SF Pro / SF Mono on Apple devices). */
+const face = (family: string, mono: boolean) => (family === SYSTEM_FONT ? systemStack(mono) : quote(family));
 
 /** One rule per enabled override; bb reads fonts from --font-sans / --font-mono / --font-terminal. */
 function fontCss(fonts: FramePrefs["fonts"]): string {
   const rules: string[] = [];
   if (fonts.ui.on && fonts.ui.family) {
-    rules.push(`${R} { --font-sans: ${quote(fonts.ui.family)}, "Inter Variable", Inter, sans-serif; }`);
+    rules.push(`${R} { --font-sans: ${face(fonts.ui.family, false)}, "Inter Variable", Inter, sans-serif; }`);
   }
   if (fonts.chat.on && fonts.chat.family) {
     // Chat and its composer: the variable (font-sans utilities) and the inherited family.
-    rules.push(`${R} [data-thread-window], ${R} [data-app-composer] { --font-sans: ${quote(fonts.chat.family)}, "Inter Variable", Inter, sans-serif; font-family: var(--font-sans); }`);
+    rules.push(`${R} [data-thread-window], ${R} [data-app-composer] { --font-sans: ${face(fonts.chat.family, false)}, "Inter Variable", Inter, sans-serif; font-family: var(--font-sans); }`);
   }
   if (fonts.code.on && fonts.code.family) {
-    rules.push(`${R} { --font-mono: ${quote(fonts.code.family)}, ui-monospace, SFMono-Regular, Menlo, monospace; }`);
+    rules.push(`${R} { --font-mono: ${face(fonts.code.family, true)}, ui-monospace, SFMono-Regular, Menlo, monospace; }`);
   }
   if (fonts.terminal.on && fonts.terminal.family) {
     // bb's terminal reads this when it opens; open terminals keep their font until reopened.
-    rules.push(`${R} { --font-terminal: ${quote(fonts.terminal.family)}, "JetBrainsMono Nerd Font Mono", ui-monospace, monospace; }`);
+    rules.push(`${R} { --font-terminal: ${face(fonts.terminal.family, true)}, "JetBrainsMono Nerd Font Mono", ui-monospace, monospace; }`);
   }
   return rules.join("\n");
 }

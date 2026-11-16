@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { Assets, FrameState } from "../../shared/contract";
+import { SOURCE_LABEL } from "../../shared/fonts";
 import { ErrorLine, linkButtonCls, messageOf, Section, Spinner, SubHeading, type Commit, type Rpc } from "./primitives";
 
 const formatBytes = (bytes: number) =>
@@ -124,7 +125,7 @@ export function StorageSection({ state, rpc, commit }: { state: FrameState; rpc:
                 preview={<span aria-hidden="true" className="flex h-8 w-12 shrink-0 items-center justify-center rounded-md border border-border text-sm"
                   style={{ fontFamily: `"${f.family}"` }}>Aa</span>}
                 name={f.family}
-                detail={f.usedBy.length ? `Used for ${f.usedBy.join(", ")}; removing switches that back to bb's font` : "Not in use"}
+                detail={`${SOURCE_LABEL[f.source]} · ${f.usedBy.length ? `used for ${f.usedBy.join(", ")}; removing switches that back to bb's font` : "not in use"}`}
                 bytes={f.bytes}
                 busy={busy === `font:${f.family}`}
                 disabled={busy !== null}

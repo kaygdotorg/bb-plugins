@@ -104,7 +104,8 @@ export default async function plugin(bb: BbPluginApi) {
     asset_remove: ({ kind, id }) => assets.remove(kind, id),
     assets_prune: ({ kind }) => assets.prune(kind),
 
-    google_fonts: () => fonts.catalogue(),
+    font_catalog: () => fonts.catalogue(),
+    font_upload: ({ family, fileName, dataUrl }) => ({ family: fonts.upload(family, fileName, dataUrl) }),
     font_faces: async () => ({ css: await fonts.faces() }),
     message_times: async ({ threadId }) => {
       // bb's own timeline read; its row ids match the chat's [data-timeline-row-id].
