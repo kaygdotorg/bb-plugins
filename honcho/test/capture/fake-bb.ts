@@ -167,11 +167,12 @@ export function fakeBb(clock: FakeClock) {
 export function memoryActivity(): ActivityLog & { entries: ActivityEntry[] } {
   const entries: ActivityEntry[] = [];
   let id = 0;
+  const listeners = new Set<(e: ActivityEntry) => void>();
   return {
     entries,
-    record(entry) { entries.push({ ...entry, id: ++id, at: 0 }); },
+    record(entry) { const e = { ...entry, id: ++id, at: 0 }; entries.push(e); for (const l of listeners) l(e); },
     list() { return [...entries]; },
-    subscribe() { return () => undefined; },
+    subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; },
   };
 }
 

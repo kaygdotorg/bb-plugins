@@ -218,3 +218,91 @@ describe("gate v1 markers", () => {
     expect(texts("thr_new")).toEqual([]);
   });
 });
+
+describe("hand over", () => {
+  const state = (handedOver: boolean, at?: number): import("../../lib/contract").HarnessState => ({
+    machineId: "host_fixture",
+    claude: { hookInstalled: true, handedOver, pluginVersion: null },
+    codex: { hookInstalled: true, handedOver, trusted: true },
+    backups: at === undefined ? [] : [`000001-${new Date(at).toISOString().replace(/[:.]/g, "-")}-handover`],
+  });
+  let handed: { on: boolean; at?: number };
+  beforeEach(() => { handed = { on: false }; });
+  /** The hand over happens now; the harness service's activity entry refreshes capture's cache. */
+  const handOver = (deps: { activity: { record(e: { kind: "harness"; summary: string }): void } }) => {
+    clock.advance(10_000);
+    handed = { on: true, at: clock.now() };
+    clock.advance(1_000);
+    deps.activity.record({ kind: "harness", summary: "handed over" });
+  };
+  const withHarness = () => service({ harnessState: async () => state(handed.on, handed.at) });
+  /** A probation failure: the old plugin wrote after the build. Returns when it wrote. */
+  async function tripped(svc: CaptureHandle) {
+    oldSession();
+    fake.build("thr_a", "looked rebuilt");
+    const wroteAt = clock.now() + 500;
+    await harnessMessage("prov_fixture", wroteAt);
+    fake.agent("thr_a", "reply");
+    fake.turnDone("thr_a");
+    await pass(svc);
+    return wroteAt;
+  }
+
+  it("says to hand over, or restart the chat, while the machine isn't handed over", async () => {
+    const { svc } = withHarness();
+    await tripped(svc);
+    const text = (await svc.health()).tripwire!;
+    expect(text).toContain("the old claude honcho plugin is still saving chat thr_a.");
+    expect(text).toContain("hand over on this machine (Memory → connection) or restart that chat");
+  });
+
+  it("clears a tripwire and harness write from before the hand over, and the next build switches the thread over", async () => {
+    const { svc, deps, outbox } = withHarness();
+    const wroteAt = await tripped(svc);
+    expect(outbox.harnessSeenAt("thr_a")).toBe(wroteAt);
+    expect((await svc.health()).tripwire).not.toBeNull();
+
+    handOver(deps);
+    await pass(svc);
+    expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
+    expect((await svc.health()).tripwire).toBeNull();
+    expect(texts()).toEqual([]); // the old build doesn't count: it predates the hand over
+    expect(outbox.switchOver("thr_a")).toBeUndefined();
+
+    const before = fake.turnDone("thr_a");
+    fake.build("thr_a", "rebuilt after hand over");
+    fake.turnDone("thr_a");
+    await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
+    await pass(svc); await pass(svc);
+    expect(outbox.switchOver("thr_a")).toBe(before);
+    expect(texts()).toEqual(["rebuilt after hand over"]);
+  });
+
+  it("keeps the tripwire when the old plugin writes after the hand over, and says so", async () => {
+    const { svc, deps, outbox } = withHarness();
+    await tripped(svc);
+    handOver(deps);
+    await pass(svc);
+    expect((await svc.health()).tripwire).toBeNull();
+
+    fake.build("thr_a", "rebuilt after hand over");
+    await harnessMessage("prov_fixture", clock.now() + 5_000);
+    fake.turnDone("thr_a");
+    await fake.emit("thread.idle", { thread: fake.threads.get("thr_a") });
+    await pass(svc); await pass(svc);
+    const text = (await svc.health()).tripwire!;
+    expect(text).toContain("still saves chat thr_a even after hand over");
+    expect(outbox.harnessSeenAt("thr_a")).toBeDefined();
+    expect(texts()).toEqual([]);
+  });
+
+  it("refreshes on harness activity instead of waiting for the cache to expire", async () => {
+    const { svc, deps, outbox } = withHarness();
+    await tripped(svc);
+    await pass(svc, 1_000); // cached: not handed over
+    expect(outbox.harnessSeenAt("thr_a")).toBeDefined();
+    handOver(deps);
+    await pass(svc, 1_000);
+    expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
+  });
+});

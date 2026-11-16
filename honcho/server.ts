@@ -69,6 +69,8 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   let recallForPurge: { conclusionsForThread(threadId: string): Array<{ id: string; attached: boolean }> } | undefined;
   const capture = createCaptureService(bb, {
     ...deps, settings: view.capture, extraDeny: secretValues,
+    // The harness service is created below; capture only asks it later, when a thread is processed.
+    harnessState: machineId => harness.state(machineId),
     unattachedConclusions: threadId => (recallForPurge?.conclusionsForThread(threadId) ?? []).filter(c => !c.attached).map(c => c.id),
   });
 
