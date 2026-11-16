@@ -48,7 +48,15 @@ export const SEGMENT = `
   border-radius: calc(var(--cf-tb-pill) / 2 - var(--cf-seg-iy) + var(--cf-seg-ix)) / calc(var(--cf-tb-pill) / 2) !important;
 `;
 
-/** The floating glass as a layer: put these declarations on a ::before of a stacking context. */
+/**
+ * The floating glass as a layer: put these declarations on a ::before of a stacking context.
+ *
+ * Its fill is clear by default (the one glass). pill-contrast.ts sets `--cf-pill-wash` (0..1) on a pill whose
+ * backdrop fights its glyphs (a photo or solid block under it, a bright patch of wallpaper in dark mode) and the
+ * fill becomes the theme's pill tint at wash × `--cf-pill-wash-max`, only as much as 3:1 (icons) or 4.5:1
+ * (words) needs (2026-11-16). `--cf-pill-solid` is the reduced-transparency floor. The 180ms fade keeps a code
+ * block scrolling under a pill from flashing it; it is the fill alone (the backdrop isn't re-filtered for it).
+ */
 export const GLASS_LAYER = `
   content: "";
   position: absolute;
@@ -56,7 +64,8 @@ export const GLASS_LAYER = `
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  background: rgb(var(--cf-pill-tint) / var(--cf-pill-alpha));
+  background: rgb(var(--cf-pill-tint) / min(1, calc(var(--cf-pill-alpha) + var(--cf-pill-wash, 0) * var(--cf-pill-wash-max) + var(--cf-pill-solid, 0))));
+  transition: background-color 180ms var(--cf-ease-out);
   -webkit-backdrop-filter: var(--cf-pill-filter);
   backdrop-filter: var(--cf-pill-filter);
   box-shadow: var(--cf-pill-shade), var(--cf-pill-edge), var(--cf-pill-shadow);
@@ -73,6 +82,7 @@ ${R} {
   --cf-pill-tint: 253 250 245;
   --cf-pill-alpha: 0;                /* the one glass: no tint (css.ts --cf-glass) */
   --cf-pill-filter: var(--cf-glass);
+  --cf-pill-wash-max: 0.35;          /* the most fill pill-contrast.ts can add (pill-contrast.ts WASH_MAX) */
   --cf-pill-shade: inset 0 0 20px rgb(253 250 245 / 0.3);
   --cf-pill-edge: inset 0 0 0 1px rgb(255 255 255 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.6);
   --cf-pill-shadow: 0 0 0 1px rgb(31 27 23 / 0.05), 0 10px 28px -8px rgb(60 40 20 / 0.26), 0 2px 4px -1px rgb(60 40 20 / 0.08);
@@ -102,6 +112,10 @@ ${R} {
     --cf-seg-w: ${s(48)};
     --cf-pill-icon: ${s(20)};
   }
+}
+/* Reduced transparency (macOS/iOS "Reduce transparency"): the pills become a near-solid tint whatever is behind. */
+@media (prefers-reduced-transparency: reduce) {
+  ${R} { --cf-pill-solid: 0.85; }
 }
 ${R}.dark {
   --cf-pill-tint: 30 28 26;

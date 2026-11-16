@@ -24,6 +24,7 @@ import { mountPerfProbe } from "./perf-probe";
 import { mountMarks } from "./marks";
 import { mountMsgTimes } from "./msg-times";
 import { mountKeyboardFollow } from "./keyboard-follow";
+import { mountPillContrast } from "./pill-contrast";
 
 export function mountFrame(): () => void {
   const style = document.createElement("style");
@@ -56,6 +57,7 @@ export function mountFrame(): () => void {
   const unmountMsgTimes = mountMsgTimes();
   const unmountKeyboardFollow = mountKeyboardFollow();
   const unmountFooterUsage = mountFooterUsage();
+  const unmountPillContrast = mountPillContrast(); // adaptive pill fill; idle-time only
   const unmountPerfProbe = mountPerfProbe(); // opt-in: ?cf-perf
   const unmountNoZoom = mountNoZoom();
   const unmountKeepKeyboard = mountKeepKeyboard(); // after phone-menu: it wraps that module's focus guard
@@ -71,6 +73,7 @@ export function mountFrame(): () => void {
     unmountMsgTimes();
     unmountKeyboardFollow();
     unmountFooterUsage();
+    unmountPillContrast();
     unmountPerfProbe();
     unmountNoZoom();
     unmountComposer();
