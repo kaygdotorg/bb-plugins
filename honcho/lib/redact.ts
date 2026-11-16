@@ -25,6 +25,37 @@ function wordy(value: string): boolean {
   const covered = (letters.match(/[A-Z]?[a-z]{2,}|[A-Z]{2,}(?![a-z])/g) ?? []).reduce((n, w) => n + w.length, 0);
   return letters.length > 0 && covered / letters.length >= 0.7;
 }
+/** A `-`/`_` joined identifier (`infraternal-main-handover-2026-11-15`, `BRIEF_COMMON_v2`): nearly
+ * every part is a plain word, a number or a short tag like `v2`, `k8s`, `r3`. Random base64url
+ * has mixed-case parts and fails. */
+function identifier(value: string, tags = /^[a-z]+\d+[a-z\d]*$|^\d+[a-z]+\d*$/): boolean {
+  const parts = value.split(/[-_]+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  let covered = 0;
+  for (const part of parts) {
+    if (/^(?:[a-z]{2,}|[A-Z][a-z]+|[A-Z]{2,}|[A-Z][a-z]+[A-Z][a-z]+|\d+)$/.test(part) || (part.length <= 4 && tags.test(part))) covered += part.length;
+  }
+  return covered / parts.join("").length >= 0.75;
+}
+/** One run of a path or file name between separators: a word-like segment is never a secret. */
+function pathSegment(value: string): boolean {
+  return wordy(value) || identifier(value, /^[A-Za-z]{1,4}\d+[A-Za-z\d]*$|^\d+[A-Za-z]+\d*$/);
+}
+const PATH_START = /^["'`(\[<]*(?:(?:~|\.{1,2})?[\/\\]|[A-Za-z]:[\\/]|[a-z][a-z\d+.-]*:\/\/|@[\w.-]+\/)/;
+/** A whitespace-delimited word shaped like a path, URL, git ref or file name. Credential URLs are
+ * collected separately before this runs. */
+function pathLike(word: string): boolean {
+  if (PATH_START.test(word)) return true;
+  const w = word.replace(/^[^\w~./\\@]+|[^\w/\\]+$/g, "");
+  if (/[\/\\]/.test(w)) {
+    const segments = w.split(/[\/\\.]+/).filter(Boolean);
+    const total = segments.join("").length;
+    return total > 0 && segments.filter(pathSegment).join("").length / total >= 0.5;
+  }
+  // File name: `calternal-HANDOVER-2026.md`.
+  return /^[\w-]+(?:\.[\w-]+)*\.[A-Za-z\d]{1,6}$/.test(w) && /\.[A-Za-z]/.test(w);
+}
+
 /** base64 that decodes to readable text is an encoded string in code, not a key. */
 function decodesToText(value: string): boolean {
   const bytes = Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
@@ -50,7 +81,7 @@ function tokenLike(value: string, before: string): boolean {
   if (value.length < 24 || entropy(value) < 3.5) return false;
   if (/^(?:sk-|gh[pousr]_|github_pat_|xox[baprs]-|AKIA)/.test(value)) return true;
   if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/\d/.test(value)) return false;
-  if (/[_-]/.test(value)) return !wordy(value);
+  if (/[_-]/.test(value)) return !wordy(value) && !identifier(value);
   // No separators: plain base64. Paths and identifiers are wordy; encoded text decodes to text.
   return entropy(value) >= 3.8 && !wordy(value) && !decodesToText(value);
 }
@@ -200,8 +231,16 @@ export function redact(text: string, options: RedactionOptions = {}): RedactionR
   // name: value, YAML and JSON ("apiKey": "...", password: ...).
   collect(new RegExp(String.raw`(?<![\w-])["']?(?:${SECRET_NAME})["']?\s*:\s*(${VALUE}|[^\s,;}\]]+)`, "gi"), 1, literalValue);
   collect(new RegExp(String.raw`(?<![\w-])["']?(?:${KEY_NAME})["']?\s*:\s*(${VALUE}|[^\s,;}\]]+)`, "gi"), 1, v => literalValue(v) && keyShaped(v));
-  for (const m of text.matchAll(/[A-Za-z\d_+\/-]{24,}={0,2}/g)) {
-    if (tokenLike(m[0], text.slice(Math.max(0, m.index! - 48), m.index!))) spans.push([m.index!, m.index! + m[0].length]);
+  // High-entropy tokens, word by word. Path-shaped words (paths, URLs, git refs, file names) are
+  // checked one segment at a time, and identifier-like segments are never secrets.
+  for (const word of text.matchAll(/\S{24,}/g)) {
+    const path = pathLike(word[0]);
+    const re = path ? /[A-Za-z\d_+-]{24,}={0,2}/g : /[A-Za-z\d_+\/-]{24,}={0,2}/g;
+    for (const m of word[0].matchAll(re)) {
+      const at = word.index! + m.index!;
+      if (path && pathSegment(m[0])) continue;
+      if (tokenLike(m[0], text.slice(Math.max(0, at - 48), at))) spans.push([at, at + m[0].length]);
+    }
   }
   for (const value of options.deny ?? []) {
     if (!value || value === REDACTED) continue;
