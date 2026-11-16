@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { definePluginApp, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, UsageSnapshot } from "./server";
 import { FooterUsage } from "./footer";
+import { UsagePopover, toggleUsage } from "./popover";
 
 function formatProvider(provider: string): string {
   const normalized = provider.toLowerCase();
@@ -127,7 +128,7 @@ function AccountCard({ account }: { account: UsageSnapshot["accounts"][number] }
   );
 }
 
-function UsageDisclosure({ dismiss }: { dismiss(): void }) {
+function UsagePanel({ dismiss }: { dismiss(): void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -158,7 +159,7 @@ function UsageDisclosure({ dismiss }: { dismiss(): void }) {
   const accountCount = snapshot?.accounts.length ?? 0;
 
   return (
-    <section className="flex max-h-[min(70vh,36rem)] flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <section className="flex min-h-0 flex-col text-sidebar-foreground">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">Provider usage</span>
         <span className="shrink-0 text-2xs text-muted-foreground">
@@ -177,7 +178,7 @@ function UsageDisclosure({ dismiss }: { dismiss(): void }) {
         </button>
         <button
           type="button"
-          aria-label="Collapse provider usage"
+          aria-label="Close provider usage"
           onClick={dismiss}
           className="flex size-6 items-center justify-center rounded text-base text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
@@ -232,11 +233,17 @@ function UsageDisclosure({ dismiss }: { dismiss(): void }) {
 export default definePluginApp((app) => {
   // The percentages that stand in for the chart icon (footer.tsx).
   app.slots.experimental_appOverlay({ id: "footer-usage", component: FooterUsage });
+  // The breakdown: a popover with a tail on the hub (popover.tsx). Until 2026-11-16 this was
+  // bb's footer disclosure, which ran behind calternal-ui's floating footer pills.
+  app.slots.experimental_appOverlay({
+    id: "usage-popover",
+    component: () => <UsagePopover>{(dismiss) => <UsagePanel dismiss={dismiss} />}</UsagePopover>,
+  });
   app.experimental_sidebarFooter.register({
-    kind: "disclosure",
+    kind: "action",
     id: "cliproxy-usage",
     label: "Provider usage",
     icon: "ChartColumn",
-    component: UsageDisclosure,
+    onActivate: toggleUsage,
   });
 });

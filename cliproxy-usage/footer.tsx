@@ -8,7 +8,7 @@
  * So the button keeps its size with its icon hidden, and the percentages ([icon] 6%
  * [icon] 83%) are an overlay that starts there and spans the free space to its right,
  * capped at that space. A click on the overlay presses bb's button (a native .click(), so
- * bb's own handler runs) and opens the same disclosure.
+ * bb's own handler runs) and opens the breakdown (popover.tsx).
  *
  * Settings (server.ts): footer, footerWindow, footerProviders, footerLabels, warnPercent,
  * criticalPercent. Data: the usage_summary RPC, polled once a minute.
@@ -17,8 +17,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRpc, useSettings } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, UsageSummary, UsageWindow } from "./server";
-
-const BUTTON = 'li[data-footer-item] > button[aria-label="Provider usage"]';
+import { BUTTON, notePointer } from "./popover";
 const HOST = "data-cliproxy-footer";
 const COMPACT = "data-cliproxy-compact";
 
@@ -90,7 +89,9 @@ function Entry({ provider, prefs, primary }: { provider: Provider; prefs: Prefs;
       ) : (
         <span>{NAMES[provider.provider]}</span>
       )}
-      <span className="tabular-nums">{pct === null ? "—" : `${pct}%`}</span>
+      {/* Google Sans sets % almost touching the digits: 0.5–1.25px of ink gap at 12–14px (measured
+          2026-11-16). 0.08em brings it to 1.5–2px; a hair space (U+200A) was 2–3px, too loose. */}
+      <span className="tabular-nums">{pct === null ? "—" : <>{pct}<span style={{ marginLeft: "0.08em" }}>%</span></>}</span>
     </span>
   );
 }
@@ -156,7 +157,7 @@ export function FooterUsage() {
         current = document.createElement("span");
         current.setAttribute(HOST, "");
         current.setAttribute("aria-hidden", "true"); // the button carries the words (aria-description)
-        current.addEventListener("click", () => item.querySelector<HTMLButtonElement>("button")?.click());
+        current.addEventListener("click", () => { notePointer(); item.querySelector<HTMLButtonElement>("button")?.click(); });
         item.append(current);
         button.setAttribute(COMPACT, "");
         setHost(current);
