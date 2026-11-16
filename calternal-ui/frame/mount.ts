@@ -3,6 +3,8 @@
  * the fixed backdrop layer and the root attribute, and paints last session's look from
  * cache straight away. The disposer removes everything, restoring bb exactly.
  */
+import { mountNoZoom } from "./no-zoom";
+import { mountKeepKeyboard } from "./keep-keyboard";
 import { CSS } from "./css";
 import { ROOT_ATTR } from "./selectors";
 import { applyCachedWallpaper, clearWallpaper } from "./wallpaper";
@@ -55,18 +57,22 @@ export function mountFrame(): () => void {
   const unmountKeyboardFollow = mountKeyboardFollow();
   const unmountFooterUsage = mountFooterUsage();
   const unmountPerfProbe = mountPerfProbe(); // opt-in: ?cf-perf
+  const unmountNoZoom = mountNoZoom();
+  const unmountKeepKeyboard = mountKeepKeyboard(); // after phone-menu: it wraps that module's focus guard
 
   return () => {
     uninstallClock();
     unmountMarks();
     unmountBrand();
     unmountInputMode();
+    unmountKeepKeyboard(); // before phone-menu: it wraps that module's focus guard
     unmountPhoneMenu();
     unmountSidebarTop();
     unmountMsgTimes();
     unmountKeyboardFollow();
     unmountFooterUsage();
     unmountPerfProbe();
+    unmountNoZoom();
     unmountComposer();
     unmountTitlePill();
     unmountTouch();
