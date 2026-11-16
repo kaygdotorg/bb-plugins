@@ -5,6 +5,7 @@ import {
   experimental_useSidebarNavigation as useSidebarNavigation,
 } from "@get-bb/plugin-sdk/app";
 import { publishNavActions } from "./nav-actions";
+import { Customize, Home, navIcon } from "./nav-icons";
 
 /**
  * Compact single-column navigation above bb's thread list. Rows are shorter than bb's
@@ -53,7 +54,7 @@ function RowItem({
       disabled={item.isDisabled || item.isLoading}
       onClick={onActivate}
     >
-      <IconSlot><SidebarNavigationIcon icon={item.icon} /></IconSlot>
+      <IconSlot>{navIcon(item.label) ?? <SidebarNavigationIcon icon={item.icon} />}</IconSlot>
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {badge ? <span className="text-[10px] tabular-nums">{badge}</span> : null}
       {showShortcut && item.shortcut ? (
@@ -94,7 +95,7 @@ export function ChatNavigation() {
         aria-current={isHomeActive ? "page" : undefined}
         onClick={() => actions.goHome()}
       >
-        <IconSlot><Icon name="House" className="size-3.5 shrink-0" /></IconSlot>
+        <IconSlot><Home /></IconSlot>
         <span className="min-w-0 flex-1 truncate">Threads</span>
       </button>
       {visibleItems.map(renderItem)}
@@ -113,7 +114,7 @@ export function ChatNavigation() {
         <>
           {hiddenItems.map(renderItem)}
           <button type="button" className={rowClass(false)} onClick={() => actions.openCustomize()}>
-            <IconSlot><Icon name="Settings2" className="size-3.5 shrink-0" /></IconSlot>
+            <IconSlot><Customize /></IconSlot>
             <span className="min-w-0 flex-1 truncate">Customize navigation…</span>
           </button>
         </>

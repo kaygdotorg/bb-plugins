@@ -981,7 +981,21 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     border-radius: calc(12px * var(--cf-ui-scale, 1)) !important;
   }
   ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row, .group\\/thread-row .text-sm) { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
-  ${SIDEBAR} [data-cf-nav] > button svg { width: calc(20px * var(--cf-ui-scale, 1)) !important; height: calc(20px * var(--cf-ui-scale, 1)) !important; }
+  /* One icon column for every sidebar row (Apple HIG list rows; Claude's sidebar): a 20pt glyph centred in a 24pt
+     slot, the label 14pt after it, so nav labels and thread labels start on the same line. bb's slots are 16pt
+     (the nav's squeezed a 20pt icon to 16 wide) and its thread rows put only 6pt (gap-1.5) before the label. */
+  ${SIDEBAR} :is([data-cf-nav] > button > span:first-child, .group\\/thread-row span.size-4.shrink-0) {
+    width: calc(24px * var(--cf-ui-scale, 1)) !important;
+    height: calc(24px * var(--cf-ui-scale, 1)) !important;
+    flex: none !important;
+  }
+  ${SIDEBAR} :is([data-cf-nav] > button > span:first-child svg, .group\\/thread-row span.size-4.shrink-0 > svg, .group\\/thread-row span:has(> [data-provider-logo])) {
+    width: calc(20px * var(--cf-ui-scale, 1)) !important;
+    height: calc(20px * var(--cf-ui-scale, 1)) !important;
+    flex: none !important;
+  }
+  /* bb's thread row has the slot and the label as plain siblings (no gap): the 14pt is the slot's margin. */
+  ${SIDEBAR} .group\\/thread-row span.size-4.shrink-0 { margin-right: calc(14px * var(--cf-ui-scale, 1)) !important; }
   /* Like Claude's and ChatGPT's: a wide gap between the icon and the label (Claude: ~15pt; bb: 8), and the labels
      at full strength (bb draws them in its dimmer sidebar ink). */
   ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row) { gap: calc(14px * var(--cf-ui-scale, 1)) !important; }
