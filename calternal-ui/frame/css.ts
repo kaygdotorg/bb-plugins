@@ -914,7 +914,24 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${MAIN} [data-timeline-row-id] .max-w-none > :is(h1, h2, h3, h4):first-child { margin-top: 0; }
   ${MAIN} [data-timeline-row-id] .max-w-none :not(pre) > code { font-size: 0.88em; }
   /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
-  ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed { font-size: calc(17px * var(--cf-ui-scale, 1)); line-height: 1.45; margin-right: calc(0.5rem * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
+    font-size: calc(17px * var(--cf-ui-scale, 1));
+    line-height: 1.5;
+    margin-right: calc(0.5rem * var(--cf-ui-scale, 1));
+    /* Roomier and rounder, like ChatGPT's bubble (kayg: "the blocks look so much better on ChatGPT"). */
+    padding: calc(12px * var(--cf-ui-scale, 1)) calc(18px * var(--cf-ui-scale, 1)) !important;
+    border-top-left-radius: calc(22px * var(--cf-ui-scale, 1)) !important;
+    border-top-right-radius: calc(22px * var(--cf-ui-scale, 1)) !important;
+    border-bottom-left-radius: calc(22px * var(--cf-ui-scale, 1)) !important;
+  }
+  /* Settings and other plain pages: the same side margin as the rest of the phone UI (bb: 8pt), and the content
+     fades out progressively under the header instead of being cut off at its edge. */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] div.mx-auto.px-4 { padding-inline: var(--cf-ph-side, 20px) !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 calc(1.75rem * var(--cf-ui-scale, 1)));
+    mask-image: linear-gradient(to bottom, transparent, #000 calc(1.75rem * var(--cf-ui-scale, 1)));
+  }
+  ${PLAIN_MAIN} header { border-bottom-color: transparent !important; }
   ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
   /* Code blocks like Claude's: 20pt corners, a 44pt header with the language in the text font (bb: tiny
      uppercase mono), a hairline under it, 16pt padding, 14.5pt code. bb's block: wrapper
@@ -965,6 +982,11 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
   ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row, .group\\/thread-row .text-sm) { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
   ${SIDEBAR} [data-cf-nav] > button svg { width: calc(20px * var(--cf-ui-scale, 1)) !important; height: calc(20px * var(--cf-ui-scale, 1)) !important; }
+  /* Like Claude's and ChatGPT's: a wide gap between the icon and the label (Claude: ~15pt; bb: 8), and the labels
+     at full strength (bb draws them in its dimmer sidebar ink). */
+  ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row) { gap: calc(14px * var(--cf-ui-scale, 1)) !important; }
+  ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row, .group\\/thread-row .truncate, .group\\/thread-row a) { color: var(--foreground) !important; }
+  ${R}.dark ${SIDEBAR.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); } /* bb's dark ink is 0.81: as the chat's, near-white */
   ${SIDEBAR} [data-sidebar="group-label"] {
     font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
     font-weight: 400 !important;
