@@ -159,38 +159,39 @@ function Chip({ memory }: { memory: TurnMemory }) {
   const label = chipLabel(memory);
   const card = memory.session.flatMap((i) => i.card ?? []);
   const items = memory.turn.flatMap((i) => i.items);
-  const sub = "text-2xs uppercase tracking-wide text-muted-foreground";
+  // Matches bb's own timeline rows (tool rows, "Thought", "Message from"): same type scale, ink and rhythm.
+  const sub = "text-xs text-muted-foreground";
   return (
-    <div className="my-1 max-w-full text-xs text-muted-foreground">
+    <div data-honcho-memory="" className="max-w-full">
       <button
         type="button"
         aria-expanded={open}
         title={open ? "hide what memory added" : "show what memory added"}
         onClick={() => setOpen((v) => !v)}
-        className="flex min-h-5 max-w-full items-start gap-1.5 rounded px-1 py-0.5 text-left text-2xs [overflow-wrap:anywhere] hover:bg-muted hover:text-foreground"
+        className="flex w-full max-w-full items-center justify-start gap-1 px-2 py-0 text-left text-sm leading-5 text-subtle-foreground [overflow-wrap:anywhere] hover:text-muted-foreground"
       >
-        <Icon name="Brain" aria-hidden="true" className="mt-px size-3 shrink-0" />
+        <Icon name="Brain" aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="min-w-0 break-words">{label}</span>
       </button>
       {open ? (
-        <div className="mt-1 space-y-2 rounded-md border border-border/60 px-2 py-1.5">
-          <p className="text-2xs">group: {GROUP_HINT}</p>
+        <div data-honcho-memory-body="" className="ml-2 mt-1 space-y-3 border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground">
+          <p className={sub}>group: {GROUP_HINT}</p>
           {card.length > 0 ? (
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               <p className={sub}>session memory</p>
-              <ul aria-label="session card" className="space-y-0.5">
-                {card.map((line, n) => <li key={n} className="break-words text-xs leading-snug text-foreground">{line}</li>)}
+              <ul aria-label="session card" className="space-y-1">
+                {card.map((line, n) => <li key={n} className="break-words">{line}</li>)}
               </ul>
             </div>
           ) : null}
           {items.length > 0 ? (
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               <p className={sub}>this turn</p>
-              <ul aria-label="memories" className="space-y-1.5">
+              <ul aria-label="memories" className="space-y-2">
                 {items.map((item, n) => (
-                  <li key={n} className="space-y-0.5">
-                    <p className="break-words text-xs leading-snug text-foreground">{item.content}</p>
-                    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs">
+                  <li key={n}>
+                    <p className="break-words">{item.content}</p>
+                    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs">
                       {item.date ? <span>{item.date}</span> : null}
                       {item.sourceThreadId ? <ThreadLink id={item.sourceThreadId} title={item.sourceTitle} /> : <span>{item.sourceTitle ?? "untitled chat"}</span>}
                     </p>
@@ -199,7 +200,7 @@ function Chip({ memory }: { memory: TurnMemory }) {
               </ul>
             </div>
           ) : null}
-          <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="text-2xs underline-offset-2 hover:text-foreground hover:underline">open memory</button>
+          <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="text-xs underline-offset-2 hover:text-foreground hover:underline">open memory</button>
         </div>
       ) : null}
     </div>
