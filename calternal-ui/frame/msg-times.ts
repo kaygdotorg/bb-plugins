@@ -8,8 +8,9 @@
  *     setting: bb builds its formatter before the plugin wraps Intl (clock.ts), so its times stayed
  *     12-hour. Only the text node's value is changed, so React keeps its node.
  *   - where bb renders none (your messages; agent replies on phones), a small <time data-cf-msg-time> is
- *     added: under your bubble, right-aligned; for agent replies, inside bb's own metadata slot (so it
- *     takes bb's styling and position). Times come from the plugin's RPC (times.ts, cached 30s).
+ *     added inside bb's own (hidden, empty) metadata slot of the message's actions row, so it takes bb's
+ *     styling and sits on one line with the actions (kayg: your message's time and actions were on two rows);
+ *     under the bubble, right-aligned, only for a message without an actions row. Times come from the plugin's RPC (times.ts, cached 30s).
  *
  * Cost: one MutationObserver, coalesced to one pass per frame; a pass is a query per message row (React
  * can drop our label when it re-renders a message, so presence is checked, not remembered), and times are
@@ -90,7 +91,9 @@ export function mountMsgTimes(): () => void {
       if (!meta && !bubble) continue; // not a message (tool groups, reasoning): nothing to time
       const at = times[key];
       if (!at) { missing = true; continue; }
-      if (bubble) {
+      // Into bb's metadata slot in the actions row when the row has one (agent replies, and your messages: kayg
+      // asked for the time and the actions on one row); under the bubble only when it doesn't.
+      if (bubble && !meta) {
         const line = document.createElement("div");
         line.setAttribute("data-cf-msg-time-row", "");
         line.append(label(at));

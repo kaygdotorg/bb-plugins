@@ -221,6 +221,8 @@ ${R} [data-cf-attach-strip] {
   scrollbar-width: none;
   margin-inline: -0.75rem;
   padding-inline: 0.75rem;
+  /* A little air between the draft's last line and the tiles (kayg: the text sat right on top of them). */
+  padding-top: 0.375rem;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
   mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
 }
@@ -899,13 +901,16 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${MAIN} [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto { padding-inline: calc(0.5rem * var(--cf-ui-scale, 1)) !important; }
   ${MAIN} [data-timeline-row-id] .max-w-none {
     font-size: calc(17px * var(--cf-ui-scale, 1));
-    /* ChatGPT's body (kayg's screenshots, 2026-11-16): 17pt on ~30pt lines, a blank line between paragraphs,
-       and SF's regular reads heavier than Figtree's: 1.72 and weight 430 here. */
-    line-height: 1.72;
+    /* Re-measured on kayg's iPhone 17 Pro Max screenshots (3x, 2026-11-16), line by line: ChatGPT sets 17pt on
+       24pt lines (1.41) with 16pt between paragraphs; Claude's serif ~27pt lines (1.5) with 18pt. Both put the
+       text ~16.7pt from the screen edge. The earlier 1.72 came from a paragraph pitch, not a line pitch, and read
+       airy and small next to them. 1.45 here (a sans a touch wider than SF), and SF's regular reads heavier
+       than Figtree's, so weight 430. */
+    line-height: 1.45;
     font-weight: 430;
   }
-  ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 1.15em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none li + li { margin-top: 0.3em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 0.95em; } /* 16pt */
+  ${MAIN} [data-timeline-row-id] .max-w-none li + li { margin-top: 0.25em; }
   ${MAIN} [data-timeline-row-id] .max-w-none :is(h1, h2, h3, h4) { font-weight: 650; line-height: 1.3; margin: 1.15em 0 0.45em; letter-spacing: -0.01em; }
   ${MAIN} [data-timeline-row-id] .max-w-none h1 { font-size: 1.4em; }
   ${MAIN} [data-timeline-row-id] .max-w-none h2 { font-size: 1.25em; }
@@ -916,7 +921,7 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
   ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed {
     font-size: calc(17px * var(--cf-ui-scale, 1));
-    line-height: 1.5;
+    line-height: 1.41; /* ChatGPT's bubble: 24pt lines */
     margin-right: calc(0.5rem * var(--cf-ui-scale, 1));
     /* Roomier and rounder, like ChatGPT's bubble (kayg: "the blocks look so much better on ChatGPT"). */
     padding: calc(12px * var(--cf-ui-scale, 1)) calc(18px * var(--cf-ui-scale, 1)) !important;
@@ -924,6 +929,8 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     border-top-right-radius: calc(22px * var(--cf-ui-scale, 1)) !important;
     border-bottom-left-radius: calc(22px * var(--cf-ui-scale, 1)) !important;
   }
+  /* The bubble's markdown is a .max-w-none too: without this the reading rule's line height won inside it. */
+  ${MAIN} [data-timeline-row-id*=":user-"] .rounded-xl.bg-surface-recessed .max-w-none { line-height: inherit; }
   /* Settings and other plain pages: the same side margin as the rest of the phone UI (bb: 8pt), and the content
      fades out progressively under the header instead of being cut off at its edge. */
   ${PLAIN_MAIN} [data-page-scroll-viewport] div.mx-auto.px-4 { padding-inline: var(--cf-ph-side, 20px) !important; }
@@ -932,7 +939,10 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     mask-image: linear-gradient(to bottom, transparent, #000 calc(1.75rem * var(--cf-ui-scale, 1)));
   }
   ${PLAIN_MAIN} header { border-bottom-color: transparent !important; }
+  /* Ink: near-white in dark (bb's 0.81) and near-black in light (bb's 0.32 read grey): ChatGPT's #0D0D0D and
+     Claude's #141413 (pixel-checked) are ~0.15-0.2. */
   ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
+  ${R}:not(.dark) ${MAIN.slice(R.length + 1)}, ${R}:not(.dark) ${SIDEBAR.slice(R.length + 1)} { --foreground: oklch(0.2 0 0); }
   /* Expandable rows (Ran N commands, Thought, Message from…) open and close at once on phones. bb animates their
      height (grid rows) and opacity; on a long thread that relaid the whole conversation below every frame, and on
      a phone the collapse showed a blank gap for ~150ms before the rest jumped up (kayg's recording). iOS lists
@@ -969,6 +979,17 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button { width: calc(32px * var(--cf-ui-scale, 1)) !important; height: calc(32px * var(--cf-ui-scale, 1)) !important; margin: 0 !important; }
   ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
   ${MAIN} [data-timeline-row-id] [data-message-action-metadata] { font-size: calc(13px * var(--cf-ui-scale, 1)) !important; }
+  /* GenUI cards' footer ("Copy as markdown", "Source"): bb-sized 11px text with 12px icons, 19pt tall, was the
+     smallest thing on screen (kayg). Here they match the message actions: 15pt text, 18pt icons, 32pt rows,
+     a 20pt gap, in the secondary grey. */
+  ${MAIN} [data-genui-fence] .not-prose > div:last-child:has(> button.text-\\[11px\\]) { gap: calc(20px * var(--cf-ui-scale, 1)) !important; margin-top: 0 !important; }
+  ${MAIN} [data-genui-fence] button.text-\\[11px\\] {
+    min-height: calc(32px * var(--cf-ui-scale, 1));
+    gap: calc(6px * var(--cf-ui-scale, 1)) !important;
+    font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
+    color: var(--muted-foreground) !important;
+  }
+  ${MAIN} [data-genui-fence] button.text-\\[11px\\] svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
   /* ── The drawer like Claude's and ChatGPT's (measured, 2026-11-15): about 75% of the screen wide (bb: 86%,
      max 360), rows 48pt with 17pt labels and 20pt icons (bb: 36–40, 15px, 14px icons), quiet 15pt section
      headers, and a neutral grey for the selected and pressed rows instead of the accent tint. bb sets its
