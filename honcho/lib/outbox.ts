@@ -182,6 +182,10 @@ export class Outbox {
   harnessSeenAt(thread: string): number | undefined {
     return (this.db.prepare("SELECT seen_at FROM harness_writes WHERE thread=?").get(thread) as { seen_at: number } | undefined)?.seen_at;
   }
+  /** Forgets the recorded harness write (a hand over explained it); only a later session build may switch the thread over. */
+  clearHarnessSeen(thread: string): void {
+    this.db.prepare("DELETE FROM harness_writes WHERE thread=?").run(thread);
+  }
   /** Pauses are inclusive ranges, closed or open at the end, checked when an item is about to be sent.
    * A thread pause is a seq range. Seqs are per thread, so a project pause is a range of time
    * (epoch ms) instead, applied to every thread in the project.

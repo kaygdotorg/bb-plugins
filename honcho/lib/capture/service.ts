@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { PluginThreadEventPayloads } from "@get-bb/plugin-sdk";
-import type { CaptureService, PrivacySettings, ThreadMemoryStatus } from "../contract.js";
+import type { CaptureService, HarnessState, PrivacySettings, ThreadMemoryStatus } from "../contract.js";
 import { HonchoError, seqRange, type Conclusion, type HonchoClient, type MessageDraft, type PeerConfig } from "../honcho-client.js";
 import { sessionMetadata } from "../mapping.js";
 import { GATE_VERSION, type InFlight, type RetryError, type SwitchOverMarker } from "../outbox.js";
@@ -45,10 +45,22 @@ export const PROBATION = "checking the old honcho plugin is quiet";
 const harnessSeen = (at: number) => `the old honcho plugin wrote at ${new Date(at).toISOString()} after the session rebuilt; capture waits for the next rebuild`;
 /** The thread a tripwire message names (see checkTripwire). */
 const tripwireThread = (message: string | null) => message?.match(/capturing thread (\S+)$/)?.[1];
+const HANDOVER_TTL_MS = 3 * 60_000;
+/** The harness a thread's provider uses, for hand-over state. */
+const harnessOf = (providerId: string): "claude" | "codex" | undefined => providerId === "claude-code" ? "claude" : providerId === "codex" ? "codex" : undefined;
+/** When a backup set's name says it was made: "000001-2026-11-15T10-00-00-000Z-handover". */
+const backupTime = (name: string): number => {
+  const m = name.match(/^\d+-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z-(.+)$/);
+  return m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`) : NaN;
+};
 
 const KV = {
   tripwireChecked: (t: string) => `capture:tripwire-checked:${t}`,
   tripwire: "capture:tripwire",
+  /** Which thread the tripwire names and when the harness wrote: {thread, at}. */
+  tripwireMeta: "capture:tripwire-meta",
+  /** Only a session build after this time (a hand over) may switch the thread over. */
+  regate: (t: string) => `capture:regate:${t}`,
   pendingDelete: (t: string) => `capture:pending-delete:${t}`,
   pendingDeletePrefix: "capture:pending-delete:",
 };
@@ -67,6 +79,8 @@ interface ThreadState {
   sessionReady: boolean;
   peers: Set<string>;
   gateScanSeq: number;
+  /** Builds at or before this (a hand over, after a cleared harness write) don't switch the thread over; undefined = not loaded. */
+  regateAt?: number | null;
   lastTurnCompleted: number;
   /** The gate scan's current span: since the newest client/turn/requested, was a session built
    * (client/thread/start, thread/identity) and was the input accepted into a running turn? */
@@ -152,6 +166,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   let authFailing = false;
   let tripwire: string | null = null;
   let disposed = false;
+  let unsubscribe: (() => void) | undefined;
   let booting: Promise<void> = Promise.resolve();
   let listening = false;
   /** This generation's lease owner id. A reload's new generation gets a new one. */
@@ -288,7 +303,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
    * client/thread/start or thread/identity and no turn/input/accepted came first. A build at or
    * before a time the harness was seen writing after an earlier build doesn't count. */
   async function findBuild(st: ThreadState, threadId: string): Promise<{ marker: number; seq: number; at: number } | undefined> {
-    const seenAt = outbox.harnessSeenAt(threadId) ?? -Infinity;
+    if (st.regateAt === undefined) st.regateAt = (await bb.storage.kv.get<number>(KV.regate(threadId))) ?? null;
+    const seenAt = Math.max(outbox.harnessSeenAt(threadId) ?? -Infinity, st.regateAt ?? -Infinity);
     const events = await readEvents(threadId, st.gateScanSeq, GATE_TYPES);
     for (const e of events) {
       st.gateScanSeq = e.seq;
@@ -354,7 +370,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (hit) {
       outbox.dropSwitchOver(id, hit.at);
       await bb.storage.kv.delete(KV.tripwireChecked(id));
-      await raiseTripwire(thread, hit.name, `probation failed: harness session "${hit.name}" wrote at ${new Date(hit.at).toISOString()}, after the session rebuilt at seq ${builtSeq}; nothing was uploaded, and capture waits for a newer rebuild`);
+      await raiseTripwire(thread, hit.name, `probation failed: harness session "${hit.name}" wrote at ${new Date(hit.at).toISOString()}, after the session rebuilt at seq ${builtSeq}; nothing was uploaded, and capture waits for a newer rebuild`, hit.at);
       st.blocked = harnessSeen(hit.at);
       return false;
     }
@@ -528,6 +544,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (thread.deletedAt !== null) { goneWhileDown(id); return; }
     st.thread = thread;
 
+    await applyHandover(st, thread);
     const startSeq = await gate(st, thread);
     if (startSeq === undefined) return;
     const settings = await privacy();
@@ -636,6 +653,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   /** Did a harness integration write a session for this thread at or after `since`? Returns the
    * first harness session found and when its newest message was created. */
   async function harnessWrite(thread: Thread, since: number): Promise<{ name: string; at: number } | null> {
+    // Writes before the hand over were explained by it: the old plugin was still installed then.
+    since = Math.max(since, (await handedOverAt(thread)) ?? -Infinity);
     const env = await facts.env(thread);
     const names = new Set<string>();
     for (const providerThreadId of outbox.providerThreads(thread.id)) {
@@ -651,9 +670,69 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     return null;
   }
 
-  async function raiseTripwire(thread: Thread, name: string, summary: string): Promise<void> {
-    tripwire = `harness session "${name}" is still capturing thread ${thread.id}`;
+  // ---------- hand over ----------
+
+  const handovers = new Map<string, { at: number; state: Promise<HarnessState | null> }>();
+  const handoverTtl = deps.handoverTtlMs ?? HANDOVER_TTL_MS;
+  /** The machine's harness state, cached for a few minutes; null when it can't be read. */
+  function machineState(hostId: string): Promise<HarnessState | null> {
+    const hit = handovers.get(hostId);
+    if (hit && clock.now() - hit.at < handoverTtl) return hit.state;
+    const state = deps.harnessState
+      ? deps.harnessState(hostId).then(s => s, () => { handovers.delete(hostId); return null; })
+      : Promise.resolve(null);
+    handovers.set(hostId, { at: clock.now(), state });
+    return state;
+  }
+  /** When the thread's harness was handed over on its machine (epoch ms); null when it isn't
+   * (or the state is unknown). Taken from the newest hand-over backup set's name. */
+  async function handedOverAt(thread: Thread): Promise<number | null> {
+    const harness = harnessOf(thread.providerId);
+    if (!harness || !deps.harnessState) return null;
+    let hostId: string | undefined;
+    try { hostId = (await facts.env(thread))?.hostId; } catch { return null; }
+    if (!hostId) return null;
+    const state = await machineState(hostId);
+    if (!state?.[harness].handedOver) return null;
+    const times = state.backups.filter(n => /-handover$/i.test(n)).map(backupTime).filter(Number.isFinite);
+    return times.length ? Math.max(...times) : (handovers.get(hostId)?.at ?? clock.now());
+  }
+  /** A handed-over harness can't be the writer any more: harness writes and a tripwire recorded
+   * before the hand over are cleared, and only a session build after it switches the thread over.
+   * Writes after it stay. */
+  async function applyHandover(st: ThreadState, thread: Thread): Promise<void> {
+    const at = await handedOverAt(thread);
+    if (at === null) return;
+    const id = thread.id;
+    const seen = outbox.harnessSeenAt(id);
+    const meta = await bb.storage.kv.get<{ thread: string; at: number }>(KV.tripwireMeta);
+    const tripped = meta?.thread === id && meta.at < at;
+    if (!(seen !== undefined && seen < at) && !tripped) return;
+    if (seen !== undefined && seen < at) outbox.clearHarnessSeen(id);
+    st.regateAt = Math.max(st.regateAt ?? -Infinity, at);
+    await bb.storage.kv.set(KV.regate(id), st.regateAt);
+    Object.assign(st, { gateScanSeq: 0, lastTurnCompleted: 0, span: { requested: false, built: false, accepted: false }, blocked: null });
+    deps.activity.record({ kind: "harness", threadId: id, summary: `the old ${harnessOf(thread.providerId)} honcho plugin was handed over at ${new Date(at).toISOString()}; its earlier writes no longer block this chat, and the next session build switches it over` });
+    if (tripped) await clearTripwireFor(id);
+    await bb.storage.kv.delete(KV.tripwireChecked(id));
+  }
+  /** Harness activity (a connect, hand over or undo) makes the cached state stale; threads that
+   * were blamed re-check. */
+  function handoverChanged(): void {
+    handovers.clear();
+    for (const id of outbox.knownThreads()) if (outbox.harnessSeenAt(id) !== undefined) schedule(id, 0);
+    void bb.storage.kv.get<{ thread: string }>(KV.tripwireMeta).then(meta => { if (meta) schedule(meta.thread, 0); }, () => undefined);
+  }
+
+  async function raiseTripwire(thread: Thread, name: string, summary: string, at: number): Promise<void> {
+    const harness = harnessOf(thread.providerId) ?? thread.providerId;
+    const chat = (thread as { title?: string | null }).title || thread.id;
+    const handed = typeof await handedOverAt(thread) === "number";
+    tripwire = handed
+      ? `the old ${harness} honcho plugin still saves chat ${chat} even after hand over on this machine; restart that chat or look for another honcho install (harness session "${name}")`
+      : `the old ${harness} honcho plugin is still saving chat ${chat}. hand over on this machine (Memory → connection) or restart that chat (harness session "${name}")`;
     await bb.storage.kv.set(KV.tripwire, tripwire);
+    await bb.storage.kv.set(KV.tripwireMeta, { thread: thread.id, at });
     deps.activity.record({ kind: "harness", threadId: thread.id, summary: `tripwire: ${summary}`, error: "tripwire" });
     bb.log.warn(`honcho capture: tripwire hit for ${thread.id}`);
   }
@@ -662,9 +741,11 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
    * thread has since passed its probation. */
   async function clearTripwireFor(threadId: string): Promise<void> {
     const stored = (await bb.storage.kv.get<string>(KV.tripwire)) ?? tripwire;
-    if (tripwireThread(stored) !== threadId) return;
+    const meta = await bb.storage.kv.get<{ thread: string }>(KV.tripwireMeta);
+    if ((meta?.thread ?? tripwireThread(stored)) !== threadId) return;
     tripwire = null;
     await bb.storage.kv.delete(KV.tripwire);
+    await bb.storage.kv.delete(KV.tripwireMeta);
     await bb.storage.kv.delete(KV.tripwireChecked(threadId));
     deps.activity.record({ kind: "harness", threadId, summary: "cleared the tripwire for this thread: it predates the stricter switch-over check, or the old honcho plugin has since been seen quiet" });
   }
@@ -676,7 +757,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   async function checkTripwire(thread: Thread, marker: number): Promise<void> {
     if (await bb.storage.kv.get(KV.tripwireChecked(thread.id))) return;
     const hit = await harnessWrite(thread, await switchedAt(thread.id, marker));
-    if (hit) await raiseTripwire(thread, hit.name, `harness session "${hit.name}" is still capturing thread ${thread.id}`);
+    if (hit) await raiseTripwire(thread, hit.name, `harness session "${hit.name}" is still capturing thread ${thread.id}`, hit.at);
     await bb.storage.kv.set(KV.tripwireChecked(thread.id), true);
   }
 
@@ -730,7 +811,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     // 404: the session never reached Honcho (deleted inside the grace window) or is already gone.
     try { await client.deleteSession(threadId); }
     catch (error) { if (!honchoNotFound(error)) throw error; }
-    for (const key of [KV.pendingDelete(threadId), scopeKey(threadId), KV.tripwireChecked(threadId)]) await bb.storage.kv.delete(key);
+    for (const key of [KV.pendingDelete(threadId), scopeKey(threadId), KV.tripwireChecked(threadId), KV.regate(threadId)]) await bb.storage.kv.delete(key);
     deps.activity.record({ kind: "delete", threadId, summary: settings.purgeConclusionsOnDelete
       ? `deleted the honcho session and ${purged} derived conclusion(s)${capped ? ` (scan capped at ${PURGE_SCAN_PAGES * 100} conclusions)` : ""}; the peer card may reflect this thread until it regenerates`
       : "deleted the honcho session" });
@@ -808,6 +889,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function stop(): void {
     if (disposed) return;
     disposed = true;
+    unsubscribe?.();
     for (const st of states.values()) if (st.timer !== undefined) clock.clearTimeout(st.timer);
     for (const timer of deleteTimers.values()) clock.clearTimeout(timer);
     // Leases of threads mid-upload are released when that upload stops (it checks before each POST).
@@ -816,6 +898,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function listen(): void {
     if (listening) return;
     listening = true;
+    unsubscribe = deps.activity.subscribe?.(e => { if (e.kind === "harness" && e.threadId === undefined) handoverChanged(); });
     const later = (event: { thread: Thread; sequence?: number }) => {
       if (disposed) return;
       if (typeof event.sequence === "number") { const st = state(event.thread.id); st.seenSeq = Math.max(st.seenSeq, event.sequence); }

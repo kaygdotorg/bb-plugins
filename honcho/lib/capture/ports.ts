@@ -4,7 +4,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import { posix } from "node:path";
-import type { Deps, PrivacySettings } from "../contract.js";
+import type { Deps, HarnessState, PrivacySettings } from "../contract.js";
 import { HonchoError, type Conclusion, type ConclusionFilters, type HonchoClient, type Message, type Metadata } from "../honcho-client.js";
 
 type Sdk = BbPluginApi["sdk"];
@@ -145,6 +145,10 @@ export interface CaptureDeps extends Deps {
    * session existed); the session cascade can't reach them, so purge deletes them by id. */
   unattachedConclusions?(threadId: string): string[];
   git?: GitInfoReader;
+  /** The harness service's state for a machine: whether claude/codex are handed over there (bound late in server.ts). */
+  harnessState?(machineId: string): Promise<HarnessState>;
+  /** How long a machine's hand-over state is trusted; harness activity refreshes it sooner. Default 3 min. */
+  handoverTtlMs?: number;
   clock?: Clock;
   random?: () => number;
   graceMs?: number;
