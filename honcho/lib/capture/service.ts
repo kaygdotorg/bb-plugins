@@ -705,8 +705,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (at === null) return;
     const id = thread.id;
     const seen = outbox.harnessSeenAt(id);
-    const meta = await bb.storage.kv.get<{ thread: string; at: number }>(KV.tripwireMeta);
-    const tripped = meta?.thread === id && meta.at < at;
+    // A tripwire raised before tripwire-meta existed has no meta: its text names the thread, and
+    // the recorded harness write (if any) says when the old plugin wrote.
+    const blame = await blamedThread();
+    const tripped = blame?.thread === id && (blame.at ?? seen ?? -Infinity) < at;
     if (!(seen !== undefined && seen < at) && !tripped) return;
     if (seen !== undefined && seen < at) outbox.clearHarnessSeen(id);
     st.regateAt = Math.max(st.regateAt ?? -Infinity, at);
@@ -716,12 +718,30 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (tripped) await clearTripwireFor(id);
     await bb.storage.kv.delete(KV.tripwireChecked(id));
   }
+  /** The thread the stored tripwire blames, and when its harness write was (when recorded). */
+  async function blamedThread(): Promise<{ thread: string; at?: number } | undefined> {
+    const meta = await bb.storage.kv.get<{ thread: string; at: number }>(KV.tripwireMeta);
+    if (meta) return meta;
+    const thread = tripwireThread((await bb.storage.kv.get<string>(KV.tripwire)) ?? tripwire);
+    return thread ? { thread } : undefined;
+  }
+  /** Re-checks every thread a harness write or the tripwire blames against the harness state. */
+  function recheckBlamed(): void {
+    for (const id of outbox.knownThreads()) if (outbox.harnessSeenAt(id) !== undefined) schedule(id, 0);
+    void blamedThread().then(blame => { if (blame) schedule(blame.thread, 0); }, () => undefined);
+  }
   /** Harness activity (a connect, hand over or undo) makes the cached state stale; threads that
    * were blamed re-check. */
   function handoverChanged(): void {
     handovers.clear();
-    for (const id of outbox.knownThreads()) if (outbox.harnessSeenAt(id) !== undefined) schedule(id, 0);
-    void bb.storage.kv.get<{ thread: string }>(KV.tripwireMeta).then(meta => { if (meta) schedule(meta.thread, 0); }, () => undefined);
+    recheckBlamed();
+  }
+  /** The blame is also re-checked at startup and every cache lifetime, so a hand over this plugin
+   * never heard about (another generation, the CLI, a restart) still clears it. */
+  let recheckTimer: unknown;
+  function armRecheck(): void {
+    if (disposed) return;
+    recheckTimer = clock.setTimeout(() => { recheckBlamed(); armRecheck(); }, handoverTtl);
   }
 
   async function raiseTripwire(thread: Thread, name: string, summary: string, at: number): Promise<void> {
@@ -872,6 +892,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   async function boot(signal?: AbortSignal): Promise<void> {
     tripwire = (await bb.storage.kv.get<string>(KV.tripwire)) ?? null;
+    recheckBlamed();
     for (const key of await bb.storage.kv.list(KV.pendingDeletePrefix)) void onDeleted(key.slice(KV.pendingDeletePrefix.length)).catch(() => undefined);
     await reconcileDeleted(signal).catch(error => bb.log.warn(`honcho capture: deletion check failed: ${(error as Error).name}`));
     for (const marker of outbox.inFlight()) schedule(marker.thread, 0);
@@ -890,6 +911,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (disposed) return;
     disposed = true;
     unsubscribe?.();
+    if (recheckTimer !== undefined) clock.clearTimeout(recheckTimer);
     for (const st of states.values()) if (st.timer !== undefined) clock.clearTimeout(st.timer);
     for (const timer of deleteTimers.values()) clock.clearTimeout(timer);
     // Leases of threads mid-upload are released when that upload stops (it checks before each POST).
@@ -898,6 +920,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function listen(): void {
     if (listening) return;
     listening = true;
+    armRecheck();
     unsubscribe = deps.activity.subscribe?.(e => { if (e.kind === "harness" && e.threadId === undefined) handoverChanged(); });
     const later = (event: { thread: Thread; sequence?: number }) => {
       if (disposed) return;

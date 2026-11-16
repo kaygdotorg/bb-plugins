@@ -305,4 +305,33 @@ describe("hand over", () => {
     await pass(svc, 1_000);
     expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
   });
+
+  it("clears a live-shaped stale tripwire at startup: old-format text, no tripwire-meta, a harness write before the hand over", async () => {
+    oldSession("thr_live", "codex");
+    const wroteAt = clock.now() + 1_000;
+    const handedAt = wroteAt + 60_000;
+    // Exactly what hd01 holds: the old message format, no capture:tripwire-meta, and a harness_writes row.
+    fake.kv.set(TRIPWIRE, 'harness session "prov_fixture-01a1da4c" is still capturing thread thr_live');
+    const outbox = new Outbox(fake.db);
+    fake.db.prepare("INSERT INTO harness_writes VALUES (?,?)").run("thr_live", wroteAt);
+    clock.advance(120_000);
+    const { svc } = service({ outbox, harnessState: async () => state(true, handedAt) });
+    expect(fake.kv.has("capture:tripwire-meta")).toBe(false);
+    await svc.reconcile(); await pass(svc);
+    expect((await svc.health()).tripwire).toBeNull();
+    expect(fake.kv.has(TRIPWIRE)).toBe(false);
+    expect(outbox.harnessSeenAt("thr_live")).toBeUndefined();
+  });
+
+  it("re-checks a blamed thread periodically, so a hand over done elsewhere clears it", async () => {
+    const { svc, outbox } = withHarness();
+    await tripped(svc);
+    expect((await svc.health()).tripwire).not.toBeNull();
+    clock.advance(1_000);
+    handed = { on: true, at: clock.now() - 500 }; // no harness activity entry reaches this plugin
+    clock.advance(4 * 60_000);
+    await svc.flushNow(); await pass(svc);
+    expect((await svc.health()).tripwire).toBeNull();
+    expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
+  });
 });
