@@ -72,6 +72,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     unattachedConclusions: threadId => (recallForPurge?.conclusionsForThread(threadId) ?? []).filter(c => !c.attached).map(c => c.id),
   });
 
+  const codexHandedOverHosts = new Set<string>();
   // 3. Recall. The service creates the store the tools share, so it comes first.
   // One scope resolver: recall searches the scope capture created the session in.
   const recall = createRecallService(bb, { ...deps, recall: {
@@ -82,6 +83,8 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     isDenied: thread => capture.isDenied(thread),
     // bb-secrets values are redacted from search queries, cached memory and honcho_conclude.
     secretValues,
+    // After "hand over" on a host, codex has no honcho MCP left, so it gets bb's tools there.
+    codexHandedOver: hostId => codexHandedOverHosts.has(hostId ?? ""),
   } });
   recallForPurge = recall;
   registerTools(bb, deps);
@@ -91,6 +94,21 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   // 4. Harness, and its env resolvers (BB_HONCHO, HONCHO_CONFIG_*, the recall dir, the hook budget).
   const call: HarnessCaller = (op, input, hostId) => host.call(op, input as never, { hostId }) as never;
   const harness = createHarnessService(bb, { activity: deps.activity, call });
+  // Hosts where codex is handed over (sync for configure). Refreshed at start, every 2 min, and on harness activity.
+  const refreshHandedOver = async () => {
+    try {
+      const hosts = await bb.sdk.hosts.list();
+      for (const h of hosts as Array<{ id: string }>) {
+        const state = await harness.state(h.id).catch(() => null);
+        if (!state) continue;
+        if (state.codex.handedOver) codexHandedOverHosts.add(h.id); else codexHandedOverHosts.delete(h.id);
+      }
+    } catch { /* keep the last answer */ }
+  };
+  void refreshHandedOver();
+  const handedOverTimer = setInterval(() => void refreshHandedOver(), 120_000);
+  bb.onDispose(() => clearInterval(handedOverTimer));
+  bb.onDispose(deps.activity.subscribe(e => { if (e.kind === "harness") void refreshHandedOver(); }));
   registerProviderEnv(bb, { activity: deps.activity, call, hookBudgetMs: view.hookBudgetMs });
   registerAcpProviderEnv(bb);
 

@@ -79,6 +79,12 @@ describe("configure", () => {
     expect(toolNames(await resolve(on, ctx({ provider: { id: "codex" } })))).toEqual([...HONCHO_TOOL_NAMES].sort());
   });
 
+  it("gives codex bb's tools on a host where codex is handed over", async () => {
+    const s = await make({ ports: { codexHandedOver: (hostId: string | null) => hostId === "host_ho" } });
+    expect(toolNames(await resolve(s, ctx({ provider: { id: "codex" }, host: { id: "host_ho" } } as never)))).toEqual([...HONCHO_TOOL_NAMES].sort());
+    expect(toolNames(await resolve(s, ctx({ provider: { id: "codex" }, host: { id: "host_other" } } as never)))).toEqual([]);
+  });
+
   it("serves the last data marked stale when Honcho goes offline", async () => {
     const s = await make({ ports: { peerCard: async () => ["Name: Sam"] } });
     await resolve(s);

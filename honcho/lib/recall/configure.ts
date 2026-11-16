@@ -28,7 +28,8 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
   // configure is sync: the shared redactor (async) is kept from the previous call; the first falls back to built-in patterns.
   let redactNow: (text: string) => string = text => redact(text).text;
   bb.agents.configure((ctx): PluginAgentConfiguration => {
-    const tools = selectTools(ctx.provider.id, settings.codexUseBbTools());
+    const hostId = (ctx as { host?: { id?: string | null } }).host?.id ?? null;
+    const tools = selectTools(ctx.provider.id, settings.codexUseBbTools() || deps.recall?.codexHandedOver?.(hostId) === true);
     let instructions: string | undefined;
     const withNote = (memory?: string): PluginAgentConfiguration => {
       const text = tools.length ? (memory ? `${TOOLS_NOTE}\n\n${memory}` : TOOLS_NOTE) : memory;

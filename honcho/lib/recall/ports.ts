@@ -9,6 +9,8 @@ import type { ThreadRef } from "../capture/scope.js";
  * optional: a default built on the slice-1 client is used when absent.
  */
 export interface RecallPorts {
+  /** Whether codex is handed over to bb on this host (sync, cached by the caller). */
+  codexHandedOver?(hostId: string | null): boolean;
   /** Peer card lines. Default: the client's `getPeerCard` if present, else the
    * unscoped `peers/{id}/representation` split into lines (never `chat`). */
   peerCard?(client: HonchoClient, peer: string): Promise<string[] | null>;
