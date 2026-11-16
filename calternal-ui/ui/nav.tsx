@@ -26,8 +26,9 @@ function IconSlot({ children }: { children: React.ReactNode }) {
 }
 
 const rowClass = (active: boolean) =>
-  // pl-[8px]: bb pads thread rows by a fixed 8px, not by the (scaled) spacing unit.
-  `flex h-6 w-full min-w-0 items-center gap-2 rounded-md pl-[8px] pr-2 text-left text-sm transition-colors ${
+  // pl-[8px]: bb pads thread rows by a fixed 8px, not by the (scaled) spacing unit. The height is bb's own
+  // thread-row height (31px desktop; kayg 2026-11-16: the top items were 26px, tighter than the threads below).
+  `flex h-[var(--bb-sidebar-row-height)] max-md:pointer-coarse:h-[var(--bb-sidebar-row-height-coarse)] w-full min-w-0 items-center gap-2 rounded-md pl-[8px] pr-2 text-left text-sm transition-colors ${
     active
       ? "bg-accent text-accent-foreground"
       : "text-sidebar-foreground hover:bg-accent/60 hover:text-foreground" // the thread rows' colour
@@ -88,7 +89,7 @@ export function ChatNavigation() {
   );
 
   return (
-    <nav data-cf-nav="" aria-label="BB navigation" className="flex flex-col px-2 py-1">
+    <nav data-cf-nav="" aria-label="BB navigation" className="flex flex-col gap-0.5 px-2 py-1">{/* gap: the threads' 2px between rows */}
       <button
         type="button"
         className={rowClass(isHomeActive)}
