@@ -152,13 +152,18 @@ describe("v3 REST client", () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     await client.searchWorkspace({ query: "q" }); expect(timeout).toHaveBeenCalledWith(8000);
   });
+  it("gives a scoped representation 30 s", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await client.peerRepresentation("hermy", { scope: "repo" });
+    expect(timeout).toHaveBeenLastCalledWith(30_000);
+  });
   it("gives chat 60 s and reports a timeout as its own kind, never offline, without retrying", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     await client.peerChat("peer", { query: "q" }); expect(timeout).toHaveBeenLastCalledWith(60_000);
     await client.workspaceChat({ query: "q" }); expect(timeout).toHaveBeenLastCalledWith(60_000);
     await client.searchPeer("peer", { query: "q" }); expect(timeout).toHaveBeenLastCalledWith(8000);
     await client.listConclusions(); expect(timeout).toHaveBeenLastCalledWith(8000);
-    await client.peerRepresentation("peer"); expect(timeout).toHaveBeenLastCalledWith(8000);
+    await client.peerRepresentation("peer"); expect(timeout).toHaveBeenLastCalledWith(30_000);
     const slow = vi.fn<typeof fetch>().mockRejectedValue(new DOMException("timed out", "TimeoutError"));
     const c = new HonchoClient({ baseUrl: mock.baseUrl, workspace: "test", fetch: slow });
     await expect(c.peerChat("peer", { query: "q" })).rejects.toMatchObject({ kind: "timeout", timeoutMs: 60_000 });
