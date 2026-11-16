@@ -81,3 +81,63 @@ describe("redaction", () => {
     expect(dotenvSecretValues('# comment\nexport KEY="value with spaces"\nTOKEN=abc # note\nPATH=\'$(echo nope)\'\nEMPTY=')).toEqual(["value with spaces", "abc", "$(echo nope)"]);
   });
 });
+
+describe("natural-language secrets: wifi, door codes, recovery material, ssn, cards", () => {
+  const secretOf = (text: string, value: string) => {
+    const r = redact(text);
+    expect(r.text).not.toContain(value);
+    expect(r.text).toContain(REDACTED);
+    return r;
+  };
+  it.each([
+    ["my wi-fi code is FAKE-WIFI-ritaSecret77", "FAKE-WIFI-ritaSecret77", "my wi-fi code is "],
+    ["wifi password: Synth3ticPass", "Synth3ticPass", "wifi password: "],
+    ["the door code is 48213", "48213", "the door code is "],
+    ["access code = 90417", "90417", "access code = "],
+    ["Security code: 7731-A", "7731-A", "Security code: "],
+    ["my passphrase is correct-horse-9", "correct-horse-9", "my passphrase is "],
+    ["otp is 482913", "482913", "otp is "],
+    ["your 2fa code is 559120.", "559120", "your 2fa code is "],
+    ["recovery code: ABCD-1234-EFGH", "ABCD-1234-EFGH", "recovery code: "],
+    ["my ssn is 078-05-1120", "078-05-1120", "my ssn is "],
+    ["credit card: 4111 1111 1111 1111", "4111 1111 1111 1111", "credit card: "],
+  ])("redacts only the value in %s", (text, value, keep) => {
+    const r = secretOf(text, value);
+    expect(r.text.startsWith(keep + REDACTED)).toBe(true);
+  });
+  it("redacts every backup code in a list", () => {
+    const r = secretOf("backup codes: 1234-5678, 8765-4321 and 1122-3344 saved", "8765-4321");
+    expect(r.text).toBe(`backup codes: ${REDACTED} saved`);
+    expect(r.text).not.toMatch(/1234|1122/);
+  });
+  it("redacts a seed phrase, but not the words around it", () => {
+    const r = redact("my seed phrase is apple river mountain lantern orbit velvet candle. Thanks");
+    expect(r.text).toBe(`my seed phrase is ${REDACTED}. Thanks`);
+    expect(r.text).not.toContain("apple");
+    expect(redact('seed phrase: "alpha bravo charlie"').text).toBe(`seed phrase: ${REDACTED}`);
+  });
+  it.each([
+    "the wifi code field is required", "the wifi code is required", "the wifi password is posted on the router",
+    "the door code is on the fridge", "the security code is optional", "the access code is printed",
+    "seed phrase is required", "my seed phrase is safe", "the otp is expired", "2fa code is sent by sms",
+    "recovery code is shown once", "backup codes are stored offline", "ssn is required", "credit card is declined",
+    "the code is 1234", "the key is Foo1", "the passphrase is optional",
+    "ticket 123-45-678 and 000-12-3456, 666-12-3456, 912-34-5678", "order 4111 1111 1111 1112",
+    "ts 1731700000000 and 1234567890123456", "id 4242-4242-4242-4243",
+  ])("keeps the false-positive %s", text => expect(redact(text)).toEqual({ text, count: 0 }));
+  it("masks Luhn-valid card numbers in all common layouts, and only those", () => {
+    for (const [card, label] of [["4111111111111111", "visa"], ["5555 5555 5555 4444", "mc"], ["3782-822463-10005", "amex-dash"], ["378282246310005", "amex"], ["6011 1111 1111 1117", "discover"]]) {
+      const r = redact(`paid with ${card} today`);
+      expect(r, label).toEqual({ text: `paid with ${REDACTED} today`, count: 1 });
+    }
+  });
+  it("masks a US ssn and not look-alikes", () => {
+    expect(redact("ssn 123-45-6789 ok")).toEqual({ text: `ssn ${REDACTED} ok`, count: 1 });
+    expect(redact("record 123-45-6789 is on file").text).toBe(`record ${REDACTED} is on file`);
+    for (const text of ["000-12-3456", "666-12-3456", "900-12-3456", "123-00-4567", "123-45-0000", "2026-11-15", "1234-56-7890"]) expect(redact(text).count).toBe(0);
+  });
+  it("leaves postal addresses alone", () => {
+    const text = "I live at 221 Baker Street, London NW1 6XE, flat 4";
+    expect(redact(text)).toEqual({ text, count: 0 });
+  });
+});
