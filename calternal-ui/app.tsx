@@ -2,6 +2,7 @@
  * App entry: registers the plugin's surfaces with bb. Logic lives in frame/ (styling bb's
  * shell) and ui/ (React components); shapes live in shared/contract.ts.
  */
+import "./frame/sidebar-overscan"; // first: widens bb's sidebar windowing before its list builds its observer
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { mountFrame } from "./frame/mount";
 import { ChatNavigation } from "./ui/nav";
