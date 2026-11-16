@@ -12,7 +12,7 @@
  * / `[data-panel]` inside it. Everything is gated on `html[data-calternal-ui]`
  * so removing that attribute restores bb exactly.
  */
-import { PILL_CSS } from "./pills";
+import { GLASS_LAYER, PILL_CSS } from "./pills";
 import { PILL_SIDEBAR_CSS } from "./pills-sidebar";
 import { PILL_COMPOSER_CSS } from "./pills-composer";
 import { PILL_PHONE_CSS } from "./pills-phone";
@@ -230,6 +230,10 @@ ${R} [data-cf-attach-strip] {
   mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
 }
 ${R} [data-cf-attach-strip]::-webkit-scrollbar { display: none; }
+/* Tiles concentric with the composer (audit #29): the composer's corner (26pt phone, expanded) less the 12pt the
+   tiles sit inside its edge = 14, which is --cf-radius (bb: rounded-md, 8). */
+${R} [data-cf-attach-strip] button[aria-label]:has(> img),
+${R} [data-cf-attach-strip] button[aria-label] > img { border-radius: var(--cf-radius) !important; }
 ${R} [data-cf-attach-strip] > * { flex: none; scroll-snap-align: start; }
 ${R} { accent-color: var(--cf-accent); caret-color: var(--cf-accent); }
 
@@ -389,8 +393,29 @@ ${R} [data-app-composer] section.bg-surface-raised-solid {
   backdrop-filter: var(--cf-glass-blur);
   border-color: var(--cf-edge) !important;
 }
-/* Mention pills (thread titles, prompts): a faint tint instead of a solid white chip. */
-${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%, transparent) !important; border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important; }
+/* Mention pills (thread titles, prompts): a faint tint instead of a solid white chip, the same chip as inline
+   code (7% ink, no edge, no shadow: bb's pill shadow and border drew a second outline on glass; audit #27). */
+${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%, transparent) !important; border-color: transparent !important; box-shadow: none !important; }
+
+/* Scroll to latest: a glass circle like the header pills (audit #3), 36pt on desktop and 44pt on phones with the
+   pill glyph (16 / 20). bb's is a 32pt bordered disc in bg-background, which is clear inside the card, so it was
+   an outline floating over the text. */
+${R} main button[aria-label="Scroll to latest event"] {
+  position: relative;
+  isolation: isolate;
+  width: var(--cf-pill) !important;
+  height: var(--cf-pill) !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--foreground);
+}
+${R} main button[aria-label="Scroll to latest event"]::before {
+${GLASS_LAYER}}
+${R} main button[aria-label="Scroll to latest event"] :is(svg, span.size-4) { width: var(--cf-pill-icon) !important; height: var(--cf-pill-icon) !important; }
+/* Desktop menus: 16px glyphs, the pill glyph (bb's size-4 is 1rem: 17.6px at the plugin's 110% root; audit #26). */
+@media (min-width: 768px) {
+  ${R} :is([role="menu"], [role="listbox"]) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]) > :is(svg, [data-icon-root]) { width: var(--cf-pill-icon) !important; height: var(--cf-pill-icon) !important; }
+}
 
 /* Composer (frame/composer.ts): bb's row under the composer is pinned into its bottom row,
    right after the model button, as icons; collapsed composers show one line only. */
@@ -905,7 +930,9 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
      ~1.55 line height, ~0.85em between paragraphs, text 16pt from the screen edges (bb: 15px, 24pt), headings
      a step larger than the body (bb's h3 was body-sized), and near-white text in dark (bb's measured 0.81). */
   ${MAIN} [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto { padding-inline: calc(0.5rem * var(--cf-ui-scale, 1)) !important; }
-  ${MAIN} [data-timeline-row-id] .max-w-none {
+  /* Not the one-line preview of an agent message ("Message from <thread>: …"): bb renders it as the same markdown
+     root plus its inline classes ([&_p]:inline …) inside a 15pt row, where 17pt text stood out (audit #2). */
+  ${MAIN} [data-timeline-row-id] .max-w-none:not([class*="_p]:inline"]) {
     font-size: calc(17px * var(--cf-ui-scale, 1));
     /* Re-measured on kayg's iPhone 17 Pro Max screenshots (3x, 2026-11-16), line by line: ChatGPT sets 17pt on
        24pt lines (1.41) with 16pt between paragraphs; Claude's serif ~27pt lines (1.5) with 18pt. Both put the
@@ -917,11 +944,13 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
   ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 0.95em; } /* 16pt */
   ${MAIN} [data-timeline-row-id] .max-w-none li + li { margin-top: 0.25em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none :is(h1, h2, h3, h4) { font-weight: 650; line-height: 1.3; margin: 1.15em 0 0.45em; letter-spacing: -0.01em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none h1 { font-size: 1.4em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none h2 { font-size: 1.25em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none h3 { font-size: 1.1em; }
-  ${MAIN} [data-timeline-row-id] .max-w-none h4 { font-size: 1em; }
+  /* The message's own headings only (direct children): GenUI cards' titles are h3s deeper inside, with their own
+     sizes, and the descendant form restyled them to 16.5pt/650 (audit #11). */
+  ${MAIN} [data-timeline-row-id] .max-w-none > :is(h1, h2, h3, h4) { font-weight: 650; line-height: 1.3; margin: 1.15em 0 0.45em; letter-spacing: -0.01em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > h1 { font-size: 1.4em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > h2 { font-size: 1.25em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > h3 { font-size: 1.1em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > h4 { font-size: 1em; }
   ${MAIN} [data-timeline-row-id] .max-w-none > :is(h1, h2, h3, h4):first-child { margin-top: 0; }
   ${MAIN} [data-timeline-row-id] .max-w-none :not(pre) > code { font-size: 0.88em; }
   /* Your bubbles read at the same size, their edge on the same 16pt line as the text (the tail hangs into the margin). */
@@ -980,13 +1009,30 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     line-height: 1.35 !important;
   }
   /* Message actions like Claude's: 18pt icons in 32pt buttons (bb: 12pt icons in 20pt buttons), 32pt apart,
-     the first icon on the text's edge. */
-  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full { height: calc(32px * var(--cf-ui-scale, 1)) !important; margin-top: calc(4px * var(--cf-ui-scale, 1)); }
-  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child { gap: 0 !important; margin-left: calc(-1px * var(--cf-ui-scale, 1)); }
-  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child :is(span, div) { gap: 0 !important; }
-  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button { width: calc(32px * var(--cf-ui-scale, 1)) !important; height: calc(32px * var(--cf-ui-scale, 1)) !important; margin: 0 !important; }
-  ${MAIN} [data-timeline-row-id] [data-message-column] > .relative.w-full > div > div:first-child button svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
+     the first icon on the text's edge. Your messages' row too (bb: 16pt icons in 28pt buttons; audit #5): it is
+     .group/message > div > .relative.w-full there, right-aligned under the bubble, with the time BEFORE the
+     buttons (so the button group is "not the metadata", not "the first child"). */
+  ${MAIN} [data-timeline-row-id] :is([data-message-column], [data-timeline-row-id*=":user-"] .group\\/message > div) > .relative.w-full { height: calc(32px * var(--cf-ui-scale, 1)) !important; margin-top: calc(4px * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id] :is([data-message-column], [data-timeline-row-id*=":user-"] .group\\/message > div) > .relative.w-full > div > div:not([data-message-action-metadata]) { gap: 0 !important; margin-left: calc(-1px * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id] :is([data-message-column], [data-timeline-row-id*=":user-"] .group\\/message > div) > .relative.w-full > div > div:not([data-message-action-metadata]) :is(span, div) { gap: 0 !important; }
+  ${MAIN} [data-timeline-row-id] :is([data-message-column], [data-timeline-row-id*=":user-"] .group\\/message > div) > .relative.w-full > div > div:not([data-message-action-metadata]) button { width: calc(32px * var(--cf-ui-scale, 1)) !important; height: calc(32px * var(--cf-ui-scale, 1)) !important; margin: 0 !important; }
+  ${MAIN} [data-timeline-row-id] :is([data-message-column], [data-timeline-row-id*=":user-"] .group\\/message > div) > .relative.w-full > div > div:not([data-message-action-metadata]) button svg { width: calc(18px * var(--cf-ui-scale, 1)) !important; height: calc(18px * var(--cf-ui-scale, 1)) !important; }
+  /* Your row's last glyph ends on the bubble's right edge (bb places the row right-[11px], which left it 10pt short
+     at 32pt buttons; the bubble ends 8pt in, its glyph 7pt inside the button). */
+  ${MAIN} [data-timeline-row-id*=":user-"] .group\\/message > div > .relative.w-full > div.absolute { right: calc(1px * var(--cf-ui-scale, 1)) !important; }
   ${MAIN} [data-timeline-row-id] [data-message-action-metadata] { font-size: calc(13px * var(--cf-ui-scale, 1)) !important; }
+  /* Your message's row under the bubble: the Steer badge sat 8pt right of the bubble (bb's row has no margin, the
+     bubble has the 0.5rem one) and at 14pt; now on the bubble's edge, 13pt like the time (audit #6, #7). */
+  ${MAIN} [data-timeline-row-id*=":user-"] div.mb-1.flex.justify-end { margin-right: calc(0.5rem * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id*=":user-"] div.mb-1.flex.justify-end > span { font-size: calc(13px * var(--cf-ui-scale, 1)) !important; line-height: calc(18px * var(--cf-ui-scale, 1)) !important; }
+  ${MAIN} [data-timeline-row-id*=":user-"] [data-cf-msg-time] { font-size: calc(13px * var(--cf-ui-scale, 1)); line-height: calc(18px * var(--cf-ui-scale, 1)); }
+  /* Tool rows ("Ran 3 commands", "Explored …", "Thought", honcho's "from honcho …"): one 32pt row (the message
+     actions' height; bb: 20pt, which stacked tight next to 32pt action rows) with the text, or a leading icon, on
+     the 16pt text edge (honcho's icon sat 8pt further in) (audit #13, #25). */
+  ${MAIN} [data-timeline-row-id] :is(.group\\/timeline-row > button[aria-expanded], [data-honcho-memory] > button) { min-height: calc(32px * var(--cf-ui-scale, 1)); }
+  ${MAIN} [data-timeline-row-id] [data-honcho-memory] > button { padding-inline: 0 !important; }
+  ${MAIN} [data-timeline-row-id] .group\\/timeline-row > button[aria-expanded] > svg:last-child { width: calc(14px * var(--cf-ui-scale, 1)); height: calc(14px * var(--cf-ui-scale, 1)); }
+  /* Menus as iOS draws them (audit #8): the phone ⋯ menu (an anchored drawer, phone-menu.ts) and every bottom sheet
   /* GenUI cards' footer ("Copy as markdown", "Source"): bb-sized 11px text with 12px icons, 19pt tall, was the
      smallest thing on screen (kayg). Here they match the message actions: 15pt text, 18pt icons, 32pt rows,
      a 20pt gap, in the secondary grey. */
@@ -1064,6 +1110,16 @@ function cardInterior(scope: string): string {
   /* Subject form (the content div itself, when the actions row follows it): a sibling-combinator :has() before
      the styled element would be non-subject (see marks.ts). */
   ${scope} [data-timeline-row-id] div:has(> .max-w-none):has(+ .relative.w-full) { margin-bottom: 0.5rem; }
+  /* Bold is semibold (600), as ChatGPT's and Claude's (bb: 700, which next to the 430 phone body read as a
+     different face). Inline code: a 6px corner and a faint ink fill, no border (one chip look, like the mention
+     pill's tint), so it reads as a token in both themes (audit #20, #21). */
+  ${scope} [data-timeline-row-id] .max-w-none :is(strong, b) { font-weight: 600; }
+  ${scope} [data-timeline-row-id] .max-w-none :not(pre) > code {
+    border-radius: 6px !important;
+    border-color: transparent !important;
+    background: color-mix(in oklab, var(--foreground) 7%, transparent) !important;
+    padding: 0.1em 0.35em !important;
+  }
   /* Light mode: the header's icon buttons are bb's grey at 75%, too faint on the light card. */
   ${scope}:where(html:not(.dark) *) header button { color: color-mix(in oklab, var(--foreground) 82%, transparent); }
   /* Finished tool rows ("Ran 3 commands"): bb shows them in its subtle colour at 40% opacity,
