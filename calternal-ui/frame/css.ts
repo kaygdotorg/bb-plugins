@@ -933,6 +933,11 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
   ${PLAIN_MAIN} header { border-bottom-color: transparent !important; }
   ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
+  /* Expandable rows (Ran N commands, Thought, Message from…) open and close at once on phones. bb animates their
+     height (grid rows) and opacity; on a long thread that relaid the whole conversation below every frame, and on
+     a phone the collapse showed a blank gap for ~150ms before the rest jumped up (kayg's recording). iOS lists
+     disclose instantly too. */
+  ${MAIN} [data-timeline-row-id] :is([class*="transition-[grid-template-rows,opacity]"], [class*="transition-[transform,opacity]"]) { transition: none !important; }
   /* Code blocks like Claude's: 20pt corners, a 44pt header with the language in the text font (bb: tiny
      uppercase mono), a hairline under it, 16pt padding, 14.5pt code. bb's block: wrapper
      .overflow-hidden.rounded-md.border.bg-surface-recessed > header .justify-between + pre.bb-code-highlight. */

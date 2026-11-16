@@ -74,9 +74,13 @@ export function mountMsgTimes(): () => void {
     if (disposed) return;
     const id = threadId();
     if (!id) return;
-    if (id !== timesFor) { times = {}; timesFor = id; fetchedAt = 0; }
+    if (id !== timesFor) { times = {}; timesFor = id; fetchedAt = 0; dirty = "all"; }
+    // Only the rows that changed since the last pass (a full scan of a long thread on every mutation cost a
+    // phone frames while bb expanded or collapsed a block); everything after a thread change or new times.
+    const rows = dirty === "all" ? [...document.querySelectorAll<HTMLElement>(ROW)] : [...dirty].filter((r) => r.isConnected);
+    dirty = new Set();
     let missing = false;
-    for (const row of document.querySelectorAll<HTMLElement>(ROW)) {
+    for (const row of rows) {
       const key = row.getAttribute("data-timeline-row-id") ?? "";
       const meta = row.querySelector<HTMLElement>(META);
       const own = meta?.querySelector<HTMLTimeElement>("time:not([data-cf-msg-time])");
@@ -105,6 +109,7 @@ export function mountMsgTimes(): () => void {
         fetching = false;
         if (disposed || threadId() !== id) return;
         times = next;
+        dirty = "all";
         schedule();
         // The first call can come before the overlay registered the RPC loader ({}): try again soon,
         // without waiting for the page to change.
@@ -115,7 +120,24 @@ export function mountMsgTimes(): () => void {
   const schedule = () => { if (!frame && !disposed) frame = requestAnimationFrame(pass); };
 
   // Rows arrive and re-render under the page; the body observer is coalesced to one pass per frame.
-  const observer = new MutationObserver(schedule);
+  /** Rows touched since the last pass, or "all". */
+  let dirty: Set<HTMLElement> | "all" = "all";
+  const observer = new MutationObserver((records) => {
+    if (dirty !== "all") {
+      for (const r of records) {
+        const target = r.target instanceof Element ? r.target : r.target.parentElement;
+        const row = target?.closest<HTMLElement>(ROW);
+        if (row) dirty.add(row);
+        for (const n of r.addedNodes) {
+          if (!(n instanceof Element)) continue;
+          if (n.matches(ROW)) dirty.add(n as HTMLElement);
+          else if (!row) n.querySelectorAll<HTMLElement>(ROW).forEach((x) => (dirty as Set<HTMLElement>).add(x));
+        }
+      }
+      if (!dirty.size) return;
+    }
+    schedule();
+  });
   observer.observe(document.body, { childList: true, subtree: true });
   schedule();
 
