@@ -103,8 +103,13 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
     async threadContext(threadId) {
       const scope = shared.scopes.known(threadId);
       let stale = false;
-      if (scope && cache.want(scope)) { await cache.refresh().catch(() => { stale = true; }); }
-      else if (!cache.hasData()) { await cache.refresh().catch(() => { stale = true; }); }
+      // Never block the card on a refresh (representation can take ~30 s on a slow server): wait a
+      // short moment for a first fill, then serve what's cached and let the refresh land on its own.
+      const wanted = (scope && cache.want(scope)) || !cache.hasData();
+      if (wanted) {
+        const refreshing = cache.refresh().catch(() => { stale = true; });
+        await Promise.race([refreshing, new Promise(r => setTimeout(r, 1_500))]);
+      }
       const snap = cache.snapshot();
       stale ||= snap.stale;
       const top = scope ? views(snap.scopes.get(scope)?.conclusions ?? []) : [];
