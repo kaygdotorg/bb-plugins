@@ -171,6 +171,43 @@ ${edgeFadeCSS({
   mid: "1.5rem", // half a 48pt row
 })}
 
+/* Subthread branches, after sveltebits' "Branched Menu" (kayg, 2026-11-16: bb's one straight trunk ran on
+   through the footer). bb draws one 1px line (span.w-px, left 16px) down the whole children list, past the
+   last child, and it is not a row, so the edge fade never touched it. It goes; instead each child row draws
+   its own branch: an elbow from the trunk into the row (a quarter round, 8px radius, ending 4px before the
+   icon) and, for every child but the last, the trunk on down to the next one. So the trunk stops at the last
+   elbow, and as parts of the rows the branches fade under the header and footer with them. No layout: two
+   absolutely placed pseudo-elements per row. Hover inks the row's own branch. */
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] { display: none; }
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item] > [data-sidebar-sticky-group] > .group\\/thread-row {
+  --cf-branch: color-mix(in oklab, var(--sidebar-foreground, var(--foreground)) 22%, transparent);
+  --cf-branch-x: 16px;   /* bb's trunk position */
+  --cf-branch-w: 12px;   /* to 4px before the icon */
+}
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item] > [data-sidebar-sticky-group] > .group\\/thread-row::before,
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item]:not(:last-child) > [data-sidebar-sticky-group] > .group\\/thread-row::after {
+  content: "";
+  position: absolute;
+  left: var(--cf-branch-x);
+  pointer-events: none;
+  border: 0 solid var(--cf-branch);
+  transition: border-color 150ms ease;
+}
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item] > [data-sidebar-sticky-group] > .group\\/thread-row::before {
+  top: -2px; /* across the 1px gap between rows */
+  height: calc(50% + 2px);
+  width: var(--cf-branch-w);
+  border-left-width: 1.5px;
+  border-bottom-width: 1.5px;
+  border-bottom-left-radius: 8px;
+}
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item]:not(:last-child) > [data-sidebar-sticky-group] > .group\\/thread-row::after {
+  top: 50%;
+  bottom: -2px;
+  border-left-width: 1.5px;
+}
+${R} [data-sidebar="sidebar"] span.w-px.bg-border-hairline[aria-hidden="true"] ~ [data-sidebar-windowed-item] > [data-sidebar-sticky-group] > .group\\/thread-row:hover::before { border-color: color-mix(in oklab, var(--sidebar-foreground, var(--foreground)) 60%, transparent); }
+
 /* The new-chat page on phones: bb lets its "Recent" list scroll under the composer band, which bb paints solid;
    ours is glass, so rows showed through it. Now rows fade as they pass under it (the sidebar's edge fade; bb
    already leaves room to scroll the last row clear of it), and the "Recent" label isn't sticky (it
