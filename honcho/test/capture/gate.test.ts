@@ -2,7 +2,7 @@
 // re-evaluation of markers the old gate rule made. Event sequences are synthetic, shaped
 // like the ones bb logs (see fake-bb.ts build/steer).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCaptureService, NOT_SWITCHED_OVER, PROBATION, type CaptureHandle } from "../../lib/capture/service";
+import { createCaptureService, GATE_PENDING, NOT_SWITCHED_OVER, PROBATION, type CaptureHandle } from "../../lib/capture/service";
 import { HonchoClient } from "../../lib/honcho-client";
 import { Outbox, OUTBOX_MIGRATIONS } from "../../lib/outbox";
 import { mockHoncho } from "../mock-honcho";
@@ -216,6 +216,37 @@ describe("gate v1 markers", () => {
     expect(outbox.switchOver("thr_new")).toBeUndefined();
     expect((await svc.health()).tripwire).toContain("thr_new");
     expect(texts("thr_new")).toEqual([]);
+  });
+});
+
+describe("a fresh chat paused and resumed", () => {
+  it("is never reported as harness-captured: pending until scanned, then switched over (probation), not blocked", async () => {
+    fake.addThread("thr_new");
+    fake.build("thr_new", "hello new thread", { newThread: true });
+    fake.agent("thr_new", "hi");
+    fake.turnDone("thr_new");
+    const { svc, outbox } = service();
+    await svc.setPaused({ kind: "thread", id: "thr_new" }, true);
+    await svc.setPaused({ kind: "thread", id: "thr_new" }, false);
+    // Status asked before any scan ran (inside the grace window).
+    const early = await svc.threadStatus("thr_new");
+    expect(early).toMatchObject({ state: "not-captured", reason: GATE_PENDING });
+    expect(early.reason).not.toBe(NOT_SWITCHED_OVER);
+    await pass(svc); await pass(svc);
+    expect(outbox.switchOverMarker("thr_new")).toBeDefined();
+    const after = await svc.threadStatus("thr_new");
+    expect(after.reason).not.toBe(NOT_SWITCHED_OVER);
+    expect(after.reason).not.toBe(GATE_PENDING);
+  });
+
+  it("asks a thread nobody scanned yet to scan, even without a pass", async () => {
+    fake.addThread("thr_new2");
+    fake.build("thr_new2", "hello", { newThread: true });
+    fake.turnDone("thr_new2");
+    const { svc, outbox } = service();
+    await svc.threadStatus("thr_new2");
+    await svc.flushNow();
+    expect(outbox.switchOverMarker("thr_new2")).toBeDefined();
   });
 });
 

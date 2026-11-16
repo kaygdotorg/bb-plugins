@@ -40,7 +40,9 @@ const LEASE_RETRY_MS = 5_000;
 /** threads.list accepts at most this many threadIds per call. */
 const THREAD_IDS_PER_LIST = 200;
 export const SWITCHOVER_ENV = "BB_HONCHO";
-export const NOT_SWITCHED_OVER = "harness capture still active until the session rebuilds";
+export const NOT_SWITCHED_OVER = "the old harness honcho plugin still saves this chat until its session restarts: send a message after a hand over (Memory → connection) or start a new chat";
+/** A thread no gate scan has looked at yet (new, or the plugin just started). */
+export const GATE_PENDING = "checking whether this chat has switched over";
 export const PROBATION = "checking the old honcho plugin is quiet";
 const harnessSeen = (at: number) => `the old honcho plugin wrote at ${new Date(at).toISOString()} after the session rebuilt; capture waits for the next rebuild`;
 /** The thread a tripwire message names (see checkTripwire). */
@@ -79,6 +81,8 @@ interface ThreadState {
   sessionReady: boolean;
   peers: Set<string>;
   gateScanSeq: number;
+  /** A gate scan has run for this thread since the plugin started. */
+  gateScanned?: boolean;
   /** Builds at or before this (a hand over, after a cleared harness write) don't switch the thread over; undefined = not loaded. */
   regateAt?: number | null;
   lastTurnCompleted: number;
@@ -272,6 +276,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   /** Returns the switch-over marker (capture covers seq > marker), or undefined while the harness still captures. */
   async function gate(st: ThreadState, thread: Thread): Promise<number | undefined> {
+    st.gateScanned = true;
     const known = outbox.switchOverMarker(thread.id);
     if (known && known.gateVersion >= GATE_VERSION) return known.startSeq;
     const open = gateAlwaysOpen(thread.providerId) || !(await requiresSwitchover());
@@ -964,6 +969,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       if (st?.blocked) return { ...base, state: "not-captured", reason: st.blocked };
       const marker = outbox.switchOverMarker(threadId);
       if (marker === undefined && thread && !gateAlwaysOpen(thread.providerId) && await requiresSwitchover()) {
+        // No scan has judged it yet (a new chat waits out the grace window): scan now, and don't
+        // claim the harness is capturing before anyone has looked.
+        if (!st?.gateScanned) { schedule(threadId, 0); return { ...base, state: "not-captured", reason: GATE_PENDING }; }
         return { ...base, state: "not-captured", reason: blockedReason(threadId) };
       }
       if (marker?.probation) return { ...base, state: "not-captured", reason: PROBATION };
