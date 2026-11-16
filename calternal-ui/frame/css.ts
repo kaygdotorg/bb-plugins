@@ -63,7 +63,10 @@ ${R} {
   --cf-glass-blur: var(--cf-glass);
   --cf-glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
   --cf-glass-shadow: 0 8px 24px -14px rgb(0 0 0 / 0.5);
-  --cf-edge: rgb(255 255 255 / 0.55);
+  /* THE hairline (audit #23): every 1px edge (menus, dialogs, sheets, the composer, strips, code blocks, bb's own
+     --border inside the card) is this one colour. Light: 10% ink (the old 55% white was invisible on a light
+     card, so code-block rules and sheet edges vanished); dark: 10% white. */
+  --cf-edge: rgb(0 0 0 / 0.1);
   /* The card floats: a tight contact shadow plus a soft wide one. Its blur minus spread
      reaches exactly --cf-gap (12px), so bb's clipping never cuts it in a straight line. */
   --cf-shadow: 0 1px 3px rgb(60 40 20 / 0.16), 0 8px 20px -8px rgb(60 40 20 / 0.34);
@@ -85,7 +88,7 @@ ${R}:not(.dark) {
 ${R}.dark {
   --radius: 10px;
   --cf-dim-rgb: 0 0 0;
-  --cf-edge: rgb(255 255 255 / 0.09);
+  --cf-edge: rgb(255 255 255 / 0.1);
   --cf-warn-ink: oklch(0.8 0.14 70); /* small text: bb's --warning measured 3.9:1 */
   /* bb's muted text on the dark card measured 4.4:1 (tool summaries); lift it to ~5:1. */
   --cf-card-muted: oklch(0.74 0 0);
@@ -384,7 +387,7 @@ ${R} [data-app-composer] section.bg-surface-raised-solid {
   background: var(--cf-glass-fill) !important;
   -webkit-backdrop-filter: var(--cf-glass-blur);
   backdrop-filter: var(--cf-glass-blur);
-  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+  border-color: var(--cf-edge) !important;
 }
 /* Mention pills (thread titles, prompts): a faint tint instead of a solid white chip. */
 ${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%, transparent) !important; border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important; }
@@ -610,10 +613,11 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
   /* Hover and highlight inside menus read as the accent, not grey. */
   --state-hover: color-mix(in oklab, var(--cf-accent) 26%, transparent);
   --accent: color-mix(in oklab, var(--cf-accent) 26%, transparent);
+  --border: var(--cf-edge); /* separators */
   background-color: var(--cf-glass-fill) !important;
   -webkit-backdrop-filter: var(--cf-glass);
   backdrop-filter: var(--cf-glass);
-  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+  border-color: var(--cf-edge) !important;
 }
 
 /* A list inside a menu, picker or dialog (the model picker's list, the palette's results) is
@@ -629,10 +633,11 @@ ${R} :is([role="menu"], [role="listbox"], [data-radix-popper-content-wrapper] > 
    their inner bands clear. Outside the card, bg-background would be opaque. Phone sheets
    ([data-persistent-drawer-content]) keep their own glass. */
 ${R} [role="dialog"][data-bb-portaled-overlay]:not([data-persistent-drawer-content]):is(.bg-background, .bg-popover, .bg-card) {
+  --border: var(--cf-edge);
   background-color: var(--cf-glass-fill) !important;
   -webkit-backdrop-filter: var(--cf-glass);
   backdrop-filter: var(--cf-glass);
-  border-color: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+  border-color: var(--cf-edge) !important;
 }
 ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, .bg-card, [data-palette-input-band], [data-palette-results-clip]) {
   background-color: transparent !important;
@@ -844,6 +849,7 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${R} [data-persistent-drawer-content] {
     --cf-sheet-inset: 8px;
     --background: transparent;
+    --border: var(--cf-edge); /* its separators: the one hairline (bb's opaque light grey read as white lines on the glass) */
     left: var(--cf-sheet-inset) !important;
     right: var(--cf-sheet-inset) !important;
     margin-bottom: var(--cf-sheet-inset);
@@ -940,9 +946,11 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   }
   ${PLAIN_MAIN} header { border-bottom-color: transparent !important; }
   /* Ink: near-white in dark (bb's 0.81) and near-black in light (bb's 0.32 read grey): ChatGPT's #0D0D0D and
-     Claude's #141413 (pixel-checked) are ~0.15-0.2. */
-  ${R}.dark ${MAIN.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); }
-  ${R}:not(.dark) ${MAIN.slice(R.length + 1)}, ${R}:not(.dark) ${SIDEBAR.slice(R.length + 1)} { --foreground: oklch(0.2 0 0); }
+     Claude's #141413 (pixel-checked) are ~0.15-0.2. Set on the root, for every surface: it was on the pane and the
+     drawer only, so menus, sheets and dialogs (portals) kept bb's 0.81 / 0.32, and so did text that inherits
+     body's colour (resolved at body: Settings labels and titles) (audit #9). bb derives all of these from --ink. */
+  ${R}.dark { --foreground: oklch(0.95 0 0); --popover-foreground: oklch(0.95 0 0); --card-foreground: oklch(0.95 0 0); --secondary-foreground: oklch(0.95 0 0); --sidebar-foreground: oklch(0.95 0 0); }
+  ${R}:not(.dark) { --foreground: oklch(0.2 0 0); --popover-foreground: oklch(0.2 0 0); --card-foreground: oklch(0.2 0 0); --secondary-foreground: oklch(0.2 0 0); --sidebar-foreground: oklch(0.2 0 0); }
   /* Expandable rows (Ran N commands, Thought, Message from…) open and close at once on phones. bb animates their
      height (grid rows) and opacity; on a long thread that relaid the whole conversation below every frame, and on
      a phone the collapse showed a blank gap for ~150ms before the rest jumped up (kayg's recording). iOS lists
@@ -1026,7 +1034,6 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
      at full strength (bb draws them in its dimmer sidebar ink). */
   ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row) { gap: calc(14px * var(--cf-ui-scale, 1)) !important; }
   ${SIDEBAR} :is([data-cf-nav] > button, .group\\/thread-row, .group\\/thread-row .truncate, .group\\/thread-row a) { color: var(--foreground) !important; }
-  ${R}.dark ${SIDEBAR.slice(R.length + 1)} { --foreground: oklch(0.95 0 0); } /* bb's dark ink is 0.81: as the chat's, near-white */
   ${SIDEBAR} [data-sidebar="group-label"] {
     font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
     font-weight: 400 !important;
@@ -1063,12 +1070,16 @@ function cardInterior(scope: string): string {
      which measured ~2:1. Any fade below ~85% fails on light glass, so they stay quieter by
      colour alone: the subtle grey, inked so it measures >= 4.5:1 in both themes, no fade. */
   ${scope} [data-timeline-row-id] .opacity-40 { opacity: 1; }
-  ${scope}:where(.dark *) { --subtle-foreground: oklch(0.73 0 0); }
-  ${scope}:where(html:not(.dark) *) { --subtle-foreground: oklch(0.46 0 0); }
-  /* Dark mode: bb's muted text measured 4.4:1 on the card; lifted to ~5:1. */
+  /* ONE secondary grey per theme (audit #10): bb's muted and subtle greys (0.44/0.5 light, 0.78/0.68 dark) and our
+     earlier lifts (0.46, 0.73/0.74) were four near-identical greys. Light 0.44 measures ~5:1 on the light card,
+     dark 0.74 ~5:1 on the dark one (bb's muted measured 4.4:1 there). */
+  ${scope} { --muted-foreground: oklch(0.44 0 0); --subtle-foreground: var(--muted-foreground); }
   ${scope}:where(.dark *) { --muted-foreground: var(--cf-card-muted); }
+  /* bb fades some secondary text further (Settings descriptions: text-subtle-foreground/75) to ~3.5:1 on the
+     light card. Secondary is one step, never two: full strength. */
+  ${scope} :is(.text-subtle-foreground\\/75, .text-muted-foreground\\/75, .text-muted-foreground\\/70, .text-muted-foreground\\/80) { color: var(--muted-foreground) !important; }
   /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
-  ${scope} { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); --surface-scrim: transparent; }
+  ${scope} { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); --surface-scrim: transparent; --border: var(--cf-edge); } /* bb's hairlines (dividers, code blocks, inputs): the one edge */
   ${scope} header { border-bottom-color: transparent !important; }
 
   /* Chat scroll edges: text fades out under the header and frosts away behind the composer,
