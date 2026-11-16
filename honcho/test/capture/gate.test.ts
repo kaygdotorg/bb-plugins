@@ -2,7 +2,7 @@
 // re-evaluation of markers the old gate rule made. Event sequences are synthetic, shaped
 // like the ones bb logs (see fake-bb.ts build/steer).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCaptureService, NOT_SWITCHED_OVER, PROBATION, type CaptureHandle } from "../../lib/capture/service";
+import { createCaptureService, GATE_PENDING, NOT_SWITCHED_OVER, PROBATION, type CaptureHandle } from "../../lib/capture/service";
 import { HonchoClient } from "../../lib/honcho-client";
 import { Outbox, OUTBOX_MIGRATIONS } from "../../lib/outbox";
 import { mockHoncho } from "../mock-honcho";
@@ -219,6 +219,37 @@ describe("gate v1 markers", () => {
   });
 });
 
+describe("a fresh chat paused and resumed", () => {
+  it("is never reported as harness-captured: pending until scanned, then switched over (probation), not blocked", async () => {
+    fake.addThread("thr_new");
+    fake.build("thr_new", "hello new thread", { newThread: true });
+    fake.agent("thr_new", "hi");
+    fake.turnDone("thr_new");
+    const { svc, outbox } = service();
+    await svc.setPaused({ kind: "thread", id: "thr_new" }, true);
+    await svc.setPaused({ kind: "thread", id: "thr_new" }, false);
+    // Status asked before any scan ran (inside the grace window).
+    const early = await svc.threadStatus("thr_new");
+    expect(early).toMatchObject({ state: "not-captured", reason: GATE_PENDING });
+    expect(early.reason).not.toBe(NOT_SWITCHED_OVER);
+    await pass(svc); await pass(svc);
+    expect(outbox.switchOverMarker("thr_new")).toBeDefined();
+    const after = await svc.threadStatus("thr_new");
+    expect(after.reason).not.toBe(NOT_SWITCHED_OVER);
+    expect(after.reason).not.toBe(GATE_PENDING);
+  });
+
+  it("asks a thread nobody scanned yet to scan, even without a pass", async () => {
+    fake.addThread("thr_new2");
+    fake.build("thr_new2", "hello", { newThread: true });
+    fake.turnDone("thr_new2");
+    const { svc, outbox } = service();
+    await svc.threadStatus("thr_new2");
+    await svc.flushNow();
+    expect(outbox.switchOverMarker("thr_new2")).toBeDefined();
+  });
+});
+
 describe("hand over", () => {
   const state = (handedOver: boolean, at?: number): import("../../lib/contract").HarnessState => ({
     machineId: "host_fixture",
@@ -303,6 +334,35 @@ describe("hand over", () => {
     expect(outbox.harnessSeenAt("thr_a")).toBeDefined();
     handOver(deps);
     await pass(svc, 1_000);
+    expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
+  });
+
+  it("clears a live-shaped stale tripwire at startup: old-format text, no tripwire-meta, a harness write before the hand over", async () => {
+    oldSession("thr_live", "codex");
+    const wroteAt = clock.now() + 1_000;
+    const handedAt = wroteAt + 60_000;
+    // Exactly what hd01 holds: the old message format, no capture:tripwire-meta, and a harness_writes row.
+    fake.kv.set(TRIPWIRE, 'harness session "prov_fixture-01a1da4c" is still capturing thread thr_live');
+    const outbox = new Outbox(fake.db);
+    fake.db.prepare("INSERT INTO harness_writes VALUES (?,?)").run("thr_live", wroteAt);
+    clock.advance(120_000);
+    const { svc } = service({ outbox, harnessState: async () => state(true, handedAt) });
+    expect(fake.kv.has("capture:tripwire-meta")).toBe(false);
+    await svc.reconcile(); await pass(svc);
+    expect((await svc.health()).tripwire).toBeNull();
+    expect(fake.kv.has(TRIPWIRE)).toBe(false);
+    expect(outbox.harnessSeenAt("thr_live")).toBeUndefined();
+  });
+
+  it("re-checks a blamed thread periodically, so a hand over done elsewhere clears it", async () => {
+    const { svc, outbox } = withHarness();
+    await tripped(svc);
+    expect((await svc.health()).tripwire).not.toBeNull();
+    clock.advance(1_000);
+    handed = { on: true, at: clock.now() - 500 }; // no harness activity entry reaches this plugin
+    clock.advance(4 * 60_000);
+    await svc.flushNow(); await pass(svc);
+    expect((await svc.health()).tripwire).toBeNull();
     expect(outbox.harnessSeenAt("thr_a")).toBeUndefined();
   });
 });

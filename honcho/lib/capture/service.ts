@@ -40,7 +40,9 @@ const LEASE_RETRY_MS = 5_000;
 /** threads.list accepts at most this many threadIds per call. */
 const THREAD_IDS_PER_LIST = 200;
 export const SWITCHOVER_ENV = "BB_HONCHO";
-export const NOT_SWITCHED_OVER = "harness capture still active until the session rebuilds";
+export const NOT_SWITCHED_OVER = "the old harness honcho plugin still saves this chat until its session restarts: send a message after a hand over (Memory → connection) or start a new chat";
+/** A thread no gate scan has looked at yet (new, or the plugin just started). */
+export const GATE_PENDING = "checking whether this chat has switched over";
 export const PROBATION = "checking the old honcho plugin is quiet";
 const harnessSeen = (at: number) => `the old honcho plugin wrote at ${new Date(at).toISOString()} after the session rebuilt; capture waits for the next rebuild`;
 /** The thread a tripwire message names (see checkTripwire). */
@@ -79,6 +81,8 @@ interface ThreadState {
   sessionReady: boolean;
   peers: Set<string>;
   gateScanSeq: number;
+  /** A gate scan has run for this thread since the plugin started. */
+  gateScanned?: boolean;
   /** Builds at or before this (a hand over, after a cleared harness write) don't switch the thread over; undefined = not loaded. */
   regateAt?: number | null;
   lastTurnCompleted: number;
@@ -272,6 +276,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   /** Returns the switch-over marker (capture covers seq > marker), or undefined while the harness still captures. */
   async function gate(st: ThreadState, thread: Thread): Promise<number | undefined> {
+    st.gateScanned = true;
     const known = outbox.switchOverMarker(thread.id);
     if (known && known.gateVersion >= GATE_VERSION) return known.startSeq;
     const open = gateAlwaysOpen(thread.providerId) || !(await requiresSwitchover());
@@ -705,8 +710,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (at === null) return;
     const id = thread.id;
     const seen = outbox.harnessSeenAt(id);
-    const meta = await bb.storage.kv.get<{ thread: string; at: number }>(KV.tripwireMeta);
-    const tripped = meta?.thread === id && meta.at < at;
+    // A tripwire raised before tripwire-meta existed has no meta: its text names the thread, and
+    // the recorded harness write (if any) says when the old plugin wrote.
+    const blame = await blamedThread();
+    const tripped = blame?.thread === id && (blame.at ?? seen ?? -Infinity) < at;
     if (!(seen !== undefined && seen < at) && !tripped) return;
     if (seen !== undefined && seen < at) outbox.clearHarnessSeen(id);
     st.regateAt = Math.max(st.regateAt ?? -Infinity, at);
@@ -716,12 +723,30 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (tripped) await clearTripwireFor(id);
     await bb.storage.kv.delete(KV.tripwireChecked(id));
   }
+  /** The thread the stored tripwire blames, and when its harness write was (when recorded). */
+  async function blamedThread(): Promise<{ thread: string; at?: number } | undefined> {
+    const meta = await bb.storage.kv.get<{ thread: string; at: number }>(KV.tripwireMeta);
+    if (meta) return meta;
+    const thread = tripwireThread((await bb.storage.kv.get<string>(KV.tripwire)) ?? tripwire);
+    return thread ? { thread } : undefined;
+  }
+  /** Re-checks every thread a harness write or the tripwire blames against the harness state. */
+  function recheckBlamed(): void {
+    for (const id of outbox.knownThreads()) if (outbox.harnessSeenAt(id) !== undefined) schedule(id, 0);
+    void blamedThread().then(blame => { if (blame) schedule(blame.thread, 0); }, () => undefined);
+  }
   /** Harness activity (a connect, hand over or undo) makes the cached state stale; threads that
    * were blamed re-check. */
   function handoverChanged(): void {
     handovers.clear();
-    for (const id of outbox.knownThreads()) if (outbox.harnessSeenAt(id) !== undefined) schedule(id, 0);
-    void bb.storage.kv.get<{ thread: string }>(KV.tripwireMeta).then(meta => { if (meta) schedule(meta.thread, 0); }, () => undefined);
+    recheckBlamed();
+  }
+  /** The blame is also re-checked at startup and every cache lifetime, so a hand over this plugin
+   * never heard about (another generation, the CLI, a restart) still clears it. */
+  let recheckTimer: unknown;
+  function armRecheck(): void {
+    if (disposed) return;
+    recheckTimer = clock.setTimeout(() => { recheckBlamed(); armRecheck(); }, handoverTtl);
   }
 
   async function raiseTripwire(thread: Thread, name: string, summary: string, at: number): Promise<void> {
@@ -872,6 +897,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
   async function boot(signal?: AbortSignal): Promise<void> {
     tripwire = (await bb.storage.kv.get<string>(KV.tripwire)) ?? null;
+    recheckBlamed();
     for (const key of await bb.storage.kv.list(KV.pendingDeletePrefix)) void onDeleted(key.slice(KV.pendingDeletePrefix.length)).catch(() => undefined);
     await reconcileDeleted(signal).catch(error => bb.log.warn(`honcho capture: deletion check failed: ${(error as Error).name}`));
     for (const marker of outbox.inFlight()) schedule(marker.thread, 0);
@@ -890,6 +916,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (disposed) return;
     disposed = true;
     unsubscribe?.();
+    if (recheckTimer !== undefined) clock.clearTimeout(recheckTimer);
     for (const st of states.values()) if (st.timer !== undefined) clock.clearTimeout(st.timer);
     for (const timer of deleteTimers.values()) clock.clearTimeout(timer);
     // Leases of threads mid-upload are released when that upload stops (it checks before each POST).
@@ -898,6 +925,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   function listen(): void {
     if (listening) return;
     listening = true;
+    armRecheck();
     unsubscribe = deps.activity.subscribe?.(e => { if (e.kind === "harness" && e.threadId === undefined) handoverChanged(); });
     const later = (event: { thread: Thread; sequence?: number }) => {
       if (disposed) return;
@@ -941,6 +969,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       if (st?.blocked) return { ...base, state: "not-captured", reason: st.blocked };
       const marker = outbox.switchOverMarker(threadId);
       if (marker === undefined && thread && !gateAlwaysOpen(thread.providerId) && await requiresSwitchover()) {
+        // No scan has judged it yet (a new chat waits out the grace window): scan now, and don't
+        // claim the harness is capturing before anyone has looked.
+        if (!st?.gateScanned) { schedule(threadId, 0); return { ...base, state: "not-captured", reason: GATE_PENDING }; }
         return { ...base, state: "not-captured", reason: blockedReason(threadId) };
       }
       if (marker?.probation) return { ...base, state: "not-captured", reason: PROBATION };

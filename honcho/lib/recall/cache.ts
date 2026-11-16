@@ -121,8 +121,10 @@ export class MemoryCache {
       this.lastSuccess = this.now();
       this.lastFailed = false;
     } catch (error) {
+      // One warning per failure streak; the next success re-arms it.
+      const firstOfStreak = !this.lastFailed;
       this.lastFailed = true;
-      this.log?.(`honcho recall refresh failed: ${error instanceof HonchoError ? `${error.kind}${error.status ? ` ${error.status}` : ""}` : `${(error as Error)?.name ?? "error"} ${String((error as Error)?.message ?? "").slice(0, 160)}`}`);
+      if (firstOfStreak) this.log?.(`honcho recall refresh failed (further failures are not logged until it succeeds): ${error instanceof HonchoError ? `${error.kind}${error.status ? ` ${error.status}` : ""}` : `${(error as Error)?.name ?? "error"} ${String((error as Error)?.message ?? "").slice(0, 160)}`}`);
       throw error;
     }
   }

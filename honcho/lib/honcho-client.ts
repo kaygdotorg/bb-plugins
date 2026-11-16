@@ -41,6 +41,8 @@ export interface ClientOptions { baseUrl: string; apiKey?: string; workspace: st
 /** Short calls (search, list, representation, writes). */
 export const DEFAULT_TIMEOUT_MS = 8_000;
 /** A peer or workspace chat reasons over memory; the self-hosted server takes about 10 s. */
+/** A scoped representation is computed server side; the self-hosted server sometimes needs over 8 s. */
+export const REPRESENTATION_TIMEOUT_MS = 30_000;
 export const CHAT_TIMEOUT_MS = 60_000;
 export type KeyCapability = "workspace-or-admin" | "restricted";
 const id = encodeURIComponent;
@@ -138,7 +140,7 @@ export class HonchoClient {
   }
   peerRepresentation(peer: string, options: Omit<PeerChatOptions, "query" | "reasoning_level"> & { search_query?: string; search_top_k?: number; search_max_distance?: number; include_most_frequent?: boolean; max_conclusions?: number } = {}): Promise<{ representation: string }> {
     if (options.scope !== undefined && (options.session_id !== undefined || options.filters !== undefined)) throw new HonchoError("validation");
-    return this.request(this.workspacePath(`/peers/${id(peer)}/representation`), options);
+    return this.request(this.workspacePath(`/peers/${id(peer)}/representation`), options, "POST", {}, true, REPRESENTATION_TIMEOUT_MS);
   }
   searchWorkspace(options: SearchOptions & { scope?: string }): Promise<Message[]> {
     return this.request(this.workspacePath("/search"), options);
