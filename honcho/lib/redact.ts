@@ -105,15 +105,51 @@ export const USER_LINE_MAX = 10_000;
 /** Longest user pattern source accepted. */
 export const PATTERN_MAX = 500;
 
-const NL_NAME = String.raw`(?:pass(?:word|code)|pin|api[ _-]?key|secret|token)`;
-// The value is a quoted string or a run of non-space chars; trailing punctuation is trimmed by the caller.
-const NL_SECRET = new RegExp(String.raw`(?<![\w-])${NL_NAME}\s*(?:\bis\b|=|:)\s*("[^"\r\n]{1,200}"|'[^'\r\n]{1,200}'|[^\s"'\`]{1,200})`, "gi");
+const NL_PREFIX = String.raw`(?:wi-?fi|wlan|door|access|security|gate|alarm|entry|garage|verification|auth(?:entication)?|login|2fa|mfa|otp|one[ _-]?time|recovery|backup|reset|unlock|bank|card)`;
+const NL_NAME = String.raw`(?:(?:${NL_PREFIX}[ _-]*)?(?:pass(?:word|phrase|code)|pin|codes?|keys?)|otp|seed[ _-]?phrase|recovery[ _-]?phrase|ssn|social[ _-]security(?:[ _-]number)?|credit[ _-]card(?:[ _-]number)?|card[ _-]number|api[ _-]?key|secret|token)`;
+// Group 1 is the name, group 2 the value: a quoted string or a run of non-space chars; trailing punctuation is trimmed by the caller.
+// A bare "code"/"key" only counts after a prefix ("door code"), so "the code is 1234" stays untouched.
+const NL_SECRET = new RegExp(String.raw`(?<![\w-])(${NL_NAME})\s*(?:\b(?:is|are)\b\s*:?|=|:)\s*("[^"\r\n]{1,200}"|'[^'\r\n]{1,200}'|[^\s"'\`]{1,200})`, "gi");
+const NL_BARE = /^(?:codes?|keys?)$/i;
 /** The value after "password is": quoted text counts; a bare word must look like a credential
  * (a digit, a symbol or inner capitals, 4+ chars) so "the password is required" stays. */
 function nlValue(value: string): boolean {
   if (/^(["']).+\1$/.test(value)) return value.length > 2 && !TYPE_WORDS.test(unquote(value));
   if (value.length < 4 || /^[[{(<$]/.test(value) || value.includes("(") || TYPE_WORDS.test(value)) return false;
   return /\d/.test(value) || /[^A-Za-z\d]/.test(value) || /[A-Z]/.test(value.slice(1)) && /[a-z]/.test(value);
+}
+/** "backup codes: 1234-5678, 8765-4321": further tokens that carry a digit belong to the value. */
+function extendCodes(text: string, end: number): number {
+  for (;;) {
+    const m = /^[,;]?[ \t]+(?:and[ \t]+)?([\w-]*\d[\w-]*)/.exec(text.slice(end, end + 80));
+    if (!m) return end;
+    end += m[0].length;
+  }
+}
+/** "seed phrase: apple banana ...": the first word is already matched; five more lowercase words make a phrase. */
+function seedWords(text: string, from: number): number {
+  const m = /^(?:[ \t]+[a-z]{3,10}){5,23}/.exec(text.slice(from, from + 400));
+  return m ? from + m[0].length : from;
+}
+
+/** Card number prefixes and lengths (Visa, Mastercard, Amex, Discover, JCB, Diners), then Luhn. */
+function cardNumber(digits: string): boolean {
+  const n = digits.length;
+  const lengths = /^4/.test(digits) ? [13, 16, 19]
+    : /^(?:5[1-5]|2(?:2[2-9]|[3-6]\d|7[01]|720))/.test(digits) ? [16]
+    : /^3[47]/.test(digits) ? [15]
+    : /^(?:6011|65|64[4-9])/.test(digits) ? [16, 19]
+    : /^35(?:2[89]|[3-8])/.test(digits) ? [16, 19]
+    : /^3[068]/.test(digits) ? [14]
+    : [];
+  if (!lengths.includes(n)) return false;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    let d = Number(digits[n - 1 - i]);
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
 }
 
 /** Why a user regex is refused, or null when it passes. A cheap static check, no dependency:
@@ -252,12 +288,25 @@ export function redact(text: string, options: RedactionOptions = {}): RedactionR
   }
   // Natural-language secrets: "my password is Hunter2x", "api key: ...", "the token = ...".
   for (const m of text.matchAll(NL_SECRET)) {
-    const raw = m[1];
+    if (NL_BARE.test(m[1])) continue;
+    const raw = m[2];
     const value = raw.replace(/[.,;:!?)\]}]+$/, "");
-    if (!nlValue(value)) continue;
     const start = m.index! + m[0].length - raw.length;
-    spans.push([start, start + value.length]);
+    let end = start + value.length;
+    const quoted = /^["']/.test(value);
+    if (/^(?:seed|recovery[ _-]?phrase)/i.test(m[1])) {
+      // A seed phrase is a run of words: one bare word after "is" is no phrase.
+      if (quoted ? unquote(value).trim().split(/\s+/).length < 3 : (end = seedWords(text, end)) === start + value.length) continue;
+    } else {
+      if (!nlValue(value)) continue;
+      if (/codes$/i.test(m[1])) end = extendCodes(text, end);
+    }
+    spans.push([start, end]);
   }
+  // US social security numbers.
+  collect(/(?<![\d-])(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?![\d-])/g);
+  // Payment card numbers: known brand prefix, plausible length, Luhn-valid; single spaces or dashes between digits.
+  collect(/(?<![\d.-])\d(?:[ -]?\d){12,18}(?![\d-])/g, 0, v => cardNumber(v.replace(/[ -]/g, "")));
   for (const pattern of options.patterns ?? []) {
     // A pattern saved before the safety check existed is skipped rather than risk a stalled capture.
     if (unsafePattern(pattern.source) === null) collectBounded(pattern);

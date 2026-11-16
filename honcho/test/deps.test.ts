@@ -6,7 +6,6 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { CLOUD_URL, CONFIG_CACHE_MS, createDeps, defineSettings } from "../lib/deps";
 import { HonchoClient, HonchoError } from "../lib/honcho-client";
 import { Outbox } from "../lib/outbox";
-import { RingActivityLog } from "../lib/activity";
 
 const dirs: string[] = [];
 const disposers: Array<() => Promise<unknown>> = [];
@@ -113,8 +112,10 @@ describe("createDeps", () => {
     outbox.advance("thread", 3); expect(deps.outbox.cursor("thread")).toBe(3);
   });
   it("provides an activity log", async () => {
-    const { deps } = await setup({}); expect(deps.activity).toBeInstanceOf(RingActivityLog);
+    const { deps, bb, configPath, handle } = await setup({});
     deps.activity.record({ kind: "harness", summary: "x" }); expect(deps.activity.list()).toHaveLength(1);
+    // A second deps over the same storage (a reload) sees the persisted entry.
+    expect(createDeps(bb, { settings: handle, configPath }).activity.list().map(e => e.summary)).toEqual(["x"]);
   });
 
   it("never sends the file key to a different bb base URL unless the bb key is set", async () => {

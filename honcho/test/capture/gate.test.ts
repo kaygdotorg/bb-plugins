@@ -116,7 +116,7 @@ describe("probation", () => {
     expect(texts()).toEqual(["rebuilt", "still working"]);
     expect(outbox.switchOverMarker("thr_a")?.probation).toBe(false);
     expect((await svc.threadStatus("thr_a")).state).not.toBe("not-captured");
-    expect(summaries(deps).some(s => s.includes("stayed quiet"))).toBe(true);
+    expect(summaries(deps).some(s => s === "bb took over saving this chat")).toBe(true);
     expect((await svc.health()).tripwire).toBeNull();
   });
 
@@ -134,7 +134,7 @@ describe("probation", () => {
     expect(first.outbox.harnessSeenAt("thr_a")).toBe(wroteAt);
     expect((await first.svc.health()).tripwire).toContain("prov_fixture");
     expect(await first.svc.threadStatus("thr_a")).toMatchObject({ state: "not-captured", reason: expect.stringContaining("wrote at") });
-    expect(summaries(first.deps).some(s => s.includes("probation failed"))).toBe(true);
+    expect(summaries(first.deps).some(s => s.includes("saved this chat at"))).toBe(true);
 
     // A new generation rescans from seq 0: the old build is not newer than the harness write.
     first.svc.stop();
@@ -200,7 +200,7 @@ describe("gate v1 markers", () => {
     expect(outbox.switchOverMarker("thr_pi")).toMatchObject({ startSeq: 0, gateVersion: 2, probation: false });
     expect(texts("thr_pi")).toEqual(["pi prompt"]);
     expect(outbox.staleSwitchOvers()).toEqual([]);
-    expect(summaries(deps).filter(s => s.includes("stricter gate"))).toHaveLength(2);
+    expect(summaries(deps).filter(s => s.includes("re-checked how this chat was taken over"))).toHaveLength(2);
   });
 
   it("keeps a tripwire about a thread whose marker the re-evaluation doesn't change", async () => {

@@ -522,7 +522,7 @@ describe("poison batches", () => {
     expect(calls[0]).toBe(5); // the full batch first, then halves
     const skips = deps.activity.entries.filter(e => e.kind === "failure");
     expect(skips).toHaveLength(1);
-    expect(skips[0].summary).toContain(`seq ${badSeq}`);
+    expect(skips[0].summary).toBe("skipped one message: rejected by honcho (validation)");
     expect(JSON.stringify(skips)).not.toContain("POISON");
     // Nothing is retried on the next pass.
     fake.prompt("thr_a", "later");

@@ -71,7 +71,7 @@ export function registerConfigure(bb: BbPluginApi, _deps: RecallDeps, recall: Re
           ].map(l => redactNow(neutralize(l).replace(/\s+/g, " ").trim()).slice(0, 600)).filter(Boolean).slice(0, 80);
           shared.store.saveSessionInjection(ctx.thread.id, Date.now(), scope, lines);
         } catch { /* the block is optional; never break a session build */ }
-        deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `session memory injected (scope ${scope}${contextThreadId !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
+        deps.activity.record({ kind: "recall", threadId: ctx.thread.id, summary: `gave the agent its background memory (group ${scope}${contextThreadId !== ctx.thread.id ? ", from parent thread" : ""}${snap.stale ? ", stale" : ""})` });
       }
     } catch (error) {
       bb.log.warn(`honcho configure: ${error instanceof Error ? error.name : "error"}`);

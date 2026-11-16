@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ACTIVITY_CAPACITY, RingActivityLog } from "../lib/activity";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { ACTIVITY_CAPACITY, openActivityLog, RingActivityLog, SqliteActivityLog } from "../lib/activity";
 
 describe("activity ring buffer", () => {
   it("keeps the newest 2000 entries with increasing ids", () => {
@@ -35,4 +36,43 @@ describe("activity ring buffer", () => {
     expect(log.list()).toHaveLength(2);
   });
   it("rejects an invalid capacity", () => { expect(() => new RingActivityLog(0)).toThrow(); });
+});
+
+describe("sqlite activity log", () => {
+  const host = () => createFakePluginHost({ pluginId: "honcho" });
+  it("survives a plugin reload and keeps ids increasing", async () => {
+    const { bb, harness } = host();
+    try {
+      openActivityLog(bb.storage).record({ kind: "upload", threadId: "t", summary: "saved 2 message(s)", messages: 2, redactions: 1, reasoning: true });
+      await harness.lifecycle.reload(next => {
+        const log = openActivityLog(next.storage);
+        expect(log.list()).toEqual([{ id: 1, at: expect.any(Number), kind: "upload", threadId: "t", summary: "saved 2 message(s)", messages: 2, redactions: 1, reasoning: true }]);
+        log.record({ kind: "failure", summary: "x", error: "offline" });
+        expect(log.list()[0]).toMatchObject({ id: 2, error: "offline" });
+      });
+    } finally { await harness.lifecycle.dispose(); }
+  });
+  it("prunes the oldest rows beyond the cap and filters like the ring", async () => {
+    const { bb, harness } = host();
+    try {
+      let now = 100; const log = new SqliteActivityLog(bb.storage.database(), 5, () => now++);
+      for (let i = 1; i <= 8; i++) log.record({ kind: i % 2 ? "upload" : "recall", threadId: i % 2 ? "a" : "b", summary: `s${i}` });
+      expect(log.list().map(e => e.summary)).toEqual(["s8", "s7", "s6", "s5", "s4"]);
+      expect(log.list({ threadId: "a", limit: 2 }).map(e => e.summary)).toEqual(["s7", "s5"]);
+      expect(log.list({ kinds: ["recall"] }).map(e => e.summary)).toEqual(["s8", "s6", "s4"]);
+      expect(log.list({ limit: 0 })).toEqual([]);
+      expect(() => new SqliteActivityLog(bb.storage.database(), 0)).toThrow();
+    } finally { await harness.lifecycle.dispose(); }
+  });
+  it("notifies live subscribers, isolates failures, and stores no content columns", async () => {
+    const { bb, harness } = host();
+    try {
+      const log = openActivityLog(bb.storage); const seen = vi.fn();
+      log.subscribe(() => { throw new Error("boom"); }); const off = log.subscribe(seen);
+      log.record({ kind: "tool", summary: "a" }); off(); log.record({ kind: "tool", summary: "b" });
+      expect(seen).toHaveBeenCalledTimes(1); expect(seen.mock.calls[0][0]).toMatchObject({ id: 1, summary: "a" });
+      const cols = (bb.storage.database().prepare("PRAGMA table_info(activity)").all() as Array<{ name: string }>).map(c => c.name);
+      expect(cols.some(c => /content|body|text|payload/.test(c))).toBe(false);
+    } finally { await harness.lifecycle.dispose(); }
+  });
 });

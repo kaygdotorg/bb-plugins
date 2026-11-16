@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Deps } from "./contract.js";
-import { RingActivityLog } from "./activity.js";
+import type { ActivityLog, Deps } from "./contract.js";
+import { openActivityLog } from "./activity.js";
 import { configSignature, defaultConfigPath, readConfig, type ConfigOverrides, type ConfigResult } from "./config.js";
 import { HonchoClient, HonchoError } from "./honcho-client.js";
 import { openOutbox, type Outbox } from "./outbox.js";
@@ -18,7 +18,7 @@ export interface DepsOptions {
   configPath?: string;
   fetch?: typeof fetch;
   now?: () => number;
-  activity?: RingActivityLog;
+  activity?: ActivityLog;
 }
 export type PluginDeps = Deps & {
   /** Drop the cached config and client, e.g. after the Memory page saved a connection. */
@@ -27,13 +27,20 @@ export type PluginDeps = Deps & {
   isCloud(): Promise<boolean>;
 };
 
+/** Opens the database on first use, as the outbox does. */
+function lazyActivity(open: () => ActivityLog): ActivityLog {
+  let log: ActivityLog | undefined;
+  const get = () => log ??= open();
+  return { record: e => get().record(e), list: o => get().list(o), subscribe: fn => get().subscribe(fn) };
+}
+
 const text = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value.trim() : undefined;
 
 export function createDeps(bb: Pick<BbPluginApi, "settings" | "storage">, options: DepsOptions = {}): PluginDeps {
   const settings = options.settings ?? defineSettings(bb);
   const path = options.configPath ?? defaultConfigPath();
   const now = options.now ?? Date.now;
-  const activity = options.activity ?? new RingActivityLog();
+  const activity = options.activity ?? lazyActivity(() => openActivityLog(bb.storage));
   let version = 0;
   let cached: { at: number; signature: string; version: number; result: ConfigResult; cloud: boolean } | undefined;
   let loading: Promise<NonNullable<typeof cached>> | undefined;

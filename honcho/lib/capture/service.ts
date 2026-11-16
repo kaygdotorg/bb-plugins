@@ -296,7 +296,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (!build) { st.blocked = blockedReason(thread.id); return undefined; }
     outbox.markSwitchOver(thread.id, build.marker, { builtSeq: build.seq, builtAt: build.at, probation: true });
     deps.activity.record({ kind: "harness", threadId: thread.id,
-      summary: `session rebuilt with the harness capture off at seq ${build.seq}; capture will cover seq ${build.marker + 1} on, once the old honcho plugin is seen quiet` });
+      summary: "started saving this chat; uploads begin once the old honcho plugin is seen quiet" });
     return build.marker;
   }
   const blockedReason = (threadId: string) => { const at = outbox.harnessSeenAt(threadId); return at === undefined ? NOT_SWITCHED_OVER : harnessSeen(at); };
@@ -346,14 +346,14 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (build) {
       outbox.replaceSwitchOver(id, build.marker, { builtSeq: build.seq, builtAt: build.at, probation: true });
       deps.activity.record({ kind: "harness", threadId: id, summary: build.marker === old.startSeq
-        ? `re-checked the switch-over with the stricter gate: still after seq ${old.startSeq}; checking the old honcho plugin is quiet`
-        : `re-checked the switch-over with the stricter gate: moved from after seq ${old.startSeq} to after seq ${build.marker} (session rebuilt at seq ${build.seq}); checking the old honcho plugin is quiet` });
+        ? "re-checked how this chat was taken over: bb still saves it from the same point; checking the old honcho plugin is quiet"
+        : "re-checked how this chat was taken over: bb now saves it from a later point; checking the old honcho plugin is quiet" });
       if (build.marker !== old.startSeq) await clearTripwireFor(id);
       return build.marker;
     }
     outbox.dropSwitchOver(id);
     deps.activity.record({ kind: "harness", threadId: id,
-      summary: `re-checked the switch-over with the stricter gate: no session rebuild since seq ${old.startSeq} turned the harness capture off; capture waits for one` });
+      summary: "re-checked how this chat was taken over: bb has not started saving it yet and waits for the chat to restart" });
     await clearTripwireFor(id);
     st.blocked = blockedReason(id);
     return undefined;
@@ -375,13 +375,13 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (hit) {
       outbox.dropSwitchOver(id, hit.at);
       await bb.storage.kv.delete(KV.tripwireChecked(id));
-      await raiseTripwire(thread, hit.name, `probation failed: harness session "${hit.name}" wrote at ${new Date(hit.at).toISOString()}, after the session rebuilt at seq ${builtSeq}; nothing was uploaded, and capture waits for a newer rebuild`, hit.at);
+      await raiseTripwire(thread, hit.name, `the old honcho plugin saved this chat at ${new Date(hit.at).toISOString()}, after bb started; nothing was uploaded, and bb waits for the chat to restart`, hit.at);
       st.blocked = harnessSeen(hit.at);
       return false;
     }
     outbox.passProbation(id);
     await bb.storage.kv.set(KV.tripwireChecked(id), true);
-    deps.activity.record({ kind: "harness", threadId: id, summary: `the old honcho plugin stayed quiet through the first turn after the session rebuilt; capture starts after seq ${marker.startSeq}` });
+    deps.activity.record({ kind: "harness", threadId: id, summary: "bb took over saving this chat" });
     await clearTripwireFor(id);
     st.blocked = null;
     return true;
@@ -502,7 +502,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
         if (!(error instanceof HonchoError) || error.kind !== "validation") throw error;
         if (chunk.length === 1) {
           skipped++;
-          deps.activity.record({ kind: "failure", threadId, summary: `skipped message seq ${seqOf(chunk[0])} part ${partOf(chunk[0])}: rejected by honcho (validation)`, error: "validation" });
+          deps.activity.record({ kind: "failure", threadId, summary: "skipped one message: rejected by honcho (validation)", error: "validation" });
           bb.log.warn(`honcho capture: ${threadId} skipped seq ${seqOf(chunk[0])} (validation)`);
           return;
         }
@@ -719,7 +719,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     st.regateAt = Math.max(st.regateAt ?? -Infinity, at);
     await bb.storage.kv.set(KV.regate(id), st.regateAt);
     Object.assign(st, { gateScanSeq: 0, lastTurnCompleted: 0, span: { requested: false, built: false, accepted: false }, blocked: null });
-    deps.activity.record({ kind: "harness", threadId: id, summary: `the old ${harnessOf(thread.providerId)} honcho plugin was handed over at ${new Date(at).toISOString()}; its earlier writes no longer block this chat, and the next session build switches it over` });
+    deps.activity.record({ kind: "harness", threadId: id, summary: `the old ${harnessOf(thread.providerId)} honcho plugin was handed over at ${new Date(at).toISOString()}; its earlier saves no longer block this chat, and bb takes over when the chat next restarts` });
     if (tripped) await clearTripwireFor(id);
     await bb.storage.kv.delete(KV.tripwireChecked(id));
   }
@@ -758,7 +758,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
       : `the old ${harness} honcho plugin is still saving chat ${chat}. hand over on this machine (Memory → connection) or restart that chat (harness session "${name}")`;
     await bb.storage.kv.set(KV.tripwire, tripwire);
     await bb.storage.kv.set(KV.tripwireMeta, { thread: thread.id, at });
-    deps.activity.record({ kind: "harness", threadId: thread.id, summary: `tripwire: ${summary}`, error: "tripwire" });
+    deps.activity.record({ kind: "harness", threadId: thread.id, summary, error: "tripwire" });
     bb.log.warn(`honcho capture: tripwire hit for ${thread.id}`);
   }
 
@@ -772,7 +772,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     await bb.storage.kv.delete(KV.tripwire);
     await bb.storage.kv.delete(KV.tripwireMeta);
     await bb.storage.kv.delete(KV.tripwireChecked(threadId));
-    deps.activity.record({ kind: "harness", threadId, summary: "cleared the tripwire for this thread: it predates the stricter switch-over check, or the old honcho plugin has since been seen quiet" });
+    deps.activity.record({ kind: "harness", threadId, summary: "cleared the warning about the old honcho plugin for this chat: it predates the stricter check, or the plugin has since been seen quiet" });
   }
 
   /** After a captured thread's first turn: did a harness integration also write a session for it?
@@ -782,7 +782,7 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
   async function checkTripwire(thread: Thread, marker: number): Promise<void> {
     if (await bb.storage.kv.get(KV.tripwireChecked(thread.id))) return;
     const hit = await harnessWrite(thread, await switchedAt(thread.id, marker));
-    if (hit) await raiseTripwire(thread, hit.name, `harness session "${hit.name}" is still capturing thread ${thread.id}`, hit.at);
+    if (hit) await raiseTripwire(thread, hit.name, "the old honcho plugin is still saving this chat", hit.at);
     await bb.storage.kv.set(KV.tripwireChecked(thread.id), true);
   }
 

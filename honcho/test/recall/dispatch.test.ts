@@ -54,7 +54,7 @@ describe("message.dispatch prefetch", () => {
     const search = s.mock.requests.find(r => r.path.endsWith("/search"))!;
     expect(search.body).toMatchObject({ query: "deploy the api to staging", scope: "repo-one" });
     expect(s.harness.inspection.experimental_hostRpcCalls.find(c => c.method === "recall.write")?.hostId).toBe("host_a");
-    expect(s.activity.list({ kinds: ["recall"] })[0].summary).toContain("1 excerpt");
+    expect(s.activity.list({ kinds: ["recall"] })[0].summary).toBe("gave the agent 1 memory for this message");
     expect(await readdir(s.recallDir)).toEqual(["thr_main.json"]);
   });
 
