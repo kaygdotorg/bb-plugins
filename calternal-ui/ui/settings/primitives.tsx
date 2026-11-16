@@ -26,15 +26,19 @@ export function ErrorLine({ message }: { message: string | null }) {
   return message ? <p role="alert" className="text-xs text-destructive">{message}</p> : null;
 }
 
-/** A top-level section: title, one-line hint, thin divider, then content on a 16px rhythm. */
+/**
+ * A top-level section, grouped like bb's own Settings: a title, the content in one card (bb's card classes, so
+ * desktop matches bb's sections; css.ts gives it iOS's grouped-list shape on phones), and the hint. On phones the
+ * hint moves under the card, where iOS puts explanations (css.ts `[data-cf-section-note]`).
+ */
 export function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1 border-b border-border pb-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    <section className="flex flex-col gap-3">
+      <div data-cf-section-head="" className="flex flex-col gap-1">
+        <h3 data-cf-section-title="" className="text-sm font-semibold">{title}</h3>
       </div>
-      {children}
+      {hint ? <p data-cf-section-note="" className="text-xs text-muted-foreground" style={{ marginTop: -8 }}>{hint}</p> : null}
+      <div data-cf-group="" className="flex flex-col gap-4 rounded-lg border border-border bg-card px-4 py-3.5">{children}</div>
     </section>
   );
 }
@@ -55,7 +59,7 @@ export function SubHeading({ title, hint, action }: { title: string; hint?: stri
 /** Label column plus control column. */
 export function Row({ label, htmlFor, children }: { label: React.ReactNode; htmlFor?: string; children: React.ReactNode }) {
   return (
-    <div className="grid min-h-8 items-center gap-x-4" style={{ gridTemplateColumns: `${LABEL_COL} minmax(0, 1fr)` }}>
+    <div data-cf-row="" className="grid min-h-8 items-center gap-x-4" style={{ gridTemplateColumns: `${LABEL_COL} minmax(0, 1fr)` }}>
       <label htmlFor={htmlFor} className="text-sm">{label}</label>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>

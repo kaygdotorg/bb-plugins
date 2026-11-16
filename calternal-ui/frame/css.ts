@@ -1120,18 +1120,92 @@ ${GLASS_LAYER}  }
      the 16pt margin: the glyph touched the screen edge (x = 0). Moved 4pt in. */
   ${MAIN} [data-root-compose-mobile-recents] button[aria-label^="Hide threads under"] > svg:first-child,
   ${MAIN} [data-root-compose-mobile-recents] button[aria-label^="Show threads under"] > svg:first-child { translate: calc(4px * var(--cf-ui-scale, 1)) 0; }
-  /* ── Settings on phones, as iOS Settings (audit #16-18): labels and controls 17pt (Body), descriptions and
-     secondary notes 15pt (Subheadline), section titles 17pt semibold (Headline), and every control at least 44pt to
-     hit (bb and the plugin's own panel were desktop-sized: 14-16pt labels, 11-14pt notes, 32pt fields and buttons,
-     13pt checkboxes, 24pt swatches, 16pt switches). Fields also stop iOS zooming in on focus (it zooms under 16pt).
-     Visual sizes stay where a bigger box would crowd the row (swatches, switches, Reset links): a centred 44pt ::after
-     takes the touch instead. */
+  /* ── Settings on phones, as the native ChatGPT/Claude iOS Settings (re-measured 2026-11-16 from kayg's iPhone 17
+     Pro Max screenshots, dark, 3x → pt; supersedes the 2026-11-16 audit's 17pt notes-15 / titles-17-semibold):
+     - Grouped cards: 24pt corners (Claude/ChatGPT ~24; bb's 10), text 20pt inside the card (bb's 16). Our fill and
+       hairline stay (--card glass tint, --cf-edge); only the shape is iOS's.
+     - Rows: one line 52pt (theirs 52-56; ours were 40-43), title + note ~73pt (theirs ~77): 15pt above and below.
+       Between rows a 1px hairline at ~8% ink, from the label's x to the card's right edge (ChatGPT; Claude stops
+       20pt short).
+     - Labels 17pt regular in the ink; notes and descriptions 13pt on 18pt lines, secondary grey (Footnote; ours 15/20).
+     - Section headers: 15pt regular secondary grey, on the card's text column (Claude's; ChatGPT's 17 semibold grey
+       is as big as the row labels under it, and bb stacks many sections per page: the smaller caption lets the
+       rows lead and reads as a caption, not a competing heading).
+     - Switches 51×31pt (iOS; bb's 28×16), white knob, accent track when on.
+     - Buttons and fields at least 44pt, and buttons in one row one height (44). */
   ${PLAIN_MAIN} [data-page-scroll-viewport] :is(label, h3, h4, input, select, textarea, button, [role="combobox"]):not(.text-xs) { font-size: calc(17px * var(--cf-ui-scale, 1)); }
-  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(h3, h4) { font-weight: 600; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] h4 { font-size: calc(17px * var(--cf-ui-scale, 1)); font-weight: 400; }
   ${PLAIN_MAIN} [data-page-scroll-viewport] :is(p, span, h2):is(.text-sm, .text-base):not(.text-muted-foreground, .text-subtle-foreground) { font-size: calc(17px * var(--cf-ui-scale, 1)); }
-  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(p, span, button, a, h4 span):is(.text-xs, .text-muted-foreground, .text-subtle-foreground, .text-subtle-foreground\\/75) { font-size: calc(15px * var(--cf-ui-scale, 1)) !important; line-height: 1.35; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(p, span, button, a, h4 span):is(.text-xs, .text-muted-foreground, .text-subtle-foreground, .text-subtle-foreground\\/75) { font-size: calc(13px * var(--cf-ui-scale, 1)) !important; line-height: calc(18px * var(--cf-ui-scale, 1)); }
+  /* Section headers: bb's h2 in a section's head row, and the plugin's h3 (ui/settings Section). */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(section > div:first-child h2, [data-cf-section-title]) {
+    font-size: calc(15px * var(--cf-ui-scale, 1)) !important;
+    line-height: calc(20px * var(--cf-ui-scale, 1));
+    font-weight: 400 !important;
+    color: var(--muted-foreground) !important;
+  }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(section > div:first-child:has(h2), [data-cf-section-head], [data-cf-section-note]) { padding-inline: calc(20px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] section > .bg-card:not(:first-child) { margin-top: calc(8px * var(--cf-ui-scale, 1)) !important; }
+  /* The plugin's section note is a footer under its card, as iOS puts explanations (ui/settings Section). */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-cf-section-note] { order: 2; margin-top: calc(-4px * var(--cf-ui-scale, 1)) !important; }
+  /* Grouped cards: bb's (div.rounded-lg.bg-card.px-4.py-3.5) and the plugin's ([data-cf-group]). */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(div.rounded-lg.bg-card.px-4, [data-cf-group]) {
+    border-radius: calc(24px * var(--cf-ui-scale, 1)) !important;
+    padding: 0 calc(20px * var(--cf-ui-scale, 1)) !important;
+    gap: 0 !important;
+  }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] div.rounded-lg.bg-card.px-4 > :is(.space-y-5, .divide-y) > * { margin-block: 0 !important; }
+  /* Rows: every row a card holds, 15pt above and below, carried 20pt past the text column so its hairline meets
+     the card's edge (the padding gives the 20pt back to the content). */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(div.rounded-lg.bg-card.px-4 > :is(.space-y-5, .divide-y) > *, div.rounded-lg.bg-card.px-4 > [data-settings-anchor], [data-cf-group] > :not(:has([data-cf-row]))) {
+    min-height: calc(52px * var(--cf-ui-scale, 1));
+    padding-block: calc(15px * var(--cf-ui-scale, 1)) !important;
+    width: auto !important; /* bb's rows are w-full, which would cancel the negative margin */
+    margin-right: calc(-20px * var(--cf-ui-scale, 1));
+    padding-right: calc(20px * var(--cf-ui-scale, 1)) !important;
+    border: 0 solid color-mix(in oklab, var(--foreground) 8%, transparent) !important;
+  }
+  /* Rows of 44pt controls (the plugin's fields): 4pt above and below make the same 52pt row. */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-cf-group] [data-cf-row] {
+    min-height: calc(52px * var(--cf-ui-scale, 1));
+    padding-block: calc(4px * var(--cf-ui-scale, 1)) !important;
+    margin-right: calc(-20px * var(--cf-ui-scale, 1));
+    padding-right: calc(20px * var(--cf-ui-scale, 1)) !important;
+    border: 0 solid color-mix(in oklab, var(--foreground) 8%, transparent) !important;
+  }
+  /* A block of rows (Glass's groups, Appearance): no gaps between its rows, 8pt above and below the block. */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-cf-group] > :has([data-cf-row]) { gap: 0 !important; padding-block: calc(8px * var(--cf-ui-scale, 1)); margin-right: calc(-20px * var(--cf-ui-scale, 1)); padding-right: calc(20px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-cf-group] :has(> [data-cf-row]) { gap: 0 !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(div.rounded-lg.bg-card.px-4 > :is(.space-y-5, .divide-y) > * + *, [data-cf-group] > * + *, [data-cf-row] + [data-cf-row]) { border-top-width: 1px !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-cf-group] > * + :has([data-cf-row]) { border-top: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [data-settings-anchor] p.mt-0\\.5 { margin-top: calc(2px * var(--cf-ui-scale, 1)) !important; }
+  /* Switches: iOS's 51×31 with a 27pt knob 2pt inside (bb: 28×16, 12pt knob). It overhangs its row by 4.5pt each
+     way, so a switch row stays 52 like a plain one (iOS rows: 52-56). Off: Apple's fill (dark 120/120/128 at 36%,
+     light at 16%) and a white knob with iOS's shadow; on: the accent track (the shared rule) and the accent ink. */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [role="switch"] {
+    width: calc(51px * var(--cf-ui-scale, 1)) !important;
+    height: calc(31px * var(--cf-ui-scale, 1)) !important;
+    padding: 0 calc(2px * var(--cf-ui-scale, 1)) !important;
+    border-width: 0 !important;
+    margin-block: calc(-4.5px * var(--cf-ui-scale, 1));
+    box-shadow: none !important;
+  }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] div.shrink-0:has(> [role="switch"]) { display: flex; } /* no line box around it */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [role="switch"][data-state="unchecked"] { background-color: rgb(120 120 128 / 0.16) !important; }
+  ${R}.dark ${PLAIN_MAIN.slice(R.length)} [data-page-scroll-viewport] [role="switch"][data-state="unchecked"] { background-color: rgb(120 120 128 / 0.36) !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [role="switch"] > span {
+    width: calc(27px * var(--cf-ui-scale, 1)) !important;
+    height: calc(27px * var(--cf-ui-scale, 1)) !important;
+    translate: 0 0 !important;
+    box-shadow: 0 3px 8px rgb(0 0 0 / 0.15), 0 3px 1px rgb(0 0 0 / 0.06);
+    transition: translate 200ms var(--cf-ease-out, ease-out) !important;
+  }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [role="switch"][data-state="checked"] > span { translate: calc(20px * var(--cf-ui-scale, 1)) 0 !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] [role="switch"][data-state="unchecked"] > span { background-color: #fff !important; }
   ${PLAIN_MAIN} [data-page-scroll-viewport] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea, [role="combobox"]) { min-height: calc(44px * var(--cf-ui-scale, 1)); }
-  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(button, label):is(.h-8, .h-9, .h-7) { height: auto !important; min-height: calc(44px * var(--cf-ui-scale, 1)); padding-inline: calc(16px * var(--cf-ui-scale, 1)) !important; }
+  /* Buttons in a row are one height (kayg's screenshot: "Upload image", a label styled as a button, sat shorter
+     than "No wallpaper" beside it): every bb/plugin text button is 44pt, not "at least". */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(button, label):is(.h-8, .h-9, .h-7) { height: calc(44px * var(--cf-ui-scale, 1)) !important; min-height: 0; padding-block: 0 !important; padding-inline: calc(16px * var(--cf-ui-scale, 1)) !important; }
   ${PLAIN_MAIN} [data-page-scroll-viewport] input:is([type="checkbox"], [type="radio"]) { width: calc(20px * var(--cf-ui-scale, 1)); height: calc(20px * var(--cf-ui-scale, 1)); }
   ${PLAIN_MAIN} [data-page-scroll-viewport] label:has(> input:is([type="checkbox"], [type="radio"])) { min-height: calc(44px * var(--cf-ui-scale, 1)); }
   ${PLAIN_MAIN} [data-page-scroll-viewport] div.grid.h-8 { height: auto !important; min-height: calc(44px * var(--cf-ui-scale, 1)); } /* rows of fixed 32pt (Glass) that the 44pt fields overflowed */
@@ -1147,6 +1221,47 @@ ${GLASS_LAYER}  }
     width: calc(44px * var(--cf-ui-scale, 1));
     height: calc(44px * var(--cf-ui-scale, 1));
     translate: -50% -50%;
+  }
+  /* The nav title: 17pt semibold, iOS's inline title (Claude/ChatGPT ~17-18; pills-phone.ts set 15/620). */
+  ${PLAIN_MAIN} header [data-testid="app-page-header-content-row"] > div:first-child > div > div.min-w-0 > p { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; font-weight: 600 !important; }
+  /* The settings list (the drawer on Settings) as iOS Settings' root list: each group a 24pt card (the quiet ink
+     tint the drawer uses, --cf-edge), 52pt rows, 17pt labels, 20pt icons 16pt before the label, a hairline from
+     the label's x to the card edge, and a 6×11 chevron 20pt in from the right edge. */
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.px-2:has(> div.mt-1.space-y-0\\.5) { padding-inline: calc(16px * var(--cf-ui-scale, 1)) !important; } /* the card on iOS's 16pt inset (bb: 8) */
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.mt-1.space-y-0\\.5 {
+    border-radius: calc(24px * var(--cf-ui-scale, 1));
+    background: color-mix(in oklab, var(--foreground) 6.5%, transparent);
+    border: 1px solid var(--cf-edge);
+    overflow: hidden;
+  }
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.mt-1.space-y-0\\.5 > a {
+    position: relative;
+    height: calc(52px * var(--cf-ui-scale, 1)) !important;
+    margin: 0 !important;
+    padding: 0 calc(20px * var(--cf-ui-scale, 1)) !important;
+    gap: calc(16px * var(--cf-ui-scale, 1)) !important;
+    border-radius: 0 !important;
+    font-size: calc(17px * var(--cf-ui-scale, 1)) !important;
+  }
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.mt-1.space-y-0\\.5 > a [data-icon-root] { width: calc(20px * var(--cf-ui-scale, 1)) !important; height: calc(20px * var(--cf-ui-scale, 1)) !important; }
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.mt-1.space-y-0\\.5 > a + a::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: calc(56px * var(--cf-ui-scale, 1)); /* 20 inset + 20 icon + 16 gap: the label's x */
+    height: 1px;
+    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  }
+  ${R} [data-testid="settings-sidebar-body"] [data-sidebar="content"] div.mt-1.space-y-0\\.5 > a::after {
+    content: "";
+    flex: none;
+    margin-left: auto;
+    width: calc(6px * var(--cf-ui-scale, 1));
+    height: calc(11px * var(--cf-ui-scale, 1));
+    background: var(--muted-foreground);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 6 11'%3E%3Cpath d='M1 1l4 4.5L1 10' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 6 11'%3E%3Cpath d='M1 1l4 4.5L1 10' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   /* GenUI cards' footer ("Copy as markdown", "Source"): bb-sized 11px text with 12px icons, 19pt tall, was the
      smallest thing on screen (kayg). Here they match the message actions: 15pt text, 18pt icons, 32pt rows,

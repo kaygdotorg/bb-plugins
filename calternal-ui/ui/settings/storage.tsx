@@ -21,7 +21,7 @@ function AssetRow({ preview, name, detail, bytes, busy, disabled, onRemove, remo
   removeLabel: string;
 }) {
   return (
-    <li className="flex min-h-10 items-center gap-3 py-1.5">
+    <li data-cf-row="" className="flex min-h-10 items-center gap-3 py-1.5">
       {preview}
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{name}</span>

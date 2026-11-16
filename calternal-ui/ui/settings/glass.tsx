@@ -44,7 +44,7 @@ function EffectRow({
   };
 
   return (
-    <div className="grid h-8 grid-cols-[5rem_4rem_1rem] items-center gap-x-2">
+    <div data-cf-row="" className="grid h-8 grid-cols-[5rem_4rem_1rem] items-center gap-x-2">
       <label htmlFor={`${id}-on`} className="flex cursor-pointer items-center gap-2 text-sm">
         <input
           id={`${id}-on`}

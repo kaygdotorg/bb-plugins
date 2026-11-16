@@ -220,7 +220,7 @@ export function FontsSection({ state, rpc, commit }: { state: FrameState; rpc: R
           const font = state.fonts[row.key];
           const id = `${baseId}-${row.key}`;
           return (
-            <div key={row.key} className="grid items-center gap-x-4 gap-y-1" style={{ gridTemplateColumns: `${LABEL_COL} minmax(0, 1fr)` }}>
+            <div key={row.key} data-cf-row="" className="grid items-center gap-x-4 gap-y-1" style={{ gridTemplateColumns: `${LABEL_COL} minmax(0, 1fr)` }}>
               <label htmlFor={`${id}-on`} className="flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   id={`${id}-on`}
