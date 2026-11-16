@@ -4,16 +4,19 @@ import type { ConclusionView } from "../lib/contract";
 import { useMemoryRpc, useNow, useRemote } from "./data";
 import { GROUP_HINT, ORIGIN_WORDS, STATUS_LOADING, originOf, statusLine } from "./format";
 import { Badge } from "./primitives";
+import { ChatSummary } from "./learning";
 
 export const MEMORY_PATH = "memory";
 
 function useThreadMemory(threadId: string) {
   const rpc = useMemoryRpc();
+  const nav = useBbNavigate();
   const remote = useRemote("thread.status", { threadId }, { pollMs: 15_000 });
   const now = useNow();
   const status = remote.data;
   const toggle = async () => {
     if (!status || status.state === "not-captured") return;
+    if (status.reason === "Memory is paused for this group.") { nav.toPluginPanel(MEMORY_PATH, { subPath: "groups" }); return; }
     await rpc.call("pause.set", { kind: "thread", id: threadId, paused: status.state !== "paused" });
     await remote.refetch();
   };
@@ -21,7 +24,9 @@ function useThreadMemory(threadId: string) {
   const line = status ? statusLine(status, status.queued, now) : remote.error ? "memory · offline" : STATUS_LOADING;
   const clickable = status !== null && status.state !== "not-captured";
   const title = status
-    ? status.state === "not-captured"
+    ? status.reason === "Memory is paused for this group."
+      ? "Memory is paused for this group. Open Groups to resume it."
+      : status.state === "not-captured"
       ? status.reason ?? "memory isn't saving this chat"
       : status.state === "paused"
         ? "memory is paused for this chat. click to start saving it again"
@@ -47,10 +52,11 @@ export function ThreadInfoStatusRow({ threadId }: ExperimentalThreadInfoProps) {
       <span className="flex min-w-0 max-w-full flex-col gap-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 break-words text-xs" title={m.status?.scope ? GROUP_HINT : undefined}>{m.line}</span>
-          {m.clickable ? <button type="button" title={m.title} aria-label={`${paused ? "resume" : "pause"} memory for this chat`} onClick={() => void m.toggle()} className={control}>{paused ? "resume" : "pause"}</button> : null}
+          {m.clickable ? <button type="button" title={m.title} aria-label={m.status?.reason === "Memory is paused for this group." ? "Manage paused group" : `${paused ? "resume" : "pause"} memory for this chat`} onClick={() => void m.toggle()} className={control}>{m.status?.reason === "Memory is paused for this group." ? "Manage group" : paused ? "resume" : "pause"}</button> : null}
           <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">open memory</button>
         </span>
         {m.status?.scope ? <span className="text-2xs text-muted-foreground">group: {GROUP_HINT}</span> : null}
+        <ChatSummary threadId={threadId} />
       </span>
     </DetailRow>
   );
@@ -112,6 +118,7 @@ export function ThreadMemorySection({ threadId }: ExperimentalThreadContextCardP
   const offline = stale || ctx.error !== null;
   return (
     <div className="space-y-2">
+      <ChatSummary threadId={threadId} />
       {offline ? <p className="text-2xs text-warning" title="memory can't be reached, so this is what it had last time">out of date · showing what memory last knew</p> : null}
       <Group title={scope ? `what memory has learned about ${scope}` : "what memory has learned"} items={top} />
       <Group title="from this chat" items={fromThread} />

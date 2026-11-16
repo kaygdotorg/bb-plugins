@@ -25,8 +25,11 @@ Open **Memory** in the sidebar. It has these tabs:
 - **activity**: every upload, recall, tool call, deletion, backfill step, harness change and failure.
 - **conclusions**: what Honcho has concluded about you. You can search them, confirm the ones agents wrote, or delete them.
 - **peers**: which AI peer each harness writes as.
+- **Groups**: summaries, chat links, scoped search and questions, pause/resume, and a counted preview with typed confirmation before permanently forgetting a group. Forgotten groups stay paused. Very large previews refuse to proceed rather than delete from an incomplete scan.
+- **Keys**: key source, permissions and expiry; test and replace the active key, or return to the config file. Create narrower keys using an admin key (an optional one-request password field keeps it separate from capture). New keys are shown once. Local notes contain scope and expiry, never credentials. Honcho has no key-list or revocation endpoint; use expiry to limit a key's lifetime.
 - **privacy**: pauses, the deny list (git remotes and paths), redaction patterns, a box to test redaction on sample text, and what happens when a thread is deleted.
 - **connection**: the server, the key level, health and queue, the backfill, and the harness steps.
+- The connection tab also shows pending learning tasks and the last consolidation, with **Consolidate now**. Each chat's memory panel includes **This chat so far** when Honcho has generated a summary.
 
 Each thread's context card shows its memory status (saving, paused, offline, or not captured, with the reason) and the conclusions that came from it.
 
@@ -48,3 +51,5 @@ Run a dry run first, on the connection tab or with `bb honcho backfill --dry-run
 ## Development
 
 Run `npx tsc --noEmit`, `npx vitest run` and `bb plugin build`. See [AGENTS.md](AGENTS.md) for the module map and the wiring order.
+
+Live management tests are opt-in: set `HONCHO_TEST_CONFIG` to a private dotenv file containing `HONCHO_BASE_URL`, `HONCHO_WORKSPACE=hermes-test`, and `HONCHO_API_KEY`. To exercise minting too, set `HONCHO_TEST_ADMIN_FILE` to a private JSON file containing `adminKey`. Run `npx vitest run test/live-management.test.ts`. Never commit credential files or use the production workspace for these tests.

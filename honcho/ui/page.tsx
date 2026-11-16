@@ -5,13 +5,17 @@ import { ConclusionsTab } from "./conclusions";
 import { ConnectionTab } from "./connection";
 import { PeersTab } from "./peers";
 import { PrivacyTab } from "./privacy";
+import { KeysTab } from "./keys";
+import { GroupsTab } from "./groups";
 import { cx } from "./primitives";
 import { MEMORY_PATH } from "./thread";
 
 export const TABS = [
   { id: "activity", label: "activity", component: ActivityTab },
+  { id: "groups", label: "Groups", component: GroupsTab },
   { id: "conclusions", label: "what it learned", component: ConclusionsTab },
   { id: "peers", label: "assistants", component: PeersTab },
+  { id: "keys", label: "Keys", component: KeysTab },
   { id: "privacy", label: "privacy", component: PrivacyTab },
   { id: "connection", label: "connection", component: ConnectionTab },
 ] as const;
@@ -23,7 +27,7 @@ export function MemoryPage({ subPath }: PluginNavPanelProps) {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-5">
       <div className="mx-auto w-full max-w-3xl space-y-4">
-        <nav role="tablist" aria-label="memory" className="flex gap-1 border-b border-border">
+        <nav role="tablist" aria-label="memory" className="flex flex-wrap gap-1 border-b border-border">
           {TABS.map((tab) => (
             <button
               key={tab.id}

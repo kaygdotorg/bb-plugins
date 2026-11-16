@@ -17,6 +17,7 @@ export type RecallRuntime = RecallService & {
   /** Conclusions honcho_conclude saved from a thread; `attached: false` ones carry no session_id,
    * so deleting the thread's session leaves them and the delete path must purge them by id. */
   conclusionsForThread(threadId: string): Array<{ id: string; attached: boolean }>;
+  forgetConclusions(ids: string[]): void;
   /** Everything that reached the agent in this thread, oldest first: per-turn hits the hook reported as
    * served (joined to the stored excerpts) and session-build injections. `since` is epoch ms. */
   injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]>;
@@ -162,6 +163,10 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
       await shared.invalidateMemory();
     },
     conclusionsForThread: threadId => shared.store.conclusionsForThread(threadId),
+    forgetConclusions(ids) {
+      for (const id of ids) shared.store.forget(id);
+      void shared.invalidateMemory();
+    },
     async confirmConclusion(id) {
       shared.store.confirm(id);
       cache.request(true);

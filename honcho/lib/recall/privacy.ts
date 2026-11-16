@@ -42,7 +42,8 @@ export class PrivacyGate {
   /** Thread, context thread or project paused right now. */
   paused(thread: GateThread): boolean {
     const outbox = this.deps.outbox;
-    return outbox.isPausedNow("thread", thread.id)
+    const scope = this.ports.scopeFor?.(thread.contextThreadId || thread.id);
+    return (!!scope && outbox.groupPaused(scope)) || outbox.isPausedNow("thread", thread.id)
       || (!!thread.contextThreadId && thread.contextThreadId !== thread.id && outbox.isPausedNow("thread", thread.contextThreadId))
       || outbox.isPausedNow("project", thread.projectId);
   }
@@ -74,7 +75,18 @@ export class PrivacyGate {
   /** Paused or deny-listed. */
   async blocked(thread: GateThread): Promise<boolean> {
     if (this.paused(thread)) return true;
+    if (await this.groupPaused(thread)) return true;
     return this.checkDenied(thread);
+  }
+
+  private async groupPaused(thread: GateThread): Promise<boolean> {
+    if (!this.deps.outbox.anyGroupPaused()) return false;
+    if (!this.ports.resolveScope) return true;
+    try {
+      const target = thread.contextThreadId && thread.contextThreadId !== thread.id
+        ? await this.bb.sdk.threads.get({ threadId: thread.contextThreadId }) : thread;
+      return this.deps.outbox.groupPaused(await this.ports.resolveScope(target));
+    } catch { return true; }
   }
 
   /**
@@ -83,6 +95,10 @@ export class PrivacyGate {
    */
   blockedNow(thread: GateThread): boolean | null {
     if (this.paused(thread)) return true;
+    if (this.deps.outbox.anyGroupPaused() && !this.ports.scopeFor?.(thread.contextThreadId || thread.id)) {
+      void this.groupPaused(thread);
+      return null;
+    }
     const known = this.denied.get(thread.id);
     if (!known || this.now() - known.at > DENY_TTL_MS) void this.checkDenied(thread);
     if (known) return known.value;

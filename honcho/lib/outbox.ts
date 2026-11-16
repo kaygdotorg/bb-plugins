@@ -40,6 +40,8 @@ export const OUTBOX_MIGRATIONS = [
    ALTER TABLE switch_over ADD COLUMN built_at INTEGER;
    ALTER TABLE switch_over ADD COLUMN probation INTEGER NOT NULL DEFAULT 0;
    CREATE TABLE harness_writes (thread TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);`,
+  `CREATE TABLE group_pauses (scope TEXT NOT NULL, from_at INTEGER NOT NULL, to_at INTEGER);
+   CREATE INDEX group_pauses_scope ON group_pauses(scope);`,
 ] as const;
 /** The switch-over gate rule new markers are made with (see capture's gate()). */
 export const GATE_VERSION = 2;
@@ -224,6 +226,26 @@ export class Outbox {
   /** Whether new events are being paused right now. */
   isPausedNow(kind: "thread" | "project", id: string): boolean {
     return !!this.db.prepare("SELECT 1 FROM pause_ranges WHERE kind=? AND id=? AND to_value IS NULL").get(kind, id);
+  }
+  setGroupPaused(scope: string, paused: boolean, now = Date.now()): void {
+    this.db.transaction(() => {
+      if (paused) {
+        if (!this.groupPaused(scope)) this.db.prepare("INSERT INTO group_pauses VALUES (?,?,NULL)").run(scope, now);
+      } else this.db.prepare("UPDATE group_pauses SET to_at=? WHERE scope=? AND to_at IS NULL").run(now, scope);
+    })();
+  }
+  groupPaused(scope: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM group_pauses WHERE scope=? AND to_at IS NULL").get(scope);
+  }
+  hasGroupPauses(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM group_pauses LIMIT 1").get();
+  }
+  anyGroupPaused(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM group_pauses WHERE to_at IS NULL LIMIT 1").get();
+  }
+  groupAllows(scope: string, createdAt: number, sendAt = createdAt): boolean {
+    return !this.db.prepare("SELECT 1 FROM group_pauses WHERE scope=? AND from_at<=? AND (to_at IS NULL OR to_at>=?)")
+      .get(scope, Math.max(createdAt, sendAt), createdAt);
   }
   pauses(): PauseRange[] {
     return (this.db.prepare("SELECT kind,id,from_value,to_value,since_at FROM pause_ranges ORDER BY kind,id,from_value").all() as Array<{ kind: "thread" | "project"; id: string; from_value: number; to_value: number | null; since_at: number | null }>)

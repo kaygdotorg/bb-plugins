@@ -126,7 +126,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
 
   // 6. CLI and the Memory page's RPC.
   registerCli(bb, { capture, backfill, harness });
-  registerRpc(bb, { capture, recall, harness, backfill, deps, secrets: secretValues });
+  registerRpc(bb, { capture, recall, harness, backfill, deps, settings, secrets: secretValues });
 
   // 7. Start. Event listeners register now, inside the factory, as bb requires.
   // The work that talks to Honcho runs as background services, which bb starts

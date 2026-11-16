@@ -79,6 +79,7 @@ interface ThreadState {
   oldestPendingAt: number | null;
   blocked: string | null;
   sessionReady: boolean;
+  groupScope?: string;
   peers: Set<string>;
   gateScanSeq: number;
   /** A gate scan has run for this thread since the plugin started. */
@@ -152,6 +153,7 @@ export type CaptureHandle = CaptureService & {
   isDenied(thread: ThreadRef): Promise<boolean>;
   /** Privacy settings changed: forget cached deny decisions and re-evaluate held threads now. */
   privacyChanged(): void;
+  groupForgotten(group: string): void;
 };
 
 export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureHandle {
@@ -443,7 +445,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
         origin: sideChat ? "side-chat" : thread.originKind ?? (thread.originPluginId ? `plugin:${thread.originPluginId}` : null),
         ...(sideChat ? { sideChat: true } : {}), automationId,
       });
-      await client.getOrCreateSession(thread.id, { metadata, peers, scopes: [await facts.scopeFor(thread)] });
+      st.groupScope = await facts.scopeFor(thread);
+      await client.getOrCreateSession(thread.id, { metadata, peers, scopes: [st.groupScope] });
       st.sessionReady = true;
       st.peers = new Set(Object.keys(peers));
       return;
@@ -487,7 +490,8 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     return model;
   };
   /** Send-time gate. A project pause stops anything it overlapped between the event's creation and now. */
-  const sendable = (thread: Thread, seq: number, createdAt: number) => outbox.shouldSend(thread.id, seq, { id: thread.projectId, createdAt, sendAt: clock.now() });
+  const sendable = (thread: Thread, seq: number, createdAt: number) => outbox.shouldSend(thread.id, seq, { id: thread.projectId, createdAt, sendAt: clock.now() })
+    && outbox.groupAllows(states.get(thread.id)?.groupScope ?? facts.known(thread.id) ?? "", createdAt, clock.now());
 
   /** Posts messages in POSTs of at most 100. A validation (400/422) rejection splits only
    * the rejected POST and retries its halves until the single bad message is found; POSTs
@@ -554,7 +558,10 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     if (startSeq === undefined) return;
     const settings = await privacy();
     let deny: string | null;
-    try { deny = await facts.denied(thread, settings); }
+    try {
+      if (outbox.hasGroupPauses()) st.groupScope = await facts.scopeFor(thread);
+      deny = await facts.denied(thread, settings);
+    }
     catch (error) {
       // Fail closed: without the environment or git facts the deny list can't be checked, so
       // nothing is uploaded and the cursor stays put; the backoff retries.
@@ -954,6 +961,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
 
     scopeFor: thread => facts.scopeFor(thread),
     knownScope: threadId => facts.known(threadId),
+    groupForgotten(group) {
+      for (const st of states.values()) if ((st.groupScope ?? facts.known(st.id)) === group) { st.sessionReady = false; st.peers.clear(); }
+    },
     privacyChanged() {
       // A held thread keeps its "not captured" reason until it is processed again, which could be
       // a backoff away; run it now so its status follows the new deny list.
@@ -964,8 +974,9 @@ export function createCaptureService(bb: CaptureBb, deps: CaptureDeps): CaptureH
     async threadStatus(threadId): Promise<ThreadMemoryStatus> {
       const st = states.get(threadId);
       const thread = st?.thread ?? await (bb.sdk.threads.get({ threadId }) as Promise<Thread>).catch(() => undefined);
-      const scope = (await bb.storage.kv.get<string>(scopeKey(threadId))) ?? null;
+      const scope = st?.groupScope ?? (await bb.storage.kv.get<string>(scopeKey(threadId))) ?? null;
       const base = { threadId, lastUploadAt: st?.lastUploadAt ?? null, queued: st?.queued ?? 0, scope };
+      if (scope && outbox.groupPaused(scope)) return { ...base, state: "paused", reason: "Memory is paused for this group." };
       if (st?.blocked) return { ...base, state: "not-captured", reason: st.blocked };
       const marker = outbox.switchOverMarker(threadId);
       if (marker === undefined && thread && !gateAlwaysOpen(thread.providerId) && await requiresSwitchover()) {

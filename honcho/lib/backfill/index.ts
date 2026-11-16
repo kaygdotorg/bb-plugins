@@ -163,10 +163,12 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
     const since = opts.since ? Date.parse(opts.since) : NaN;
     // pause ranges and superseded edits are checked per message, same gate as live capture
     const project = thread.projectId ? { id: thread.projectId } : undefined;
+    const groupScope = scopeSlug(await deps.scopeFor?.(thread) ?? thread.projectId);
     let messages = result.messages.filter(m => {
       const at = Date.parse(m.created_at!);
       const seqNo = Number(m.metadata?.bb_seq);
       if (!deps.outbox.shouldSend(thread.id, seqNo, project && { id: project.id, createdAt: at })) return false;
+      if (!deps.outbox.groupAllows(groupScope, at, now())) return false;
       return Number.isNaN(since) || at >= since;
     });
     let skipped = 0;
@@ -271,7 +273,8 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
       });
     }
     const project = thread.projectId;
-    const live = (m: MessageDraft) => deps.outbox.shouldSend(thread.id, Number(m.metadata?.bb_seq), project ? { id: project, createdAt: Date.parse(m.created_at!) } : undefined);
+    const groupScope = scopeSlug(await deps.scopeFor?.(thread) ?? thread.projectId);
+    const live = (m: MessageDraft) => deps.outbox.groupAllows(groupScope, Date.parse(m.created_at!), now()) && deps.outbox.shouldSend(thread.id, Number(m.metadata?.bb_seq), project ? { id: project, createdAt: Date.parse(m.created_at!) } : undefined);
     for (let stale = true, rescans = 0; stale; rescans++) {
       stale = false;
       if (rescans > MAX_RESCANS) throw new Error("thread kept changing during backfill");

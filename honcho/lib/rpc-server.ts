@@ -11,11 +11,15 @@ import { createHash } from "node:crypto";
 import { redact, unsafePattern } from "./redact.js";
 import { DENY_ENTRY_MAX, DENY_LIST_MAX, denyEntryProblem } from "./capture/deny.js";
 import { PROVIDER_PEERS } from "./mapping.js";
+import { createKeyService } from "./keys.js";
+import type { HonchoSettings } from "./settings.js";
+import { createGroupService } from "./groups.js";
 
 export interface Services {
+  settings?: HonchoSettings;
   /** `privacyChanged` (capture) drops cached deny decisions and re-evaluates held threads. */
-  capture: CaptureService & { privacyChanged?(): void };
-  recall: RecallService & { injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]> };
+  capture: CaptureService & { privacyChanged?(): void; groupForgotten?(group: string): void };
+  recall: RecallService & { injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]>; forgetConclusions?(ids: string[]): void };
   harness: HarnessService;
   backfill: BackfillService;
   deps: Deps & { isCloud(): Promise<boolean> };
@@ -31,7 +35,21 @@ const text = (max = 2_000) => z.string().min(1).max(max);
 const empty = z.preprocess((value) => value ?? {}, z.object({}).loose());
 const machine = z.object({ machineId: text(200).optional() });
 const privacyList = z.array(z.string().max(100_000)).max(5_000).optional();
+const group = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/);
 export const rpcInputs = {
+  "groups.list": empty,
+  "groups.get": z.object({ group }),
+  "groups.search": z.object({ group, query: text() }),
+  "groups.ask": z.object({ group, query: text() }),
+  "groups.pause": z.object({ group, paused: z.boolean() }),
+  "groups.forgetPreview": z.object({ group }),
+  "groups.forget": z.object({ group, confirmation: text(200), token: text(200) }),
+  "learning.get": empty,
+  "learning.consolidate": empty,
+  "thread.summary": z.object({ threadId: text(200) }),
+  "keys.get": empty,
+  "keys.replace": z.object({ apiKey: z.string().trim().min(1).max(16_000).nullable() }),
+  "keys.mint": z.object({ label: text(100), workspace: z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/), peer: text(200).optional(), session: text(200).optional(), scope: z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/).optional(), expiresAt: text(100).optional(), adminKey: text(16_000).optional() }),
   "thread.status": z.object({ threadId: text(200) }),
   "thread.context": z.object({ threadId: text(200) }),
   "pause.set": z.object({ kind: z.enum(["thread", "project"]), id: text(2_000), paused: z.boolean() }),
@@ -80,6 +98,19 @@ type Entry<K extends keyof RpcMethods> = { input: StandardSchemaV1<RpcMethods[K]
 const method = <K extends keyof RpcMethods>(name: K): Entry<K> => ({ input: rpcInputs[name] as unknown as Entry<K>["input"], output: typed<RpcMethods[K][1]>() });
 
 export const rpcContract = defineRpcContract({
+  "groups.list": method("groups.list"),
+  "groups.get": method("groups.get"),
+  "groups.search": method("groups.search"),
+  "groups.ask": method("groups.ask"),
+  "groups.pause": method("groups.pause"),
+  "groups.forgetPreview": method("groups.forgetPreview"),
+  "groups.forget": method("groups.forget"),
+  "learning.get": method("learning.get"),
+  "learning.consolidate": method("learning.consolidate"),
+  "thread.summary": method("thread.summary"),
+  "keys.get": method("keys.get"),
+  "keys.replace": method("keys.replace"),
+  "keys.mint": method("keys.mint"),
   "thread.status": method("thread.status"),
   "thread.context": method("thread.context"),
   "pause.set": method("pause.set"),
@@ -199,6 +230,8 @@ const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
 export function registerRpc(bb: BbPluginApi, services: Services): () => void {
   const { capture, recall, harness, backfill, deps, secrets } = services;
   const kv = bb.storage.kv;
+  const keys = createKeyService(bb, deps, services.settings);
+  const groups = createGroupService(bb, deps, secrets, async () => compilePatterns((await readPrivacy(kv)).patterns), (group, ids) => { capture.groupForgotten?.(group); recall.forgetConclusions?.(ids); });
   const ok = { ok: true } as const;
   /** Tells open pages that durable state changed; they refetch over rpc. */
   const changed = (what: string) => { try { bb.realtime.publish("changed", { what }); } catch { /* best effort */ } };
@@ -223,6 +256,30 @@ export function registerRpc(bb: BbPluginApi, services: Services): () => void {
 
   // The host validates too, but handlers must not trust their caller (tests and internal calls bypass it).
   const handlers = {
+    "groups.list": () => groups.list(),
+    "groups.get": ({ group }) => groups.get(group),
+    "groups.search": ({ group, query }) => groups.search(group, query),
+    "groups.ask": ({ group, query }) => groups.ask(group, query),
+    "groups.pause": async ({ group, paused }) => { const result = await groups.pause(group, paused); changed("pause"); return result; },
+    "groups.forgetPreview": ({ group }) => groups.preview(group),
+    "groups.forget": async ({ group, confirmation, token }) => { await backfill.stop(); const result = await groups.forget(group, confirmation, token); changed("groups"); return result; },
+    "learning.get": async () => {
+      const client = await deps.client();
+      const { config } = await deps.config();
+      const [queue, dreams] = await Promise.all([client.queueStatus(), client.listDreams(config.peerName)]);
+      const last = dreams.items[0];
+      return { pending: queue.pending_work_units, inProgress: queue.in_progress_work_units, lastRun: last ? { status: last.status, at: last.finished_at ?? last.started_at } : null };
+    },
+    "learning.consolidate": async () => { await (await deps.client()).scheduleDream((await deps.config()).config.peerName); changed("learning"); return ok; },
+    "thread.summary": async ({ threadId }) => {
+      const summary = await (await deps.client()).sessionSummaries(threadId);
+      const latest = summary.short_summary ?? summary.long_summary;
+      const { keys: deny } = await deps.config();
+      return { content: latest ? redact(latest.content, { deny: [...deny, ...(await secrets?.() ?? [])], patterns: compilePatterns((await readPrivacy(kv)).patterns) }).text : null, at: latest?.created_at ?? null };
+    },
+    "keys.get": () => keys.view(),
+    "keys.replace": async ({ apiKey }) => { const result = await keys.replace(apiKey); probe = null; changed("keys"); return result; },
+    "keys.mint": async (input) => { const result = await keys.mint(input); changed("keys"); return result; },
     "thread.status": ({ threadId }) => capture.threadStatus(threadId),
     "thread.context": ({ threadId }) => recall.threadContext(threadId),
     "pause.set": async ({ kind, id, paused }) => { await capture.setPaused({ kind, id }, paused); changed("pause"); return ok; },

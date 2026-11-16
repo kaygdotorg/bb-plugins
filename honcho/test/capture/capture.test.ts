@@ -26,6 +26,22 @@ const texts = (thread = "thr_a") => sent(thread).map(m => m.content);
 const posts = () => mock.requests.filter(r => r.method === "POST" && /\/sessions\/[^/]+\/messages$/.test(r.path));
 
 describe("capture pipeline", () => {
+  it("honors a group pause for a chat without an environment, and never uploads paused text after resume", async () => {
+    fake.addThread("thr_a", { environmentId: null });
+    const { svc, deps } = service();
+    const scope = await svc.scopeFor({ id: "thr_a", projectId: "proj_fixture", environmentId: null });
+    deps.outbox.setGroupPaused(scope, true, clock.now());
+    fake.prompt("thr_a", "never save this paused message");
+    await pass(svc);
+    expect(sent()).toHaveLength(0);
+    expect((await svc.threadStatus("thr_a")).state).toBe("paused");
+    deps.outbox.setGroupPaused(scope, false, clock.now());
+    clock.advance(1);
+    fake.prompt("thr_a", "save this resumed message");
+    await fake.emit("experimental_thread.events", { thread: fake.threads.get("thr_a"), sequence: 4 });
+    await pass(svc);
+    expect(texts()).toEqual(["save this resumed message"]);
+  });
   it("uploads after the grace window, lazily creating the session with scope, metadata and peers", async () => {
     fake.addThread("thr_a");
     fake.prompt("thr_a", "please add a test");

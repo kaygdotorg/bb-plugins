@@ -4,6 +4,7 @@
 - **No code before kayg confirms the design.**
 - **Never print api keys.** `~/.honcho/config.json` holds them at the top level and under `hosts.*`. Mask every key when you inspect it, not just the top-level one.
 - **Measure speed on `kayg@hd02`,** not the perf VMs. Functional tests never assert timings.
+- **Live management tests use `hermes-test` only.** `test/live-management.test.ts` is opt-in through `HONCHO_TEST_CONFIG` (a private dotenv path); optional `HONCHO_TEST_ADMIN_FILE` supplies a short-lived admin credential through a private JSON file. Never put either file in the repository. The default test suite uses fakes.
 
 ## Checks
 
@@ -24,6 +25,8 @@ Shared (`lib/`):
 - `host-contract.ts`: the merged host contract and `createHostClient`, the plugin's one host client.
 - `config.ts`, `honcho-client.ts`, `mapping.ts`, `transform.ts`, `redact.ts`, `outbox.ts`, `activity.ts`: config file reading, the Honcho v3 client, bb-to-Honcho naming, event-to-message transform, redaction, the durable outbox, and the activity ring buffer.
 - `rpc-server.ts`: `registerRpc`, the Memory page's RPC. Peers, privacy and connection live here; the rest delegates to the services.
+- `keys.ts`: key metadata, tested replacement through the shared secret setting, and one-time minting. Notes never contain credentials; a temporary admin key is never persisted.
+- `groups.ts`: groups, scoped recall and a complete, expiring deletion preview. Confirmation rechecks the snapshot and holds capture leases before deleting; the group stays paused. `outbox.ts` stores group pause intervals, shared by capture, recall and backfill.
 - `cli.ts`: `registerCli`, `bb honcho status|pause|backfill|harness …`.
 
 Slices (`lib/<slice>/`):

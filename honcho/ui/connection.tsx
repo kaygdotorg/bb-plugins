@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LearningStatus } from "./learning";
 import type { HarnessState, RpcMethods } from "../lib/contract";
 import { useAction, useLabels, useMemoryRpc, useNow, useRemote } from "./data";
 import { ago, plural } from "./format";
@@ -162,6 +163,7 @@ function Backfill() {
 export function ConnectionTab() {
   return (
     <div className="space-y-5">
+      <LearningStatus />
       <Server />
       <Harness />
       <Backfill />

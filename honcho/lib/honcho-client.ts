@@ -9,6 +9,10 @@ export interface Resource { id: string; metadata?: Metadata; configuration?: Met
 export interface Workspace extends Resource { uid: string }
 export interface Peer extends Resource { workspace_id: string }
 export interface Session extends Resource { uid: string; workspace_id: string; is_active: boolean; scopes?: string[] | null }
+export interface Scope { id: string; created_at: string; metadata?: Metadata; session_count?: number }
+export interface QueueStatus { total_work_units: number; pending_work_units: number; in_progress_work_units: number; completed_work_units: number }
+export interface SessionSummaries { short_summary: { content: string; created_at: string } | null; long_summary: { content: string; created_at: string } | null }
+export interface DreamRun { id: string; status: string; started_at: string; finished_at: string | null }
 export interface Message extends Resource { content: string; peer_id: string; session_id: string; workspace_id: string; token_count: number }
 export interface ConclusionDraft { content: string; observer_id: string; observed_id: string; session_id?: string }
 export interface Conclusion extends ConclusionDraft { id: string; created_at: string; level?: "explicit" | "deductive" | "inductive" | "contradiction"; source_ids?: string[]; source_message_ids?: string[] | null; times_derived?: number }
@@ -64,7 +68,7 @@ export class HonchoClient {
   private async request<T>(path: string, body?: unknown, method = "POST", pagination: Pagination = {}, retry = true, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(pagination)) if (value !== undefined) params.set(key, String(value));
-    const url = `${this.base}/v3${path}${params.size ? `?${params}` : ""}`;
+    const url = `${this.base}/v3${path}${params.size ? `${path.includes("?") ? "&" : "?"}${params}` : ""}`;
     const attempts = retry ? 2 : 1;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
@@ -189,6 +193,32 @@ export class HonchoClient {
   }
   deleteSession(session: string): Promise<void> {
     return this.request(this.workspacePath(`/sessions/${id(session)}`), undefined, "DELETE");
+  }
+  /** Mint once: retrying could create a second credential whose value the caller never saw. */
+  createKey(options: { workspace: string; peer?: string; session?: string; scope?: string; expiresAt?: string }): Promise<{ key: string }> {
+    const query = new URLSearchParams({ workspace_id: options.workspace });
+    for (const [name, value] of Object.entries({ peer_id: options.peer, session_id: options.session, scope_id: options.scope, expires_at: options.expiresAt })) {
+      if (value) query.set(name, value);
+    }
+    return this.request(`/keys?${query}`, {}, "POST", {}, false);
+  }
+  listScopes(pagination?: Pagination): Promise<Page<Scope>> {
+    return this.request(this.workspacePath("/scopes/list?include_session_count=true"), {}, "POST", pagination);
+  }
+  listScopeSessions(scope: string, pagination?: Pagination): Promise<Page<Session>> {
+    return this.request(this.workspacePath(`/scopes/${id(scope)}/sessions/list`), {}, "POST", pagination);
+  }
+  queueStatus(): Promise<QueueStatus> {
+    return this.request(this.workspacePath("/queue/status"), undefined, "GET");
+  }
+  sessionSummaries(session: string): Promise<SessionSummaries> {
+    return this.request(this.workspacePath(`/sessions/${id(session)}/summaries`), undefined, "GET");
+  }
+  listDreams(peer: string): Promise<Page<DreamRun>> {
+    return this.request(this.workspacePath("/dreams/list"), { filters: { observer_id: peer, observed_id: peer } }, "POST", { size: 1 });
+  }
+  scheduleDream(peer: string): Promise<void> {
+    return this.request(this.workspacePath("/schedule_dream"), { observer: peer, observed: peer, dream_type: "omni" }, "POST", {}, false);
   }
   /** Read-only capability probe; v3 has no key introspection endpoint.
    * A successful scope-list proves broad access, but cannot distinguish admin

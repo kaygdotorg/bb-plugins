@@ -143,6 +143,22 @@ export interface ConnectionView {
   warnings: string[];
 }
 
+export interface KeyNote {
+  id: string; label: string; workspace: string; peer: string | null; session: string | null;
+  scope: string | null; expiresAt: string | null; createdAt: number;
+}
+export interface KeyView {
+  source: "config-file" | "bb-secret" | "none";
+  level: "admin" | "workspace" | "assistant" | "session" | "group" | "unknown";
+  workspace: string | null; activeWorkspace: string; expiresAt: string | null; notes: KeyNote[];
+}
+export interface MintKeyInput {
+  label: string; workspace: string; peer?: string; session?: string; scope?: string; expiresAt?: string; adminKey?: string;
+}
+export interface GroupView { id: string; chats: number; lastActivity: number | null; paused: boolean }
+export interface GroupDetail { summary: string; chats: Array<{ id: string; title: string | null; lastActivity: number }>; paused: boolean }
+export interface ForgetGroupPlan { token: string; group: string; sessions: number; messages: number; conclusions: number; expiresAt: number }
+
 
 // ---------- "from honcho" blocks in chats (Q45-Q48, 2026-11-15) ----------
 
@@ -161,6 +177,19 @@ export interface MemoryInjection {
 // ---------- RPC surface used by the frontend (method name -> [params, result]) ----------
 
 export interface RpcMethods {
+  "groups.list": [{}, GroupView[]];
+  "groups.get": [{ group: string }, GroupDetail];
+  "groups.search": [{ group: string; query: string }, Array<{ content: string; sessionId: string; date: string }>];
+  "groups.ask": [{ group: string; query: string }, { content: string | null }];
+  "groups.pause": [{ group: string; paused: boolean }, { ok: true }];
+  "groups.forgetPreview": [{ group: string }, ForgetGroupPlan];
+  "groups.forget": [{ group: string; confirmation: string; token: string }, { ok: true }];
+  "learning.get": [{}, { pending: number; inProgress: number; lastRun: { status: string; at: string } | null }];
+  "learning.consolidate": [{}, { ok: true }];
+  "thread.summary": [{ threadId: string }, { content: string | null; at: string | null }];
+  "keys.get": [{}, KeyView];
+  "keys.replace": [{ apiKey: string | null }, { ok: true }];
+  "keys.mint": [MintKeyInput, { key: string }];
   "thread.status": [{ threadId: string }, ThreadMemoryStatus];
   "thread.context": [{ threadId: string }, Awaited<ReturnType<RecallService["threadContext"]>>];
   "pause.set": [{ kind: "thread" | "project"; id: string; paused: boolean }, { ok: true }];

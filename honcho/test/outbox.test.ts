@@ -13,7 +13,7 @@ describe("content-free outbox", () => {
     const { db, outbox } = setup(); outbox.advance("thread", 5);
     migrateOutbox(db); const reopened = new Outbox(db);
     expect(reopened.cursor("thread")).toBe(5);
-    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
+    expect(db.prepare("SELECT version FROM honcho_migrations").all()).toEqual(OUTBOX_MIGRATIONS.map((_, index) => ({ version: index + 1 })));
   });
   it("rejects future schema versions", () => {
     const { db } = setup(); db.prepare(`INSERT INTO honcho_migrations VALUES (${OUTBOX_MIGRATIONS.length + 1},0)`).run();
@@ -207,7 +207,7 @@ describe("content-free outbox", () => {
   it("contains no message/content columns", () => {
     const { db } = setup();
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
-    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "harness_writes", "honcho_migrations", "in_flight", "leases", "meta", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
+    expect(tables.map(t => t.name).sort()).toEqual(["cursors", "fork_sources", "group_pauses", "harness_writes", "honcho_migrations", "in_flight", "leases", "meta", "pause_ranges", "provider_threads", "retries", "superseded", "switch_over"]);
     for (const { name } of tables) {
       const columns = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>;
       expect(columns.some(c => /content|body|message|payload/.test(c.name))).toBe(false);
