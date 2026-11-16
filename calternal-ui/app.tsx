@@ -6,7 +6,6 @@ import "./frame/sidebar-overscan"; // first: widens bb's sidebar windowing befor
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { mountFrame } from "./frame/mount";
 import { ChatNavigation } from "./ui/nav";
-import { activateNavItem, NEW_THREAD, SEARCH_THREADS } from "./ui/nav-actions";
 import { FrameOverlay } from "./ui/overlay";
 import { FrameSettings } from "./ui/settings";
 
@@ -24,13 +23,7 @@ export default definePluginApp((app) => {
     placement: "list",
     component: ChatNavigation,
   });
-  // New thread and Search sit in the sidebar footer: usage ···· + search settings (css.ts orders them).
-  app.experimental_sidebarFooter.register({
-    kind: "action", id: "new-thread", label: "New thread", icon: "Plus",
-    onActivate: () => activateNavItem(NEW_THREAD),
-  });
-  app.experimental_sidebarFooter.register({
-    kind: "action", id: "search", label: "Search threads", icon: "Search",
-    onActivate: () => activateNavItem(SEARCH_THREADS),
-  });
+  // New thread and Search are no footer items any more (2026-11-16): they sit in the sidebar's top row,
+  // left of the toggle (frame/sidebar-top.ts), and run the same nav actions (ui/nav-actions.ts). The
+  // footer is [usage] ···· [settings …].
 });

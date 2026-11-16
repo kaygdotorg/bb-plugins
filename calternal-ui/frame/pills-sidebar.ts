@@ -5,10 +5,12 @@
  * (--cf-pill-quiet), never glass.
  *
  *   - Top row: the sidebar toggle is a pill of its own (bb's fixed overlay, expanded and collapsed:
- *     the collapsed shift in css.ts is a translate on the overlay, untouched). Back/forward are one toolbar.
+ *     the collapsed shift in css.ts is a translate on the overlay, untouched). Any div of buttons in
+ *     the row is one toolbar: since 2026-11-16 that is + and search (sidebar-top.ts).
  *   - Footer: bb's row is `ul > li(flex-1) > ul > li[data-footer-item] …`. That inner ul stays
- *     full width (bb measures it); its ::before is the toolbar capsule (+, search, settings, "…"),
- *     anchored from the first toolbar item to the right edge, so it grows with the "…" on hover.
+ *     full width (bb measures it); its ::before is the toolbar capsule (settings, "…"), anchored
+ *     from settings to the right edge, so it grows with the "…" on hover. With settings alone it is
+ *     a 36px circle, like the toggle (settings' segment is --cf-sb-pill wide, not the 38px segment).
  *     The usage item keeps its li at the left; cliproxy-usage's overlay on it is the separate usage pill.
  *   - bb measures footer item widths to decide what overflows: every li stays one width (the
  *     toolbar segment's), and the gap is the toolbar's gap, which bb reads from the row.
@@ -60,7 +62,7 @@ ${TOGGLE} {
   color: var(--foreground);
 }
 
-/* ── Top row: back/forward as one toolbar (segments of one capsule). */
+/* ── Top row: + and search (sidebar-top.ts) as one toolbar (segments of one capsule). */
 ${TOP} > div:has(> button) {
   height: var(--cf-sb-tb);
   padding: var(--cf-sb-pad);
@@ -95,12 +97,21 @@ ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"]::before {
   background: var(--cf-pill-quiet);
   pointer-events: none;
 }
-${ITEM}[data-footer-item="plugin:calternal-ui/new-thread"] { anchor-name: --cf-sb-start; }
+/* Settings is the toolbar's first item (2026-11-16: + and search moved to the top row). */
+${ITEM}[data-footer-item="builtin:settings"] { anchor-name: --cf-sb-start; }
 ${ITEM} {
   width: var(--cf-sb-seg);
   min-width: var(--cf-sb-seg);
   height: var(--cf-sb-in);
 }
+/* Alone at rest (the "…" is hidden until hover), settings makes the capsule a circle as tall as it is
+   wide (36×36, the toggle's size), not a 38×36 lozenge. bb measures this li for overflow: it is simply 36. */
+${ITEM}[data-footer-item="builtin:settings"] { width: var(--cf-sb-pill); min-width: var(--cf-sb-pill); }
+${ITEM}[data-footer-item="builtin:settings"] > :is(button, a) { --cf-sb-seg: var(--cf-sb-pill); }
+/* One ink for every sidebar pill (2026-11-16): bb's footer buttons are muted with the glyph at 80%, which read
+   fainter than the toggle beside them. Settings and "…" take the toggle's full ink. */
+${ITEM}:not([data-footer-item^="plugin:cliproxy-usage/"]) > :is(button, a) { color: var(--foreground) !important; }
+${ITEM}:not([data-footer-item^="plugin:cliproxy-usage/"]) > :is(button, a) svg { opacity: 1 !important; }
 /* The usage item stays first in the row; its overlay is the separate pill, as tall as the toolbar. */
 ${ITEM}[data-footer-item^="plugin:cliproxy-usage/"] {
   height: var(--cf-sb-tb);
@@ -158,7 +169,7 @@ ${TB_BTN}::after {
   position: absolute;
   inset: calc(-1 * var(--cf-sb-hy)) calc(-1 * var(--cf-sb-hx));
 }
-${ITEM}[data-footer-item="plugin:calternal-ui/new-thread"] > button::after { left: calc(-1 * var(--cf-sb-pad)); }
+${ITEM}[data-footer-item="builtin:settings"] > :is(button, a)::after { left: calc(-1 * var(--cf-sb-pad)); }
 ${ITEM}[data-footer-item="builtin:settings"] > :is(button, a)::after, ${ITEM}:not([data-footer-item]) > button::after { right: calc(-1 * var(--cf-sb-pad)); }
 ${ALL_BTN} {
   transition: scale 150ms var(--cf-ease-out), background-color 150ms ease, color 150ms ease;
@@ -193,7 +204,7 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
   }
 }
 
-/* While "…" slides in and the toolbar grows to four pills, the usage pill gives way: it keeps one
+/* While "…" slides in and the toolbar grows to two, the usage pill gives way: it keeps one
    provider (this chat's, else the one closest to its limit: footer-usage.ts marks it data-cf-usage-keep) and the others collapse with the
    same timing, so the two never overlap at any frame. */
 @media (hover: hover) {
@@ -210,23 +221,23 @@ row to the toolbar alone (so the usage pill stays clickable under the pointer). 
 
 /* ── Browsers without CSS anchor positioning (Safari before 26): the anchored capsule and the
    usage pill's anchored right edge would fall back to zero width / the full row, so the usage
-   pill would cover the toolbar. Here the capsule is sized from the item count instead (four
-   items on touch, where "…" always shows; three with a mouse, where "…" only slides in on
-   hover), and the usage pill is capped to the space left of it. */
+   pill would cover the toolbar. Here the capsule is sized from the item count instead (settings,
+   a --cf-sb-pill circle, plus n more segments: the "…" on touch, where it always shows; none with a
+   mouse, where "…" only slides in on hover), and the usage pill is capped to the space left of it. */
 @supports not (anchor-name: --cf-a) {
   ${FOOT} {
-    --cf-sb-n: 3;
+    --cf-sb-n: 0;
   }
   @media (hover: none) {
-    ${FOOT} { --cf-sb-n: 4; }
+    ${FOOT} { --cf-sb-n: 1; }
   }
   ${FOOT} [data-sidebar="menu"] [data-sidebar="menu"]::before {
     left: auto;
-    width: calc(var(--cf-sb-n) * var(--cf-sb-seg) + (var(--cf-sb-n) - 1) * var(--cf-sb-gap) + 2 * var(--cf-sb-pad));
+    width: calc(var(--cf-sb-pill) + var(--cf-sb-n) * (var(--cf-sb-seg) + var(--cf-sb-gap)) + 2 * var(--cf-sb-pad));
   }
   ${FOOT} [data-cliproxy-footer] {
     right: auto;
-    max-width: calc(100% - var(--cf-sb-n) * var(--cf-sb-seg) - (var(--cf-sb-n) - 1) * var(--cf-sb-gap) - 2 * var(--cf-sb-pad) - var(--cf-ctl-gap));
+    max-width: calc(100% - var(--cf-sb-pill) - var(--cf-sb-n) * (var(--cf-sb-seg) + var(--cf-sb-gap)) - 2 * var(--cf-sb-pad) - var(--cf-ctl-gap));
   }
 }
 

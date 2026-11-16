@@ -4,8 +4,8 @@ import {
   experimental_SidebarNavigationIcon as SidebarNavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
 } from "@get-bb/plugin-sdk/app";
-import { publishNavActions } from "./nav-actions";
-import { Customize, Home, navIcon } from "./nav-icons";
+import { NEW_THREAD, publishNavActions } from "./nav-actions";
+import { Customize, navIcon, NewThread } from "./nav-icons";
 
 /**
  * Compact single-column navigation above bb's thread list. Rows are shorter than bb's
@@ -66,17 +66,17 @@ function RowItem({
 }
 
 export function ChatNavigation() {
-  const { items, activeItemId, isHomeActive, isShortcutModifierHeld, actions } =
+  const { items, activeItemId, isShortcutModifierHeld, actions } =
     useSidebarNavigation();
   const [moreOpen, setMoreOpen] = useState(false);
   // bb's own "Customize navigation" decides what shows here (kayg hides New thread and
-  // Search threads there: they live in the footer as + and search). Hidden items go under More.
+  // Search threads there: they live in the sidebar's top row as + and search). Hidden items go under More.
   const visibleItems = items.filter((item) => item.isVisible);
   const hiddenItems = items.filter((item) => !item.isVisible);
   useEffect(() => {
-    publishNavActions(actions);
+    publishNavActions(actions, items);
     return () => publishNavActions(null);
-  }, [actions]);
+  }, [actions, items]);
   const activate = (id: string) => actions.activate(id, { target: "current" });
   const renderItem = (item: NavItem) => (
     <RowItem
@@ -90,14 +90,16 @@ export function ChatNavigation() {
 
   return (
     <nav data-cf-nav="" aria-label="BB navigation" className="flex flex-col gap-0.5 px-2 py-1">{/* gap: the threads' 2px between rows */}
+      {/* "New thread" leads, with a + (kayg, 2026-11-16: it replaced "Threads", and the + left the top row).
+          bb's own New thread item runs it, so it behaves exactly like bb's (current project, shortcut). */}
       <button
         type="button"
-        className={rowClass(isHomeActive)}
-        aria-current={isHomeActive ? "page" : undefined}
-        onClick={() => actions.goHome()}
+        className={rowClass(false)}
+        aria-keyshortcuts={items.find((i) => i.id === NEW_THREAD)?.shortcut?.ariaKeyShortcuts}
+        onClick={() => actions.activate(NEW_THREAD, { target: "current" })}
       >
-        <IconSlot><Home /></IconSlot>
-        <span className="min-w-0 flex-1 truncate">Threads</span>
+        <IconSlot><NewThread /></IconSlot>
+        <span className="min-w-0 flex-1 truncate">New thread</span>
       </button>
       {visibleItems.map(renderItem)}
       <button

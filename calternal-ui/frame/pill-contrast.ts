@@ -64,7 +64,7 @@ const PILLS: { scope: Scope; sel: string; text: boolean }[] = [
   { scope: "main", sel: 'button[aria-label="Scroll to latest event"]', text: false },
   { scope: "main", sel: 'div.fixed.z-40 > button[aria-label^="Show right panel"]', text: false },
   { scope: "doc", sel: '[data-testid="app-sidebar-trigger-overlay"] button', text: false },
-  { scope: "doc", sel: "[data-cf-sb-search]", text: false },
+  { scope: "doc", sel: "[data-cf-sb-tools]", text: false },
 ];
 const BY_SCOPE = (scope: Scope) => PILLS.filter((p) => p.scope === scope).map((p) => p.sel).join(", ");
 const QUERY = { header: BY_SCOPE("header"), main: BY_SCOPE("main") }; // "doc" pills: queryPills()
@@ -85,7 +85,7 @@ function queryPills(): HTMLElement[] {
   }
   const toggle = hosts.toggle()?.querySelector<HTMLElement>("button");
   if (toggle) out.push(toggle);
-  const search = hosts.sidebar()?.querySelector<HTMLElement>("[data-cf-sb-search]");
+  const search = hosts.sidebar()?.querySelector<HTMLElement>("[data-cf-sb-tools]");
   if (search) out.push(search);
   return out;
 }

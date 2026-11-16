@@ -376,12 +376,10 @@ ${R} button.gap-1 > [data-icon-root]:first-child:not(:only-child),
 ${R} button.gap-1 > .contents > :has(> [data-provider-logo]):first-child { margin-inline-end: 0.125rem; }
 ${R} button.gap-1 > [data-icon="ChevronDown"]:last-child:not(:first-child) { margin-inline-start: -0.125rem; }
 
-/* Sidebar footer: [usage] ···· [+] [search] [settings] […]. bb renders each item as an
+/* Sidebar footer: [usage] ···· [settings] […] (+ and search moved to the top row, 2026-11-16). bb renders each item as an
    li[data-footer-item] in one flex row; only their order changes here, so bb's own overflow
    logic still works. The usage item (cliproxy-usage plugin) takes the free space's margin. */
 ${R} [data-sidebar="footer"] li[data-footer-item^="plugin:cliproxy-usage/"] { order: 0; margin-inline-end: auto; }
-${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/new-thread"] { order: 1; }
-${R} [data-sidebar="footer"] li[data-footer-item="plugin:calternal-ui/search"] { order: 2; }
 ${R} [data-sidebar="footer"] li[data-footer-item="builtin:settings"] { order: 3; }
 ${R} [data-sidebar="footer"] li[data-sidebar="menu-item"]:not([data-footer-item]) { order: 4; }
 
@@ -430,6 +428,18 @@ ${R} [data-app-composer] section.bg-surface-raised-solid {
   backdrop-filter: var(--cf-glass-blur);
   border-color: var(--cf-edge) !important;
 }
+/* One ink for every pill control (kayg, 2026-11-16: "why does the opacity of icons differ? check where else it
+   does"). Measured in dark: the sidebar toggle, nav, scroll-to-latest and the stop button were full ink
+   (L0.81), while the header's workspace/panel pills and the composer's +, model and mic were bb's muted grey
+   (L0.74), and the sidebar footer's were muted at 80%. Pills are controls, not secondary text: all full ink.
+   Secondary text (message actions, times) stays muted on purpose. */
+${R} main header button:not([data-slot="badge"]),
+${R} [data-app-composer] [data-promptbox-action-row] button:not([data-promptbox-submit-action]):not([aria-label="Send voice input"]) {
+  color: var(--foreground) !important;
+}
+/* bb also greys some glyphs themselves (a muted class on the svg or its span). */
+${R} main header button [class*="text-muted-foreground"],
+${R} [data-app-composer] [data-promptbox-action-row] button [class*="text-muted-foreground"] { color: inherit !important; }
 /* GenUI cards' footer ("Copy as markdown", "Source") on desktop: bb's 11px text with 13px icons read smaller
    than the message actions right under it (13px icons) and the time (12px). One size for the whole footer
    area: 12px text, 13px icons, 6px between icon and label. Phones have their own (larger) rule. */
@@ -1370,7 +1380,7 @@ function cardInterior(scope: string): string {
   ${scope}:where(.dark *) { --muted-foreground: var(--cf-card-muted); }
   /* bb fades some secondary text further (Settings descriptions: text-subtle-foreground/75) to ~3.5:1 on the
      light card. Secondary is one step, never two: full strength. */
-  ${scope} :is(.text-subtle-foreground\\/75, .text-muted-foreground\\/75, .text-muted-foreground\\/70, .text-muted-foreground\\/80) { color: var(--muted-foreground) !important; }
+  ${scope} :is(.text-subtle-foreground\\/75, .text-muted-foreground\\/75, .text-muted-foreground\\/70, .text-muted-foreground\\/80):not(header button, [data-promptbox-action-row] button) { color: var(--muted-foreground) !important; } /* pill buttons take the full ink (above) */
   /* bb's own panels inside the card (settings groups, skill tiles) become faint glass. */
   ${scope} { --card: color-mix(in oklab, var(--foreground) 4.5%, transparent); --surface-scrim: transparent; --border: var(--cf-edge); } /* bb's hairlines (dividers, code blocks, inputs): the one edge */
   ${scope} header { border-bottom-color: transparent !important; }

@@ -42,6 +42,8 @@ const Memory = () => (
 /** Customize navigation: sliders. */
 export const Customize = () => <Svg><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></Svg>;
 export const Home = Threads;
+/** New thread: a plus, on the same grid and stroke (its arms span the drawing area like the others' ink). */
+export const NewThread = () => <Svg><path d="M12 4.5v15M4.5 12h15" /></Svg>;
 
 /** By label (bb's item ids are internal; labels are what the user sees and are stable enough). */
 const BY_LABEL: Record<string, () => ReactNode> = {
