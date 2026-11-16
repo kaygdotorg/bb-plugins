@@ -26,21 +26,48 @@
  *    bb's, measures the drop, scrolls the scroller back by it and translates from −drop to 0 on the same curve.
  *
  * Compositor-only per frame (one `translate`), nothing on <html>. Phones only; never for keyboard input or reduced
- * motion (input-mode). The curve is fitted to the iOS keyboard in kayg's 60fps ChatGPT recording (max error 3.4pt):
- * cubic-bezier(0.3, 1, 0.3, 1) over 400ms. `localStorage["cf-kb-ms"]` overrides the duration (tests).
+ * motion (input-mode). The ride, the fall and the composer's own morph (composer.ts, pills-composer.ts) all
+ * follow KB_TRACK, the keyboard's track measured on a real iPhone. `localStorage["cf-kb-ms"]` overrides the
+ * ride's duration (tests).
  */
 const COMPOSER = "[data-app-composer]";
 const EDITOR = '[data-app-composer] [contenteditable="true"]';
 const SHELL = "[data-app-content-shell]";
 const SCROLLER = "[data-page-scroll-viewport]";
 /**
- * The keyboard's own motion, sampled frame by frame from kayg's 60fps recording of ChatGPT (2026-11-16): the
- * fraction of its travel at each time (ms). Driving the ride with these exact samples (linear between them)
- * keeps the composer on the keyboard's edge; the earlier fitted cubic-bezier(0.3, 1, 0.3, 1) front-loaded the
- * motion, so on a phone the composer was ~70% there while the keyboard was at ~40% (kayg's recording).
+ * The keyboard's own motion on a real iPhone (17 Pro Max, iOS 27), measured frame by frame from kayg's 60fps
+ * screen recordings of Claude's and ChatGPT's apps (2026-11-16): the fraction of its travel at each time (ms)
+ * from its last frame at rest. Both apps' keyboards gave the same track within a frame's jitter, and so did
+ * ChatGPT's dismiss (its composer fell on exactly these fractions). Driving the ride with these samples (linear
+ * between them) keeps the composer on the keyboard's edge; Claude's composer rides within ~5% of it.
+ * The earlier track (fitted from a ChatGPT recording) started at full speed (16.5% at 13ms) and skipped the
+ * keyboard's slow first frame (4.8% at 17ms), so the composer ran up to ~40pt ahead early on; before that,
+ * cubic-bezier(0.3, 1, 0.3, 1) had it ~70% up while the keyboard was at ~40%.
  */
-const KB_MS = 363;
-const KB_TRACK: [number, number][] = [[0, 0], [13, 0.165], [30, 0.311], [47, 0.441], [63, 0.573], [80, 0.668], [97, 0.749], [113, 0.814], [147, 0.9], [163, 0.927], [197, 0.959], [280, 0.992], [363, 1]];
+const KB_MS = 350;
+const KB_TRACK: [number, number][] = [
+  [0, 0], [17, 0.048], [33, 0.19], [50, 0.334], [67, 0.472], [83, 0.597], [100, 0.69], [117, 0.767], [133, 0.83],
+  [150, 0.875], [167, 0.907], [183, 0.934], [200, 0.952], [217, 0.967], [233, 0.976], [250, 0.982], [267, 0.988],
+  [283, 0.991], [300, 0.994], [317, 0.997], [350, 1],
+];
+/** The same track as a CSS/WAAPI easing, for the composer's width and height (composer.ts, pills-composer.ts). */
+export const KB_EASE = `linear(${KB_TRACK.map(([ms, f]) => `${f} ${((ms / KB_MS) * 100).toFixed(2)}%`).join(", ")})`;
+export { KB_MS };
+/** The track's fraction of travel at `ms`. */
+const kbAt = (ms: number) => {
+  const i = KB_TRACK.findIndex(([t]) => t >= ms);
+  if (i <= 0) return i === 0 ? 0 : 1;
+  const [t0, f0] = KB_TRACK[i - 1], [t1, f1] = KB_TRACK[i];
+  return f0 + ((f1 - f0) * (ms - t0)) / (t1 - t0);
+};
+/**
+ * The rest of the track from `elapsed` ms on, rescaled to 0→1 over the time left: for picking up a motion
+ * mid-way toward a new target (bb's real height) without a change of speed. `[offset, fraction]` pairs.
+ */
+export function kbTail(elapsed: number): [number, number][] {
+  const e = Math.min(Math.max(elapsed, 0), KB_MS - 1), fe = kbAt(e);
+  return [[0, 0], ...KB_TRACK.filter(([t]) => t > e).map(([t, f]): [number, number] => [(t - e) / (KB_MS - e), (f - fe) / (1 - fe)])];
+}
 /** Keyframes for a translate from `from` to `to` (px) along the keyboard's track. */
 const kbFrames = (from: number, to: number): Keyframe[] =>
   KB_TRACK.map(([ms, f]) => ({ offset: ms / KB_MS, translate: `0 ${(from + (to - from) * f).toFixed(1)}px` }));
@@ -85,6 +112,8 @@ export function mountKeyboardFollow(): () => void {
   /** The close's starting point, read before bb restores the shell (capture phase). */
   let closing: { composer: HTMLElement; before: number } | null = null;
   let falling: Animation | null = null;
+  /** Set while our own focusout for bb (onProxyBlur) is being dispatched. */
+  let synthetic = false;
 
   /**
    * The distance of the last ride, per display mode (the keyboard's height differs between a Safari tab and the
@@ -164,32 +193,51 @@ export function mountKeyboardFollow(): () => void {
     proxy.textContent = "";
     proxy.focus({ preventScroll: true });
     if (document.activeElement !== proxy) { editor.focus(); return; } // refused: the plain way
-    composer.dispatchEvent(new CustomEvent(OPEN_EVENT, { bubbles: true }));
     falling?.cancel();
     const o: NonNullable<typeof opening> = { editor, composer, range, timer: 0, hold, ride: null, lost: 0, done: false, frame: 0 };
     opening = o;
+    // bb expands its composer from its own focus handler, and on a phone only once the keyboard's viewport
+    // resize has come (bb waits for it, 350ms at most). The editor itself only gets focus at the hand-over,
+    // so bb's two rows (+, model) used to arrive ~400ms after the keyboard had settled and popped in after the
+    // motion. A focusin that bubbles from the editor (no real focus: the stand-in keeps it, so nothing
+    // scrolls) starts bb's wait now: its rows come with the viewport resize, mid-ride, and morphHeight
+    // carries the growth into them (2026-11-16).
+    editor.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
+    // Until the hand-over the composer looks as it will with the keyboard up (pills-composer.ts): bb's footer
+    // toolbar stays hidden, the model pill keeps its name, and the row makes room for the keyboard-down button
+    // (touch.ts adds it only once the editor has focus, so it popped in at the hand-over and pushed the mic).
+    composer.setAttribute("data-cf-kb-open", "");
     if (hold) {
       hold.shell.style.setProperty("--cf-kb-hold-top", hold.top);
       hold.shell.style.setProperty("--cf-kb-hold-h", `${hold.h}px`);
       hold.shell.style.setProperty("--cf-kb-hold-pb", hold.pb);
       hold.shell.setAttribute("data-cf-kb-hold", "");
-      // From the next frame, not from the tap: bringing the keyboard up stalls the display (~100ms+ under load
-      // in the simulator), and a ride whose clock started at the tap was nearly over when the first frame showed.
-      o.frame = requestAnimationFrame(() => {
-        o.frame = 0;
-        if (opening !== o) return;
-        const m = memory();
-        const d = (o.lost || m.lost) + m.extra;
-        const { mover, scroller } = moverOf(composer);
-        // The end state is a real inline style, not `fill: forwards`: when WebKit's compositor finishes the
-        // animation it drops its value until the main thread commits the fill, and under load (simulator) the
-        // composer fell back down for a few frames.
-        mover.style.translate = `0 ${(-d).toFixed(1)}px`;
-        const anim = mover.animate(kbFrames(0, -d), { duration: duration(), easing: "linear" });
-        o.ride = { anim, mover, scroller, d };
-        anim.finished.then(() => { o.done = true; if (opening === o && o.lost) finishOpen(); }, () => {});
-      });
     }
+    // The ride, and the composer's own morph (width, height: composer.ts beginOpen), start together in the next
+    // frame, so the widening, the growth and the ride are one motion. iOS starts the keyboard as soon as it
+    // learns of the focus, and the page can't see when; what it can see (iPhone 17 Pro simulator, load ~15,
+    // 2026-11-16, /tmp/cfp-* on hd01): the page's main thread stalls right after the tap (rAF at 9–18ms, then
+    // nothing until 110–160ms) and again when the viewport resizes (~130ms more), and the keyboard sometimes
+    // moved all through those stalls (the viewport resize came at 116ms, i.e. ~80% up). An animation is
+    // committed only after a stall, on the clock of the frame that made it, so it shows up where the
+    // keyboard already is. Waiting for the stall to end before starting (tried) left the composer under the
+    // risen keyboard, then jumped it up in one frame.
+    o.frame = requestAnimationFrame(() => {
+      o.frame = 0;
+      if (opening !== o) return;
+      composer.dispatchEvent(new CustomEvent(OPEN_EVENT, { bubbles: true }));
+      if (!hold) return;
+      const m = memory();
+      const d = (o.lost || m.lost) + m.extra;
+      const { mover, scroller } = moverOf(composer);
+      // The end state is a real inline style, not `fill: forwards`: when WebKit's compositor finishes the
+      // animation it drops its value until the main thread commits the fill, and under load (simulator) the
+      // composer fell back down for a few frames.
+      mover.style.translate = `0 ${(-d).toFixed(1)}px`;
+      const anim = mover.animate(kbFrames(0, -d), { duration: duration(), easing: "linear" });
+      o.ride = { anim, mover, scroller, d };
+      anim.finished.then(() => { o.done = true; if (opening === o && o.lost) finishOpen(); }, () => {});
+    });
     // The hand-over waits for the viewport's resize (handing over before bb's layout would put the editor
     // under the keyboard: iOS would scroll). It came up to 3.5s late in a heavily loaded simulator; if it never
     // comes (no keyboard at all), hand over anyway: the hand-over glides back to wherever bb's layout is.
@@ -207,7 +255,8 @@ export function mountKeyboardFollow(): () => void {
       const d = lost + memory().extra;
       if (Math.abs(d - o.ride.d) >= 1) {
         o.ride.mover.style.translate = `0 ${(-d).toFixed(1)}px`;
-        (o.ride.anim.effect as KeyframeEffect).setKeyframes({ translate: ["0 0", `0 ${(-d).toFixed(1)}px`] });
+        // Same track, new distance (a plain two-keyframe list here turned the rest of the ride linear).
+        (o.ride.anim.effect as KeyframeEffect).setKeyframes(kbFrames(0, -d));
         o.ride.d = d;
       }
     }
@@ -234,10 +283,13 @@ export function mountKeyboardFollow(): () => void {
       if (Math.abs(off) >= 1) mover.animate({ translate: [`0 ${off.toFixed(1)}px`, "0 0"] }, { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
       if (o.lost && Math.abs(real - o.lost) < 120) remember(o.lost, real - o.lost);
     }
+    o.composer.removeAttribute("data-cf-kb-open");
     if (disposed || !o.editor.isConnected || document.activeElement !== proxy) return;
     const typed = proxy.textContent ?? "";
     proxy.textContent = "";
     o.editor.focus({ preventScroll: true });
+    // touch.ts has put the keyboard-down button into the room the row kept for it: fade it in.
+    o.composer.querySelector("[data-cf-kb]")?.animate({ opacity: [0, 1] }, { duration: 160, easing: "linear" });
     if (o.range) {
       const sel = getSelection();
       sel?.removeAllRanges();
@@ -263,11 +315,17 @@ export function mountKeyboardFollow(): () => void {
       if (Math.abs(y) >= 1) mover.animate(kbFrames(y, 0), { duration: duration(), easing: "linear" });
     }
     o.hold?.shell.removeAttribute("data-cf-kb-hold");
+    o.composer.removeAttribute("data-cf-kb-open");
+    // bb saw a focusin (begin): its matching focusout lets it collapse again once the keyboard is down.
+    // (Not a close of ours: the ride is already going back down above.)
+    synthetic = true;
+    try { o.editor.dispatchEvent(new FocusEvent("focusout", { bubbles: true, composed: true })); } finally { synthetic = false; }
   };
 
   // ── Close ───────────────────────────────────────────────────────────────────────────────────────────────
   const onFocusOutCapture = (e: FocusEvent) => {
     closing = null;
+    if (synthetic) return;
     if (!phone.matches || !animates() || opening || !(e.target instanceof Element) || !e.target.closest(EDITOR)) return;
     const composer = e.target.closest<HTMLElement>(COMPOSER)!;
     if (e.relatedTarget instanceof Node && composer.contains(e.relatedTarget)) return;
@@ -324,5 +382,6 @@ export function mountKeyboardFollow(): () => void {
     proxy.removeEventListener("blur", onProxyBlur);
     proxy.remove();
     document.querySelectorAll("[data-cf-kb-hold]").forEach((el) => el.removeAttribute("data-cf-kb-hold"));
+    document.querySelectorAll("[data-cf-kb-open]").forEach((el) => el.removeAttribute("data-cf-kb-open"));
   };
 }

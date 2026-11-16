@@ -15,7 +15,7 @@
  * expanded composer (localStorage); tapping it expands the composer and opens bb's picker.
  */
 import { createVoicePill } from "./voice";
-import { FOCUS_EVENT, OPEN_EVENT } from "./keyboard-follow";
+import { FOCUS_EVENT, KB_EASE, KB_MS, OPEN_EVENT, kbTail } from "./keyboard-follow";
 
 const COMPOSER = '[data-app-composer][data-app-composer-role="primary"]';
 const FOOTER = "[data-follow-up-composer-footer]";
@@ -24,6 +24,8 @@ const ROW = "[data-promptbox-action-row]";
 // collapsed/expanded flips every frame and the icon flickers).
 const MODEL = 'button[aria-label^="Provider, model"]:not([data-cf-model-chip])';
 const NEW_THREAD = 'button[aria-label="New thread in this environment"]';
+/** The expanded composer's left buttons (+, model): bb renders them only when expanded. */
+const LEFT_GROUP = "[data-promptbox-action-row] > [data-promptbox-standard-actions][data-promptbox-expanded-only]";
 
 /** Maps bb's permission-mode title to one of four icons (css.ts). */
 function permissionKind(title: string): "full" | "edit" | "plan" | "ask" {
@@ -34,6 +36,8 @@ function permissionKind(title: string): "full" | "edit" | "plan" | "ask" {
 }
 
 const MODEL_CACHE = "cf-composer-model";
+/** bb's compact-before-send toggle (pills-composer.ts COMPACT). */
+const COMPACT = ':is(button[aria-pressed][aria-label^="Compact "], button[aria-pressed][aria-label^="Keep all "])';
 
 export function mountComposer(): () => void {
   const voice = createVoicePill();
@@ -44,11 +48,41 @@ export function mountComposer(): () => void {
   let flippedAt = -Infinity;
   let morphing: { form: HTMLElement; until: number } | null = null;
   let opening: { form: HTMLElement; composer: HTMLElement; anim: Animation; at: number; from: number; to: number } | null = null;
+  /** The compact toggle's width with its words, per label ("Compact 627k"). */
+  const compactWidths = new Map<string, number>();
   let expandedH = 0; // the two-row form's height, last seen (the early open grows toward it)
   let collapsedH = 0; // the one-line form's height, last seen (the early close shrinks toward it)
   let closing: { form: HTMLElement; composer: HTMLElement; anim: Animation; fade: Animation | null; at: number; from: number; to: number } | null = null;
-  const MORPH_MS = 350;
-  const MORPH_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+  // The morph moves on the keyboard's own track (keyboard-follow.ts KB_TRACK), like the ride: width, height
+  // and the ride are one motion with the keyboard. (It was 350ms cubic-bezier(0.32, 0.72, 0, 1), which ran
+  // ahead of the keyboard's start and finished before it; 2026-11-16.)
+  const MORPH_MS = KB_MS;
+  const MORPH_EASE = KB_EASE;
+  /**
+   * From the animated height to bb's real one: on the rest of the track while the motion is under way. When bb's
+   * rows come after it (the viewport resize was late: up to ~400ms in the loaded simulator) a fresh short glide
+   * on the track, not a snap (the remembered height was 18pt off once: a one-frame jump, 2026-11-16).
+   */
+  const glide = (a: number, b: number, elapsed: number, extra: Keyframe = {}) =>
+    elapsed < MORPH_MS - 120
+      ? { frames: tail(a, b, elapsed, extra), ms: MORPH_MS - elapsed }
+      : { frames: tail(a, b, 0, extra), ms: 220 };
+  /**
+   * The form's own height with its button row in the flow. While the row is pinned (absolute, see
+   * pills-composer.ts) it takes no room, and the two-row form measured 48pt short: the growth aimed there and
+   * the box jumped when the pin let go (headless check, 2026-11-16). `data-cf-measure` puts the row back in the
+   * flow for the read only, in this task, so nothing paints in between (not the opening/closing attribute
+   * itself: that also drives the width transition, which would restart).
+   */
+  const unpinnedHeight = (form: HTMLElement, host: HTMLElement) => {
+    host.setAttribute("data-cf-measure", "");
+    const h = form.getBoundingClientRect().height;
+    host.removeAttribute("data-cf-measure");
+    return h;
+  };
+  /** Height keyframes from `a` to `b` (px) along the rest of the track after `elapsed` ms. */
+  const tail = (a: number, b: number, elapsed: number, extra: Keyframe = {}): Keyframe[] =>
+    kbTail(elapsed).map(([offset, f]) => ({ ...extra, offset, height: `${(a + (b - a) * f).toFixed(1)}px` }));
   let signalledAt = -Infinity; // the last open keyboard-follow.ts signalled (OPEN_EVENT)
   const phone = matchMedia("(max-width: 767px)");
   const animates = () => document.documentElement.getAttribute("data-cf-input") !== "keys" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -150,8 +184,26 @@ export function mountComposer(): () => void {
       };
     }
 
+    // bb's "Compact 627k" toggle (desktop, prompt cache expired) sits in the right-hand group as a text pill.
+    // If its words don't fit between the model pill and that group, it shows its icon only. The decision uses
+    // the width it has (or would have) with words, measured while it shows them, so it never flips back and
+    // forth; the toolbar after the model pill already steps aside first (data-cf-foot-off below).
+    const compact = row.querySelector<HTMLElement>(COMPACT);
+    let compactIcon = false;
+    if (compact && modelBox && modelBox.width > 0 && !collapsed) {
+      const label = compact.textContent?.trim() ?? "";
+      const w = compact.getBoundingClientRect().width;
+      const iconNow = composer.hasAttribute("data-cf-compact-icon");
+      if (!iconNow) compactWidths.set(label, w);
+      const wText = compactWidths.get(label) ?? w + label.length * 8; // never seen with words: a generous guess
+      const group = row.lastElementChild?.getBoundingClientRect();
+      const gap = parseFloat(getComputedStyle(model!.parentElement ?? model!).columnGap) || 0;
+      if (group) compactIcon = group.left - (wText - w) - modelBox.right - gap < 0;
+    }
+
     // ── Writes.
     composer.toggleAttribute("data-cf-collapsed", collapsed);
+    composer.toggleAttribute("data-cf-compact-icon", compactIcon);
     if (sizedForm !== form) {
       formSize.disconnect();
       formSize.observe(form);
@@ -221,8 +273,8 @@ export function mountComposer(): () => void {
   /**
    * The phone composer's focus morph, height half (the width half is CSS, pills-composer.ts): bb switches the
    * one-line composer to its two-row form at once (its grid-rows transition can't run between a fixed row
-   * and an auto one), so the form's height is animated from the last pass's to the new one, with the same
-   * 350ms iOS ease-out as the width, like ChatGPT's composer riding up with the keyboard. The pass runs in
+   * and an auto one), so the form's height is animated from the last pass's to the new one, on the keyboard's
+   * track like the width, riding up with the keyboard. The pass runs in
    * the frame bb changed the DOM (a rAF from the observer), before it is painted, so there is no flash.
    * Not for the keyboard (input-mode), nor with reduced motion; desktop has no collapsed state.
    */
@@ -237,49 +289,61 @@ export function mountComposer(): () => void {
     // its rows: carry on from wherever the box is to the real height, in the time left, never restart.
     if (opening && opening.form === form && !collapsed) {
       // bb flips its flag a frame before it lays out the rows. The true height can only be read with the
-      // animation off: cancel, read, and if the rows aren't there yet, resume toward the same target from the
-      // same point, all in this one task, so nothing paints in between.
+      // animation off: cancel, read, and if the rows aren't there yet, put the same animation back at the same
+      // time (same keyframes, same clock: nothing moves), all in this one task, so nothing paints in between.
+      const o = opening;
       const current = form.getBoundingClientRect().height; // the animated height
-      opening.anim.cancel();
-      const h = form.getBoundingClientRect().height;       // bb's real one
-      if (h < opening.from + 8) {
-        const rest = Math.max(1, MORPH_MS - (now - opening.at));
-        opening.anim = form.animate({ height: [`${current}px`, `${opening.to}px`] }, { duration: rest, easing: MORPH_EASE, fill: "forwards" });
+      const elapsed = Number(o.anim.currentTime ?? 0);
+      o.anim.cancel();
+      const h = unpinnedHeight(form, o.composer); // bb's real one
+      if (h < o.from + 8) {
+        o.anim = form.animate({ height: [`${o.from}px`, `${o.to}px`] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
+        o.anim.currentTime = elapsed;
         // Nothing else will say when the rows land (the animation holds the box's size): look again next frame.
         requestAnimationFrame(() => { if (!disposed) morphHeight(form, !!form.closest("[data-app-composer]")?.hasAttribute("data-cf-collapsed")); });
         return;
       }
-      const left = Math.max(160, MORPH_MS - (now - opening.at));
-      opening.composer.removeAttribute("data-cf-opening");
+      // bb's rows are here (mid-ride, now that bb expands with the keyboard): carry on to the real height on
+      // the rest of the track, with no change of speed. The button row stays pinned to the bottom edge
+      // (data-cf-opening) until the growth is over, so the buttons ride it and never jump.
       opening = null;
       lastForm = { el: form, h, collapsed };
-      if (Math.abs(current - h) >= 2) {
-        morphing = { form, until: now + left + 10 };
-        form.animate({ height: [`${current}px`, `${h}px`] }, { duration: left, easing: MORPH_EASE });
-      }
+      const done = () => { if (!opening && !disposed) o.composer.removeAttribute("data-cf-opening"); };
+      if (Math.abs(current - h) >= 1) {
+        const { frames, ms } = glide(current, h, elapsed);
+        morphing = { form, until: now + ms + 10 };
+        form.animate(frames, { duration: ms, easing: "linear" }).finished.then(done, done);
+      } else done();
       revealRows(form);
       return;
     }
     // The early close's handover, the mirror of the open's (see beginClose).
     if (closing && closing.form === form && collapsed) {
+      const c = closing;
       const current = form.getBoundingClientRect().height;
-      closing.anim.cancel();
-      const h = form.getBoundingClientRect().height;
-      if (h > closing.from - 8) {
-        const rest = Math.max(1, MORPH_MS - (now - closing.at));
-        closing.anim = form.animate({ height: [`${current}px`, `${closing.to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: rest, easing: MORPH_EASE, fill: "forwards" });
+      const elapsed = Number(c.anim.currentTime ?? 0);
+      c.anim.cancel();
+      const h = unpinnedHeight(form, c.composer);
+      const clip: Keyframe = { minHeight: "0px", overflow: "clip" };
+      if (h > c.from - 8) {
+        c.anim = form.animate({ height: [`${c.from}px`, `${c.to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
+        c.anim.currentTime = elapsed;
         requestAnimationFrame(() => { if (!disposed) morphHeight(form, !!form.closest("[data-app-composer]")?.hasAttribute("data-cf-collapsed")); });
         return;
       }
-      const left = Math.max(140, MORPH_MS - (now - closing.at));
-      closing.fade?.cancel();
-      closing.composer.removeAttribute("data-cf-closing");
+      // Collapsed: on to the real one-line height on the rest of the track. The row stays pinned
+      // (data-cf-closing) until then: unpinned, bb's one-line layout put it at the top of the still-tall box.
       closing = null;
       lastForm = { el: form, h, collapsed };
-      if (Math.abs(current - h) >= 2) {
-        morphing = { form, until: now + left + 10 };
-        form.animate({ height: [`${current}px`, `${h}px`] }, { duration: left, easing: MORPH_EASE });
-      }
+      const done = () => {
+        c.fade?.cancel();
+        if (!closing && !disposed) c.composer.removeAttribute("data-cf-closing");
+      };
+      if (Math.abs(current - h) >= 1) {
+        const { frames, ms } = glide(current, h, elapsed, clip);
+        morphing = { form, until: now + ms + 10 };
+        form.animate(frames, { duration: ms, easing: "linear" }).finished.then(done, done);
+      } else done();
       return;
     }
     const h = form.getBoundingClientRect().height;
@@ -301,10 +365,11 @@ export function mountComposer(): () => void {
   }
 
   /**
-   * The open starts at the tap, like ChatGPT's and Claude's (kayg's 60fps recordings, 2026-11-15): their
-   * composers widen and grow while the keyboard is still rising. bb switches to its two-row layout only once
-   * the keyboard has settled (~230ms later on an iPhone), and a morph started then read as a second jolt.
-   * So a touch on the one-line composer (not on its buttons) marks it opening: the width eases out at once
+   * The open starts with the keyboard, like ChatGPT's and Claude's (kayg's 60fps recordings, 2026-11-15/16):
+   * their composers change shape while the keyboard is still rising (Claude widens over ~120ms from ~50ms in;
+   * ChatGPT switches to its two rows in one frame at ~75% of the rise). On a phone keyboard-follow.ts signals
+   * it (OPEN_EVENT) in the frame its ride starts, and bb's rows now come mid-ride (it gets a focusin at the
+   * tap). Otherwise a touch on the one-line composer (not on its buttons) marks it opening: the width moves at once
    * (CSS, [data-cf-opening]) and the height grows toward the expanded height last seen; when bb's rows
    * arrive, morphHeight carries on from there. If no focus follows (the touch was a scroll), it eases back.
    */
@@ -375,7 +440,7 @@ export function mountComposer(): () => void {
     host.setAttribute("data-cf-closing", "");
     // Only the left group (+, model) fades: the right one (mic, send) stays and rides up with the shrinking
     // bottom edge into the one-line row (CSS pins the button row to the bottom while closing).
-    const left = form.querySelector<HTMLElement>("[data-promptbox-action-row] > [data-promptbox-standard-actions][data-promptbox-expanded-only]");
+    const left = form.querySelector<HTMLElement>(LEFT_GROUP);
     const fade = left?.animate({ opacity: [1, 0] }, { duration: 140, easing: "linear", fill: "forwards" }) ?? null;
     // min-height 0 and a clip: as a layout item the form won't go below its content's height otherwise.
     const anim = form.animate({ height: [`${from}px`, `${to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
@@ -393,10 +458,12 @@ export function mountComposer(): () => void {
     }, 1500);
   }
 
-  /** bb's new rows (the buttons) ease in instead of popping: a short fade and rise, after the box has room. */
+  /**
+   * bb's expanded-only buttons (+, model) fade in where they land instead of popping. Only those: mic and send
+   * were already on screen, riding the bottom edge, and fading the whole row (as before) blinked them out.
+   */
   function revealRows(form: HTMLElement) {
-    const row = form.querySelector<HTMLElement>("[data-promptbox-action-row]");
-    row?.animate({ opacity: [0, 1], translate: ["0 6px", "0 0"] }, { duration: 240, delay: 60, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "backwards" });
+    form.querySelector<HTMLElement>(LEFT_GROUP)?.animate({ opacity: [0, 1] }, { duration: 160, easing: "linear", fill: "backwards" });
   }
 
   /** Icons need words for the tooltip; bb's own labels supply them. */
@@ -464,7 +531,8 @@ export function mountComposer(): () => void {
   document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
   // The open starts with the focus, ~50ms in, so it overlaps the keyboard's rise as ChatGPT's does (63–163ms
   // after the keyboard starts); started at the touch it was over before the keyboard had moved.
-  const onFocusIn = (e: FocusEvent) => window.setTimeout(() => beginOpen(e), 50);
+  // Not keyboard-follow.ts's own focusin for bb (untrusted): that open starts on its OPEN_EVENT instead.
+  const onFocusIn = (e: FocusEvent) => { if (e.isTrusted) window.setTimeout(() => beginOpen(e), 50); };
   document.addEventListener("focusin", onFocusIn, true);
   // A tap on the one-line composer on a phone (keyboard-follow.ts): the editor takes focus only once the keyboard
   // is up, so the morph starts here, with the keyboard.
@@ -488,7 +556,8 @@ export function mountComposer(): () => void {
     resize.disconnect();
     modelChip.remove();
     voice.dispose();
-    document.querySelectorAll("[data-cf-merged], [data-cf-collapsed], [data-cf-foot-off]").forEach((el) => {
+    document.querySelectorAll("[data-cf-merged], [data-cf-collapsed], [data-cf-foot-off], [data-cf-compact-icon]").forEach((el) => {
+      el.removeAttribute("data-cf-compact-icon");
       el.removeAttribute("data-cf-merged");
       el.removeAttribute("data-cf-collapsed");
       el.removeAttribute("data-cf-foot-off");

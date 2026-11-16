@@ -12,12 +12,21 @@
  */
 import { R } from "./selectors";
 import { SEGMENT, s } from "./pills";
+import { KB_EASE, KB_MS } from "./keyboard-follow";
+
+/** The composer's width morph moves on the keyboard's track, like its height and the ride (keyboard-follow.ts). */
+const MORPH = `${KB_MS}ms ${KB_EASE}`;
 
 const C = `${R} [data-app-composer]`;
 const ROW = `${C} [data-promptbox-action-row]`;
 /** Every button of the row except bb's filled send. */
 const FILLED = ["button[data-promptbox-submit-action]", 'button[aria-label="Send voice input"]', "[data-promptbox-send-menu] > button"];
 const PILL = `${ROW} button${FILLED.map((x) => `:not(${x.replace(/^button/, "")})`).join("")}`;
+/**
+ * bb's "Compact 627k" / "Keep history" toggle (desktop, when the prompt cache has expired): a ghost button with
+ * an icon and words, in the right-hand group before the mic. Its aria-label carries the full sentence.
+ */
+const COMPACT = ':is(button[aria-pressed][aria-label^="Compact "], button[aria-pressed][aria-label^="Keep all "])';
 /** The model pill while the toolbar sits after it: its end margin is the toolbar's room (composer.ts --cf-foot-room). */
 const MODEL_MERGED = `${PILL.replace(C, `${C}[data-cf-merged]`)}[aria-label^="Provider, model"]`;
 /** One selector (wrapped in :is), so a suffix like :active applies to every filled button, not only the last of the list. */
@@ -68,6 +77,18 @@ ${PILL} {
 }
 ${ROW} button :is(svg, [data-icon-root]) { width: var(--cf-ci) !important; height: var(--cf-ci) !important; }
 
+/* The compact toggle is a pill with words, not a circle: squeezed into the 36px circle, "Compact 627k" ran
+   under the mic and the send button (kayg, 2026-11-16). When the row has no room for the words between the
+   model pill and the right-hand group, composer.ts sets data-cf-compact-icon and only its icon shows (the
+   label stays its aria-label and tooltip). */
+${PILL}${COMPACT} {
+  width: auto;
+  padding-inline: var(--cf-text-pad) !important;
+  gap: ${s(6)};
+  white-space: nowrap;
+}
+${C}[data-cf-compact-icon] ${PILL.slice(C.length + 1)}${COMPACT} { width: var(--cf-cp); padding: 0 !important; font-size: 0; gap: 0; }
+
 /* The model pill: icon, "Opus 5.5 Medium", chevron. bb's gap-1 plus css.ts's optical nudges keep
    icon → text → chevron reading even. The logo fills its box while the chevron glyph sits ~4px
    inside its box, so the right padding is smaller than the left to look the same. */
@@ -107,17 +128,20 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
   ${TOOL} { --cf-seg-w: ${s(40)}; }
   /* While the composer opens or closes, its button row is pinned to the bottom-right corner, so the buttons ride
      with the growing (or shrinking) bottom edge into the two-row (or one-line) place, instead of jumping there
-     when bb switches layouts at the end (kayg: "buttons only shift to the bottom row once both expansions are
-     done"). bb's two-row layout puts the row at that same corner, so the hand-over is seamless. */
+     when bb switches layouts (kayg: "buttons only shift to the bottom row once both expansions are done").
+     composer.ts keeps the pin until the height has finished moving, so it lets go where bb's layout has the row.
+     bb's one-line row has no bottom padding (the two-row one has the inset) and holds only the right group;
+     the two-row one spans the width (+, model on the left). */
   ${C}:is([data-cf-opening], [data-cf-closing]) form[data-promptbox] [data-promptbox-action-row] {
     position: absolute;
     right: 0; /* the row carries the side inset as its own padding (pinned 8pt in, it shifted 8pt) */
     bottom: 0;
     z-index: 1;
   }
-  /* The one-line row has no bottom padding (the two-row one does): it needs the inset itself. */
-  ${C}[data-cf-opening] form[data-promptbox] [data-promptbox-action-row] { bottom: var(--cf-cinset); }
-  ${C}[data-cf-closing] form[data-promptbox] [data-promptbox-action-row] { left: 0; }
+  ${C}:is([data-cf-opening], [data-cf-closing])[data-cf-collapsed] form[data-promptbox] [data-promptbox-action-row] { bottom: var(--cf-cinset); }
+  ${C}:is([data-cf-opening], [data-cf-closing]):not([data-cf-collapsed]) form[data-promptbox] [data-promptbox-action-row] { left: 0; }
+  /* composer.ts reads bb's real height with the row in the flow (pinned, it takes no room). */
+  ${C}[data-cf-measure] form[data-promptbox] [data-promptbox-action-row] { position: relative !important; inset: auto !important; }
   /* One radius for both states: at 52pt tall, 26pt IS the capsule, so the corners never jump mid-morph. */
   ${C} form[data-promptbox] { border-radius: ${s(26)} !important; }
   ${C} [contenteditable="true"] { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }
@@ -126,13 +150,13 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
   ${PILL}[aria-label^="Provider, model"] { height: var(--cf-cp); }
   /* ── The focus morph, like ChatGPT's iOS composer (measured from kayg's 60fps recording, 2026-11-15):
      unfocused it is a narrower capsule (38pt from the screen edges); focused it widens to 12pt from the edges
-     and grows to its two rows while it rides up with the keyboard, all in one ~350ms iOS-style ease-out, no
-     step in between. Width: the box's side padding (one small element's layout per frame). Height: bb's
-     own grid-rows transition, given the same duration and curve. Keyboard actions never animate
-     (input-mode.ts zeroes transitions). */
+     and grows to its two rows while it rides up with the keyboard, all on the keyboard's own track (MORPH,
+     measured on a real iPhone, 2026-11-16), no step in between. Width: the box's side padding (one small
+     element's layout per frame). Height: composer.ts animates the form; bb's grid-rows transition gets the
+     same duration and curve. Keyboard actions never animate (input-mode.ts zeroes transitions). */
   ${C} [data-composer-box] {
     padding-inline: ${s(4)};
-    transition: padding-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: padding-inline ${MORPH};
   }
   ${C}:is([data-cf-collapsed]:not([data-cf-opening]), [data-cf-closing]) [data-composer-box] { padding-inline: ${s(30)}; }
   /* Strips above the composer (bb's "Running 1 background agent", the queue): kayg asked for them to match
@@ -149,7 +173,7 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     justify-content: center;
     border-radius: ${s(22)} !important;
     border-bottom-width: 1px !important;
-    transition: margin-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: margin-inline ${MORPH};
   }
   ${C}:is([data-cf-collapsed]:not([data-cf-opening]), [data-cf-closing]) section.bg-surface-raised-solid { margin-inline: ${s(30)}; }
   ${C} section.bg-surface-raised-solid > :first-child { min-height: calc(${s(44)} - 2px); padding-inline: ${s(16)}; } /* 44 with the border */
@@ -168,8 +192,8 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
      one (only for bb's default text: other states, like "Setting up…", keep theirs). */
   ${C} p.is-editor-empty[data-placeholder^="Ask for a follow-up."]::before { content: "Ask a follow-up" !important; }
   ${C} [data-promptbox-layout] {
-    transition-duration: 350ms !important;
-    transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
+    transition-duration: ${KB_MS}ms !important;
+    transition-timing-function: ${KB_EASE} !important;
   }
   @media (prefers-reduced-motion: reduce) {
     ${C} [data-composer-box], ${C} [data-promptbox-layout], ${C} section.bg-surface-raised-solid { transition: none !important; }
@@ -179,8 +203,20 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
   ${ROW} > [data-promptbox-standard-actions][data-promptbox-expanded-only] { min-width: 0; }
   ${PILL}[aria-label^="Provider, model"] { flex: 0 1 auto; min-width: var(--cf-cp); overflow: hidden; }
   ${ROW} button[aria-label^="Provider, model"] .truncate { min-width: 0; }
-  ${R} [data-app-composer]:not([data-cf-keyboard]) [data-promptbox-action-row] button[aria-label^="Provider, model"] :is(.truncate, [data-promptbox-hide-compact]) { display: none; }
-  ${R} [data-app-composer][data-cf-keyboard] [data-follow-up-composer-footer] { display: none !important; }
+  /* "Keyboard up" also covers the open before the editor has focus (keyboard-follow.ts data-cf-kb-open) and the
+     close until the box has shrunk (data-cf-closing): otherwise the toolbar appeared and the model name went at
+     the hand-over (open) and at the blur (close), a pop at each end of the motion. */
+  ${R} [data-app-composer]:not([data-cf-keyboard], [data-cf-kb-open], [data-cf-closing]) [data-promptbox-action-row] button[aria-label^="Provider, model"] :is(.truncate, [data-promptbox-hide-compact]) { display: none; }
+  ${R} [data-app-composer]:is([data-cf-keyboard], [data-cf-kb-open], [data-cf-closing]) [data-follow-up-composer-footer] { display: none !important; }
+  /* The keyboard-down button (touch.ts) sits after the mic only while the editor has focus. The row makes its
+     room on the keyboard's track as the composer opens, and gives it back the same way as it closes, so the mic
+     glides instead of jumping 44pt when the button comes (hand-over) and goes (blur). The button is display:
+     none without [data-cf-keyboard] (css.ts), so that is the test. An animation, not a transition: each end
+     must snap with the button, not ease back. */
+  ${C}[data-cf-kb-open]:not([data-cf-keyboard]) [data-promptbox-action-row] { animation: cf-kb-slot-in ${MORPH} both; }
+  ${C}[data-cf-closing]:not([data-cf-keyboard]) [data-promptbox-action-row] { animation: cf-kb-slot-out ${MORPH} both; }
+  @keyframes cf-kb-slot-in { from { padding-inline-end: var(--cf-cinset); } to { padding-inline-end: calc(var(--cf-cinset) + var(--cf-cp) + var(--cf-cgap)); } }
+  @keyframes cf-kb-slot-out { from { padding-inline-end: calc(var(--cf-cinset) + var(--cf-cp) + var(--cf-cgap)); } to { padding-inline-end: var(--cf-cinset); } }
 }
 
 /* Voice recording (frame/voice.ts): bb's recording row covers the row and brings its own padding
