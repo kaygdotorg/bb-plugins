@@ -86,7 +86,7 @@ export function registerDispatchPrefetch(bb: BbPluginApi, _deps: RecallDeps, rec
       try { shared.store.saveTurnInjection(threadId, hash, written.counter, scopeName, items); } catch { /* the block is optional */ }
     }
     await rememberHost(threadId, hostId).catch(() => undefined);
-    if (count) deps.activity.record({ kind: "recall", threadId, summary: `per-turn memory: ${count} excerpt${count === 1 ? "" : "s"}` });
+    if (count) deps.activity.record({ kind: "recall", threadId, summary: `gave the agent ${count} ${count === 1 ? "memory" : "memories"} for this message` });
   }
 
   bb.events.on("thread.deleted", ({ thread }) => {

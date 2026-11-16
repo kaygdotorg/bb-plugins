@@ -316,7 +316,7 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
         try { state.total += (await scanThread(port, thread, opts, caches)).messages.length; } catch (error) { if (error instanceof HonchoError) throw error; }
       }
       store.updateRun(state.done, state.total);
-      deps.activity.record({ kind: "backfill", summary: `backfill started: ${threads.length} threads, ${state.total} messages`, messages: state.total });
+      deps.activity.record({ kind: "backfill", summary: `started importing past chats: ${threads.length} chats, ${state.total} messages`, messages: state.total });
       // Pass 2: upload, one thread at a time, in thread order.
       for (const thread of threads) {
         if (signal.aborted) break;
@@ -327,19 +327,19 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
           if (!done) break;
           if (done.sent || done.scan.skipped) deps.activity.record({
             kind: "backfill", threadId: thread.id, messages: done.sent, redactions: done.scan.redactions,
-            summary: `backfilled ${done.sent} messages${done.scan.skipped ? `, ${done.scan.skipped} already in honcho` : ""}`,
+            summary: `imported ${done.sent} past messages${done.scan.skipped ? `, ${done.scan.skipped} already in honcho` : ""}`,
           });
         } catch (error) {
           if (error instanceof HonchoError) throw error;
           failedThreads++;
-          deps.activity.record({ kind: "failure", threadId: thread.id, summary: "backfill skipped a thread after an error", error: "thread" });
+          deps.activity.record({ kind: "failure", threadId: thread.id, summary: "skipped a past chat after an error", error: "thread" });
         }
       }
-      if (notYetSeen) deps.activity.record({ kind: "backfill", summary: `backfill skipped ${notYetSeen} thread(s) not yet seen by live capture` });
+      if (notYetSeen) deps.activity.record({ kind: "backfill", summary: `skipped ${notYetSeen} past chat(s) not yet seen live` });
       if (failedThreads) state.error = `${failedThreads} thread(s) failed`;
     } catch (error) {
       state.error = error instanceof HonchoError ? error.kind : "error";
-      deps.activity.record({ kind: "failure", summary: `backfill stopped: ${state.error}`, error: state.error });
+      deps.activity.record({ kind: "failure", summary: `importing past chats stopped: ${state.error}`, error: state.error });
     }
   }
 
@@ -355,8 +355,8 @@ export function createBackfillService(bb: BbPluginApi, deps: BackfillDeps): Back
         state.running = false;
         store.updateRun(state.done, state.total);
         store.finishRun(now(), state.error);
-        if (signal.aborted) deps.activity.record({ kind: "backfill", summary: `backfill stopped at ${state.done}/${state.total} messages`, messages: state.done });
-        else if (!state.error) deps.activity.record({ kind: "backfill", summary: `backfill finished: ${state.done} messages`, messages: state.done });
+        if (signal.aborted) deps.activity.record({ kind: "backfill", summary: `importing past chats stopped at ${state.done}/${state.total} messages`, messages: state.done });
+        else if (!state.error) deps.activity.record({ kind: "backfill", summary: `finished importing past chats: ${state.done} messages`, messages: state.done });
       });
     },
     async progress() {
