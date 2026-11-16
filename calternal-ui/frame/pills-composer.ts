@@ -135,6 +135,35 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     transition: padding-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
   }
   ${C}:is([data-cf-collapsed]:not([data-cf-opening]), [data-cf-closing]) [data-composer-box] { padding-inline: ${s(30)}; }
+  /* Strips above the composer (bb's "Running 1 background agent", the queue): kayg asked for them to match
+     the composer. They sit beside [data-composer-box] in the same container, so a margin equal to the box's
+     padding puts them on the composer's edges, and the same transition keeps them there through the morph.
+     bb tucks an "attached" strip under the composer (-mb-5, square bottom); over our capsule that read as a
+     tab, so here every strip floats one gap (bb's gap-2) above it, as a capsule (a 44pt row, radius half of it; an opened
+     list keeps the 22pt corners). */
+  ${C} section.bg-surface-raised-solid {
+    margin-inline: ${s(4)};
+    margin-bottom: 0 !important; /* bb's own gap-2 above the composer is the one gap */
+    padding-bottom: 0 !important;
+    min-height: ${s(44)};
+    justify-content: center;
+    border-radius: ${s(22)} !important;
+    border-bottom-width: 1px !important;
+    transition: margin-inline 350ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  ${C}:is([data-cf-collapsed]:not([data-cf-opening]), [data-cf-closing]) section.bg-surface-raised-solid { margin-inline: ${s(30)}; }
+  ${C} section.bg-surface-raised-solid > :first-child { min-height: calc(${s(44)} - 2px); padding-inline: ${s(16)}; } /* 44 with the border */
+  /* Its toggle: bb draws it as a pressed chip (ring, shadow, a lighter fill) inside the strip; on the capsule
+     that read as a box in a box. Here the row itself is the button: no chip, 15pt text, an 18pt glyph. */
+  ${C} #thread-background-commands-card-toggle {
+    min-height: calc(${s(44)} - 2px);
+    padding-inline: 0;
+    gap: ${s(8)};
+    font-size: ${s(15)};
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  ${C} #thread-background-commands-card-toggle svg { width: ${s(18)}; height: ${s(18)}; }
   /* bb's expanded placeholder is two lines long; swapping to it mid-morph reflowed the text. Keep the short
      one (only for bb's default text: other states, like "Setting up…", keep theirs). */
   ${C} p.is-editor-empty[data-placeholder^="Ask for a follow-up."]::before { content: "Ask a follow-up" !important; }
@@ -143,7 +172,7 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
   }
   @media (prefers-reduced-motion: reduce) {
-    ${C} [data-composer-box], ${C} [data-promptbox-layout] { transition: none !important; }
+    ${C} [data-composer-box], ${C} [data-promptbox-layout], ${C} section.bg-surface-raised-solid { transition: none !important; }
   }
   /* The keyboard-down button copies the mic's classes (touch.ts), filled colour included: it is a quiet pill. */
   ${ROW} [data-cf-kb] { background-color: var(--cf-pill-quiet) !important; color: var(--foreground) !important; }
