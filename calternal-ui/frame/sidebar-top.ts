@@ -68,6 +68,10 @@ ${R} [data-cf-sb-tools] > button {
   outline: none;
 }
 ${R} [data-cf-sb-tools] > button > svg { flex: none; }
+/* The top row's segment sizing (pills-sidebar: every button in the row is a --cf-seg-w wide segment, 48pt on
+   phones) also caught this button: wider than its 44pt circle, it put the glyph 2pt right of the circle's centre
+   (kayg, 2026-11-16: "search icon is misaligned"). The button is exactly its circle. */
+${R} ${SIDEBAR} ${ROW} > [data-cf-sb-tools] > button { width: 100% !important; min-width: 0 !important; height: 100% !important; }
 ${R} [data-cf-sb-tools] > button:focus-visible { box-shadow: inset 0 0 0 2px var(--sidebar-ring, var(--ring)); }
 /* Phones (the drawer has no toggle): the same toolbar at the drawer's top-trailing corner, like Claude's
    and ChatGPT's, as floating glass: 44 tall, two 48pt segments, 20pt glyphs (pills.ts phone tokens), at
