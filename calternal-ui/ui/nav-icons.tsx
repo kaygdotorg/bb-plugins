@@ -5,8 +5,14 @@
  */
 import type { ReactNode } from "react";
 
+/**
+ * The viewBox is cropped to the drawing (2.25..21.75 of the 24 grid): drawn on the full grid the glyphs' ink
+ * was 11–12.8px in the 15.4px slot, while the provider logos on the thread rows fill theirs (~15px), so these
+ * read a size smaller (kayg, 2026-11-16: "what about the icon sizing?"). Cropped, the ink is ~13.5–15px and
+ * the stroke ~1.4px, close to the logos' weight. No CSS scale, so layout and hit areas don't change.
+ */
 const Svg = ({ children }: { children: ReactNode }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-cf-nav-icon="">
+  <svg viewBox="2.25 2.25 19.5 19.5" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-cf-nav-icon="">
     {children}
   </svg>
 );
