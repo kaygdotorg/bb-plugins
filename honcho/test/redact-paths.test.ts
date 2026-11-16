@@ -8,7 +8,7 @@ const KEEP = [
   "The full handover is ~/Developer/calternal-HANDOVER.md",
   "The full handover is ~/orch/infraternal-main-handover-2026-11-15.md",
   "see ~/Developer/Worktrees/BRIEF-COMMON.md for the brief",
-  "see ~/Developer/Worktrees/BRIEF-COMMON-v2-2026-11-15.md",
+  "see ~/orch/BRIEF-COMMON-v2-2026.md",
   "Read /home/kayg/Developer/Worktrees/bb-honcho-fix-paths/honcho/lib/redact.ts first.",
   "worktree: /home/kayg/Developer/Worktrees/bb-honcho-fix-paths (branch honcho-fix-paths)",
   "(see ./docs/Architecture-Overview-Notes-2026-11-15/README.md)",
