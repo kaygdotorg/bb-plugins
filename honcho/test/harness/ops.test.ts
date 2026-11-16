@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { listBackups, testHooks } from "../../lib/harness/files";
 import { codexHookKey, codexTrustHash } from "../../lib/harness/hooks-json";
 import { connect, desiredHooks, handOver, harnessState, layout, prepareEnv, undo } from "../../lib/harness/ops";
@@ -361,5 +361,95 @@ describe("env paths", () => {
     await prepareEnv(h.paths);
     expect(existsSync(p.claudeConfigPath)).toBe(false);
     expect(p.recallDir).toBe(join(h.dataDir, "recall"));
+  });
+});
+
+describe("codex-honcho skill", () => {
+  const SKILL_FILES: Record<string, Buffer> = {
+    "SKILL.md": Buffer.from("# fake skill\nhooks inject context\n"),
+    "refs/notes.bin": Buffer.from([0, 255, 1, 254, 10, 13]),
+  };
+  const addSkill = (h: FakeHome) => {
+    const dir = layout(h.paths).codexHonchoSkill;
+    for (const [rel, bytes] of Object.entries(SKILL_FILES)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), bytes);
+    }
+    return dir;
+  };
+  const skillBytes = (dir: string) => Object.fromEntries(Object.keys(SKILL_FILES).map((r) => [r, readFileSync(join(dir, r)).toString("hex")]));
+
+  it("hand over moves it into the backup set and undo puts it back byte for byte", async () => {
+    const h = setup();
+    const dir = addSkill(h);
+    const before = skillBytes(dir);
+    const original = snapshot(h);
+    expect(h.paths.codexDir).toBe(join(h.home, ".codex"));
+    expect(dir).toBe(join(h.home, ".codex", "skills", "honcho-memory"));
+    await handOver(h.paths);
+    expect(existsSync(dir)).toBe(false);
+    expect((await harnessState(h.paths)).codex.handedOver).toBe(true);
+    expect((await undo(h.paths, "handOver")).restored).toHaveLength(1);
+    expect(skillBytes(dir)).toEqual(before);
+    expect(snapshot(h)).toEqual(original);
+  });
+
+  it("is not handed over while the skill is in place", async () => {
+    const h = setup();
+    addSkill(h);
+    await handOver(h.paths);
+    mkdirSync(layout(h.paths).codexHonchoSkill, { recursive: true });
+    expect((await harnessState(h.paths)).codex.handedOver).toBe(false);
+  });
+
+  it("a second hand over on a machine handed over before only moves the skill, and undo goes step by step", async () => {
+    const h = setup();
+    const original = snapshot(h);
+    const first = (await handOver(h.paths)).backup;
+    const handedOver = snapshot(h);
+    const dir = addSkill(h);
+    const before = skillBytes(dir);
+    const second = (await handOver(h.paths)).backup;
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    expect(snapshot(h)).toEqual(handedOver);
+    expect(existsSync(dir)).toBe(false);
+    expect((await handOver(h.paths)).backup).toBeNull();
+
+    await undo(h.paths, "handOver");
+    expect(skillBytes(dir)).toEqual(before);
+    expect(snapshot(h)).toEqual(handedOver);
+    await undo(h.paths, "handOver");
+    expect(snapshot(h)).toEqual(original);
+  });
+
+  it("undo with no step restores files and skill", async () => {
+    const h = setup();
+    const dir = addSkill(h);
+    const before = skillBytes(dir);
+    const original = snapshot(h);
+    await connect(h.paths);
+    await handOver(h.paths);
+    await undo(h.paths);
+    expect(snapshot(h)).toEqual(original);
+    expect(skillBytes(dir)).toEqual(before);
+  });
+
+  it("does not clobber a skill dir that exists again at undo time", async () => {
+    const h = setup();
+    const dir = addSkill(h);
+    await handOver(h.paths);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "user's own");
+    const result = await undo(h.paths, "handOver");
+    expect(result.kept).toEqual([dir]);
+    expect(readFileSync(join(dir, "SKILL.md"), "utf8")).toBe("user's own");
+  });
+
+  it("leaves a machine without the skill alone", async () => {
+    const h = setup();
+    await handOver(h.paths);
+    expect(existsSync(layout(h.paths).codexHonchoSkill)).toBe(false);
+    expect(existsSync(join(h.home, ".codex", "skills"))).toBe(false);
   });
 });

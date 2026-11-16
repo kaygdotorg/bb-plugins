@@ -1,7 +1,7 @@
 // Small filesystem helpers for harness config edits: atomic writes that keep
 // the file's mode and follow symlinks (dotfile managers), and backup sets.
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 const errno = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code;
@@ -103,7 +103,9 @@ export async function commitChanges(changes: Change[]): Promise<void> {
  */
 export interface SetFile { key: string; path: string; before: string | null; after: string | null }
 interface ManifestFile { key: string; path: string; before: string | null; after: string | null }
-export interface BackupManifest { v: 2; op: string; createdAt: number; files: ManifestFile[]; restoredAt?: number }
+/** A directory a step moved aside: its original path and its name inside the set dir. */
+export interface MovedDir { path: string; stored: string }
+export interface BackupManifest { v: 2; op: string; createdAt: number; files: ManifestFile[]; moved?: MovedDir[]; restoredAt?: number }
 
 const MANIFEST = "manifest.json";
 
@@ -135,12 +137,61 @@ async function writeSetFiles(dir: string, files: SetFile[], manifest: Omit<Backu
  * Saves one backup set from the given contents. The caller passes the very bytes
  * it read and edited, so the backup and the edit can never disagree.
  */
-export async function saveSet(backupsDir: string, op: string, files: SetFile[], now = Date.now()): Promise<string> {
+export async function saveSet(backupsDir: string, op: string, files: SetFile[], now = Date.now(), moveDirs: string[] = []): Promise<string> {
   const name = `${await stamp(backupsDir, now)}-${op}`;
   const dir = join(backupsDir, name);
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  await writeSetFiles(dir, files, { v: 2, op, createdAt: now });
+  const moved: MovedDir[] = [];
+  try {
+    for (const [index, path] of moveDirs.entries()) {
+      const stored = `moved-${index}`;
+      await moveDir(path, join(dir, stored));
+      moved.push({ path, stored });
+    }
+    await writeSetFiles(dir, files, { v: 2, op, createdAt: now, ...(moved.length ? { moved } : {}) });
+  } catch (error) {
+    await putBack(dir, moved);
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
   return name;
+}
+
+/** Renames, or copies then removes when the two sit on different filesystems. Keeps modes, times and symlinks. */
+async function moveDir(from: string, to: string): Promise<void> {
+  try { await rename(from, to); } catch (error) {
+    if (errno(error) !== "EXDEV") throw error;
+    await cp(from, to, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+    await rm(from, { recursive: true, force: true });
+  }
+}
+
+/** Moves each stored dir back unless something now sits at its path; returns the paths it left alone. */
+async function putBack(dir: string, moved: MovedDir[]): Promise<{ restored: string[]; kept: string[] }> {
+  const restored: string[] = [], kept: string[] = [];
+  for (const m of moved) {
+    const from = join(dir, m.stored);
+    if (!(await exists(from))) continue;
+    if (await lexists(m.path)) { kept.push(m.path); continue; }
+    await mkdir(dirname(m.path), { recursive: true });
+    await moveDir(from, m.path);
+    restored.push(m.path);
+  }
+  return { restored, kept };
+}
+
+async function lexists(path: string): Promise<boolean> {
+  try { await lstat(path); return true; } catch { return false; }
+}
+
+/**
+ * Puts a set's moved dirs back where they came from. A path that exists again
+ * (the user or the tool recreated it) is never overwritten: that copy stays in
+ * the set and its path is returned in `kept`.
+ */
+export async function restoreMoved(backupsDir: string, name: string): Promise<{ restored: string[]; kept: string[] }> {
+  const { manifest } = await loadSet(backupsDir, name);
+  return putBack(join(backupsDir, name), manifest.moved ?? []);
 }
 
 export async function loadSet(backupsDir: string, name: string): Promise<{ manifest: BackupManifest; files: SetFile[] }> {
@@ -165,6 +216,7 @@ export async function updateSet(backupsDir: string, name: string, update: { file
 
 /** Drops a set whose step was abandoned before any of its writes stuck. */
 export async function removeSet(backupsDir: string, name: string): Promise<void> {
+  try { await restoreMoved(backupsDir, name); } catch { /* nothing readable to restore */ }
   await rm(join(backupsDir, name), { recursive: true, force: true });
 }
 

@@ -10,10 +10,11 @@ import {
   locateHandler, reinsertHandlers, removeHandlers, type DesiredHook, type HookPosition, type Json, type JsonObject,
 } from "./hooks-json.js";
 import {
-  commitChanges, ConflictError, exists, listBackups, loadSet, readText, removeFile, removeSet, saveSet, updateSet, writeAtomic,
+  commitChanges, ConflictError, exists, listBackups, loadSet, readText, removeFile, removeSet, restoreMoved, saveSet, updateSet, writeAtomic,
   type Change, type SetFile,
 } from "./files.js";
 import { appendHonchoMcp, extractHonchoMcp, hasHonchoMcp, readHookStates, rekeyHookStates, setHookTrust, stripHonchoMcp } from "./toml.js";
+import { lstat } from "node:fs/promises";
 import { isRecord } from "./schema.js";
 
 export interface HarnessPaths {
@@ -56,6 +57,8 @@ export function layout(paths: HarnessPaths) {
     claudePluginCache: join(paths.claudeDir, "plugins", "cache", "honcho", "honcho"),
     codexHooks: join(paths.codexDir, "hooks.json"),
     codexConfig: join(paths.codexDir, "config.toml"),
+    /** codex-honcho's skill: it tells agents its hooks inject and record, which stops being true after hand over. */
+    codexHonchoSkill: join(paths.codexDir, "skills", "honcho-memory"),
   };
 }
 
@@ -152,7 +155,7 @@ export async function harnessState(paths: HarnessPaths): Promise<HostHarnessStat
     },
     codex: {
       hookInstalled: codexHookInstalled,
-      handedOver: !hasCodexHonchoHooks(codexHooks) && !hasHonchoMcp(toml),
+      handedOver: !hasCodexHonchoHooks(codexHooks) && !hasHonchoMcp(toml) && !(await lexists(l.codexHonchoSkill)),
       trusted,
     },
     backups: (await listBackups(l.backupsDir)).map((b) => b.name),
@@ -216,11 +219,13 @@ async function retrying<T>(label: string, run: () => Promise<T>): Promise<T> {
   throw new Error(`${label} gave up: ${conflict!.path} kept changing while bb edited it (${ATTEMPTS} tries); no file was changed`);
 }
 
-/** Backs up `before`→`after` and writes the difference, or rolls everything back. */
-async function commitStep(l: ReturnType<typeof layout>, op: string, before: Files, after: Files): Promise<string | null> {
-  if (sameFiles(before, after)) return null;
+const lexists = async (path: string) => { try { await lstat(path); return true; } catch { return false; } };
+
+/** Backs up `before`→`after` and writes the difference, or rolls everything back. `moveDirs` are moved into the set. */
+async function commitStep(l: ReturnType<typeof layout>, op: string, before: Files, after: Files, moveDirs: string[] = []): Promise<string | null> {
+  if (sameFiles(before, after) && !moveDirs.length) return null;
   const p = filePaths(l);
-  const name = await saveSet(l.backupsDir, op, FILE_KEYS.map((key) => ({ key, path: p[key], before: before[key], after: after[key] })));
+  const name = await saveSet(l.backupsDir, op, FILE_KEYS.map((key) => ({ key, path: p[key], before: before[key], after: after[key] })), Date.now(), moveDirs);
   const changes: Change[] = FILE_KEYS.map((key) => ({ path: p[key], before: before[key], after: after[key] }));
   try { await commitChanges(changes); } catch (error) { await removeSet(l.backupsDir, name); throw error; }
   return name;
@@ -327,7 +332,8 @@ export async function handOver(paths: HarnessPaths): Promise<{ backup: string | 
       }
     }
 
-    return { backup: await commitStep(l, "handover", before, after) };
+    const skill = (await exists(paths.codexDir)) && (await lexists(l.codexHonchoSkill)) ? [l.codexHonchoSkill] : [];
+    return { backup: await commitStep(l, "handover", before, after, skill) };
   });
 }
 
@@ -469,7 +475,7 @@ const toSetFiles = (l: ReturnType<typeof layout>, set: LiveSet): SetFile[] =>
  * removes any of bb's hooks left over; undoing hand over undoes the newest one.
  * The replaced state is saved first as an `undo` set.
  */
-export async function undo(paths: HarnessPaths, step?: UndoStep): Promise<{ restored: string[] }> {
+export async function undo(paths: HarnessPaths, step?: UndoStep): Promise<{ restored: string[]; kept?: string[] }> {
   const l = layout(paths);
   return retrying("undo", async () => {
     const sets = await liveSets(l);
@@ -500,10 +506,12 @@ export async function undo(paths: HarnessPaths, step?: UndoStep): Promise<{ rest
       catch (error) { await removeSet(l.backupsDir, name); throw error; }
     }
     const now = Date.now();
+    const kept: string[] = [];
+    for (const target of targets) kept.push(...(await restoreMoved(l.backupsDir, target.name)).kept);
     for (const set of sets) {
       if (undone.has(set.name)) await updateSet(l.backupsDir, set.name, { restoredAt: now });
       else if (rebased.has(set.name)) await updateSet(l.backupsDir, set.name, { files: toSetFiles(l, set) });
     }
-    return { restored: targets.map((t) => t.name) };
+    return kept.length ? { restored: targets.map((t) => t.name), kept } : { restored: targets.map((t) => t.name) };
   });
 }
