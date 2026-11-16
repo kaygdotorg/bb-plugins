@@ -33,7 +33,17 @@ const COMPOSER = "[data-app-composer]";
 const EDITOR = '[data-app-composer] [contenteditable="true"]';
 const SHELL = "[data-app-content-shell]";
 const SCROLLER = "[data-page-scroll-viewport]";
-const CURVE = "cubic-bezier(0.3, 1, 0.3, 1)";
+/**
+ * The keyboard's own motion, sampled frame by frame from kayg's 60fps recording of ChatGPT (2026-11-16): the
+ * fraction of its travel at each time (ms). Driving the ride with these exact samples (linear between them)
+ * keeps the composer on the keyboard's edge; the earlier fitted cubic-bezier(0.3, 1, 0.3, 1) front-loaded the
+ * motion, so on a phone the composer was ~70% there while the keyboard was at ~40% (kayg's recording).
+ */
+const KB_MS = 363;
+const KB_TRACK: [number, number][] = [[0, 0], [13, 0.165], [30, 0.311], [47, 0.441], [63, 0.573], [80, 0.668], [97, 0.749], [113, 0.814], [147, 0.9], [163, 0.927], [197, 0.959], [280, 0.992], [363, 1]];
+/** Keyframes for a translate from `from` to `to` (px) along the keyboard's track. */
+const kbFrames = (from: number, to: number): Keyframe[] =>
+  KB_TRACK.map(([ms, f]) => ({ offset: ms / KB_MS, translate: `0 ${(from + (to - from) * f).toFixed(1)}px` }));
 /** Presses that are the composer's own controls, not the text field. */
 const CONTROLS = "button, a, input, textarea, select, label, [role=button], [role=menuitem], [data-cf-kb]";
 /** bb's composer opens its two-row form with this event (composer.ts beginOpen listens). */
@@ -52,7 +62,7 @@ export function mountKeyboardFollow(): () => void {
   const phone = matchMedia("(max-width: 767px)");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const animates = () => document.documentElement.getAttribute("data-cf-input") !== "keys" && !reduced.matches;
-  const duration = () => Number(localStorage.getItem("cf-kb-ms")) || 400;
+  const duration = () => Number(localStorage.getItem("cf-kb-ms")) || KB_MS;
   let disposed = false;
 
   // The stand-in field. The same kind of field as bb's editor (contenteditable, same hints), so the keyboard
@@ -175,7 +185,7 @@ export function mountKeyboardFollow(): () => void {
         // animation it drops its value until the main thread commits the fill, and under load (simulator) the
         // composer fell back down for a few frames.
         mover.style.translate = `0 ${(-d).toFixed(1)}px`;
-        const anim = mover.animate({ translate: ["0 0", `0 ${(-d).toFixed(1)}px`] }, { duration: duration(), easing: CURVE });
+        const anim = mover.animate(kbFrames(0, -d), { duration: duration(), easing: "linear" });
         o.ride = { anim, mover, scroller, d };
         anim.finished.then(() => { o.done = true; if (opening === o && o.lost) finishOpen(); }, () => {});
       });
@@ -249,7 +259,8 @@ export function mountKeyboardFollow(): () => void {
       const now = getComputedStyle(mover).translate;
       anim.cancel();
       mover.style.removeProperty("translate");
-      if (now && now !== "none") mover.animate({ translate: [now, "0 0"] }, { duration: duration(), easing: CURVE });
+      const y = parseFloat((now ?? "").split(" ")[1] ?? "0") || 0;
+      if (Math.abs(y) >= 1) mover.animate(kbFrames(y, 0), { duration: duration(), easing: "linear" });
     }
     o.hold?.shell.removeAttribute("data-cf-kb-hold");
   };
@@ -275,7 +286,7 @@ export function mountKeyboardFollow(): () => void {
     // where it was, then let it fall with the keyboard.
     if (scroller) scroller.scrollTop -= d;
     falling?.cancel();
-    falling = mover.animate({ translate: [`0 ${(-d).toFixed(1)}px`, "0 0"] }, { duration: duration(), easing: CURVE });
+    falling = mover.animate(kbFrames(-d, 0), { duration: duration(), easing: "linear" });
   };
 
   /** composer.ts's model chip: focus the editor the smooth way, from a click. */
