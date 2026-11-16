@@ -5,8 +5,8 @@ import { ago, plural } from "./format";
 import { ThreadLink } from "./links";
 import { Badge, Button, Card, Field, Loading, Offline, Progress, Section } from "./primitives";
 
-const KEY_LEVEL = { "workspace-or-admin": "full access", restricted: "limited access, some tools are off", unknown: "not checked yet" } as const;
-const KEY_SOURCE = { "config-file": "~/.honcho/config.json", "bb-secret": "saved in bb", none: "no key" } as const;
+const KEY_LEVEL = { "workspace-or-admin": "can use everything", restricted: "limited access, some tools are off", unknown: "not checked yet" } as const;
+const KEY_SOURCE = { "config-file": "from your honcho settings file", "bb-secret": "saved in bb", none: "no key" } as const;
 
 /** The old honcho plugin saved into one chat after bb took over. Says what to expect and links the chat. */
 function OldPluginNotice({ message }: { message: string }) {
@@ -58,7 +58,7 @@ function Server() {
         <div className="flex flex-wrap items-center gap-1.5" aria-label="health">
           <Badge>{plural(health.data.queued, "message")} waiting to be saved</Badge>
           <Badge tone={health.data.oldestPendingAt ? "warn" : "neutral"}>{health.data.oldestPendingAt ? `oldest has waited ${ago(health.data.oldestPendingAt, now).replace(" ago", "")}` : "nothing waiting"}</Badge>
-          <Badge tone={health.data.authFailing ? "bad" : "good"}>{health.data.authFailing ? "key rejected" : "key accepted"}</Badge>
+          <Badge tone={health.data.authFailing ? "bad" : "good"}>{health.data.authFailing ? "login rejected" : "login works"}</Badge>
           {health.data.tripwire ? <OldPluginNotice message={health.data.tripwire} /> : null}
         </div>
       ) : null}
@@ -90,7 +90,7 @@ function Harness() {
   const undo = (step: "connect" | "handOver") => void run(`undo-${step}`, async () => { setFresh(await rpc.call("harness.undo", { step })); await state.refetch(); });
   const yes = (on: boolean, word: string, off: string) => <Badge tone={on ? "good" : "neutral"}>{on ? word : off}</Badge>;
   return (
-    <Section title="assistants on this machine" hint={s ? `${s.machineId}` : undefined}>
+    <Section title="assistants on this computer" hint={s ? `${s.machineId}` : undefined}>
       {s === null ? (
         state.error ? <Offline message={state.error} onRetry={() => void state.refetch()} /> : <Loading what="assistant setup" />
       ) : (

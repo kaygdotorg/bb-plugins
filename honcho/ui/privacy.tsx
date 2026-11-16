@@ -147,9 +147,9 @@ function Rules({ settings, onSaved }: { settings: PrivacySettings; onSaved(): vo
   return (
     <Section title="never save or hide" hint="one entry per line.">
       <Card className="space-y-3 p-3">
-        {box("denyRemotes", "skip these repositories", "chats in a repository with a matching git address are never saved. for example git@github.com:client/*", "git@github.com:client/*")}
+        {box("denyRemotes", "skip these repositories", "chats in a repository with a matching repository address (the one you clone from) are never saved. for example git@github.com:client/*", "git@github.com:client/*")}
         {box("denyPaths", "skip these folders", "chats in these folders are never saved. /work/client/** covers everything inside; a single * stays within one folder.", "/work/client/**")}
-        {box("patterns", "hide text matching", "text that matches one of these patterns is replaced with [REDACTED] before anything is saved. patterns are regular expressions.", "")}
+        {box("patterns", "hide text matching", "text that matches one of these patterns is replaced with [REDACTED] before anything is saved. these are patterns (advanced), so leave this empty unless you know how they work. one per line.", "")}
         <div className="flex items-center gap-2">
           <Button disabled={!dirty || busy !== null} onClick={save}>save</Button>
           {error ? <span role="alert" className="text-2xs text-destructive">{error}</span>

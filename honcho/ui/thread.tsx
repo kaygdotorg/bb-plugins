@@ -2,7 +2,7 @@ import type { ExperimentalThreadContextCardProps, ExperimentalThreadContextSegme
 import { experimental_DetailRow as DetailRow, experimental_Icon as Icon, experimental_ThreadContextCardRow as CardRow, experimental_useThreadContextKind, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { ConclusionView } from "../lib/contract";
 import { useMemoryRpc, useNow, useRemote } from "./data";
-import { ORIGIN_WORDS, STATUS_LOADING, originOf, statusLine } from "./format";
+import { GROUP_HINT, ORIGIN_WORDS, STATUS_LOADING, originOf, statusLine } from "./format";
 import { Badge } from "./primitives";
 
 export const MEMORY_PATH = "memory";
@@ -40,12 +40,17 @@ export function ThreadStatusRow({ threadId }: ExperimentalThreadContextCardProps
 export function ThreadInfoStatusRow({ threadId }: ExperimentalThreadInfoProps) {
   const m = useThreadMemory(threadId);
   const nav = useBbNavigate();
-  const link = "text-xs underline-offset-2 hover:underline disabled:cursor-default disabled:no-underline";
+  const paused = m.status?.state === "paused";
+  const control = "inline-flex h-6 shrink-0 items-center rounded-md border border-border px-2 text-2xs font-medium hover:bg-muted disabled:pointer-events-none disabled:opacity-50";
   return (
     <DetailRow icon="Brain" label="Memory">
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2">
-        <button type="button" title={m.title} aria-label={`${m.line}. ${m.title}`} disabled={!m.clickable} onClick={() => void m.toggle()} className={link}>{m.line}</button>
-        <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className={`${link} text-muted-foreground hover:text-foreground`}>open memory</button>
+      <span className="flex min-w-0 max-w-full flex-col gap-1">
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 break-words text-xs" title={m.status?.scope ? GROUP_HINT : undefined}>{m.line}</span>
+          {m.clickable ? <button type="button" title={m.title} aria-label={`${paused ? "resume" : "pause"} memory for this chat`} onClick={() => void m.toggle()} className={control}>{paused ? "resume" : "pause"}</button> : null}
+          <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">open memory</button>
+        </span>
+        {m.status?.scope ? <span className="text-2xs text-muted-foreground">group: {GROUP_HINT}</span> : null}
       </span>
     </DetailRow>
   );
@@ -60,10 +65,10 @@ export function ThreadStatusSegment({ threadId }: ExperimentalThreadContextSegme
       aria-label={`${m.line}. ${m.title}`}
       disabled={!m.clickable}
       onClick={() => void m.toggle()}
-      className="flex h-6 shrink-0 items-center gap-1.5 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+      className="flex min-h-6 min-w-0 max-w-full items-start gap-1.5 py-0.5 text-left rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
       <Icon name="Brain" aria-hidden="true" className="size-3.5" />
-      <span>{m.line}</span>
+      <span className="min-w-0 break-words">{m.line}</span>
     </button>
   );
 }

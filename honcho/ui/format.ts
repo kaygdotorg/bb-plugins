@@ -17,15 +17,53 @@ export function plural(n: number, word: string): string {
   return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 }
 
-/** The one-line thread status shared by the card row and the banner segment. */
+/** Words that name a group of chats, in plain language. The backend calls it a scope. */
+export const GROUP_HINT = "chats from the same repo or project share memory";
+
+/** The one-line thread status shared by the card row, the Info row and the banner segment. */
 export function statusLine(status: ThreadMemoryStatus, queued: number, now = Date.now()): string {
+  const group = status.scope ? ` · group ${status.scope}` : "";
   switch (status.state) {
-    case "saving": return status.lastUploadAt ? `memory · saving · ${ago(status.lastUploadAt, now)}` : "memory · saving";
-    case "idle": return status.lastUploadAt ? `memory · saved · ${ago(status.lastUploadAt, now)}` : "memory · on";
-    case "paused": return "memory · paused";
-    case "offline": return `memory · offline · ${queued} waiting`;
+    case "saving": return `memory · saving${status.lastUploadAt ? ` · saved ${ago(status.lastUploadAt, now)}` : ""}${group}`;
+    case "idle": return status.lastUploadAt ? `memory · saved ${ago(status.lastUploadAt, now)}${group}` : `memory · on${group}`;
+    case "paused": return `memory · paused${group}`;
+    case "offline": return `memory · offline · ${queued} waiting${group}`;
     case "not-captured": return "memory · not captured";
   }
+}
+
+/** Lowercased words of a search, for matching by substring. */
+export function searchWords(query: string): string[] {
+  return [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))];
+}
+
+export function isExactMatch(content: string, words: readonly string[]): boolean {
+  const text = content.toLowerCase();
+  return words.some((w) => text.includes(w));
+}
+
+/** Exact word matches first (stable), then the rest. Display only. */
+export function splitMatches<T extends { content: string }>(items: readonly T[], query: string): { exact: T[]; related: T[] } {
+  const words = searchWords(query);
+  const exact: T[] = [];
+  const related: T[] = [];
+  for (const item of items) (words.length > 0 && isExactMatch(item.content, words) ? exact : related).push(item);
+  return { exact, related };
+}
+
+/**
+ * Activity summaries come reworded from the backend. Older ones still carry internal words, so
+ * known legacy shapes are mapped to plain text here. Anything else passes through, except the
+ * word "scope", which always reads as "group".
+ */
+export function plainSummary(summary: string): string {
+  let m = /^per-turn memory: (\d+) excerpts?$/.exec(summary);
+  if (m) return `looked up ${m[1] === "1" ? "1 memory" : `${m[1]} memories`} for a message`;
+  m = /^session memory injected \(scope ([^,)]+)(, from parent thread)?(, stale)?\)$/.exec(summary);
+  if (m) return `gave the assistant memory for group ${m[1]}${m[2] ? ", from the parent chat" : ""}${m[3] ? " (out of date)" : ""}`;
+  if (/^session rebuilt with the harness capture off at seq \d+/.test(summary)) return "this chat restarted without the old honcho plugin. memory will save it once that plugin is quiet";
+  if (/^re-checked the switch-over/.test(summary)) return "checked again: this chat has not restarted since the old honcho plugin was turned off, so saving waits for a restart";
+  return summary.replace(/\bscope\b/g, "group").replace(/\bharness\b/g, "assistant").replace(/\bseq (\d+)/g, "message $1");
 }
 
 export const STALE_MS = 10 * 60_000;

@@ -3,6 +3,7 @@ import type { ExperimentalMessageMetadataProps } from "@get-bb/plugin-sdk/app";
 import { experimental_Icon as Icon, useBbNavigate, useRealtime } from "@get-bb/plugin-sdk/app";
 import type { MemoryInjection } from "../lib/contract";
 import { useMemoryRpc, type Rpc } from "./data";
+import { GROUP_HINT } from "./format";
 import { ThreadLink } from "./links";
 
 const MEMORY_PATH = "memory";
@@ -149,7 +150,7 @@ export function chipLabel({ session, turn }: TurnMemory): string {
     ...(session.length > 0 ? ["session memory"] : []),
     ...(turn.length > 0 ? [count === 1 ? "1 memory" : `${count} memories`] : []),
   ];
-  return `from honcho · ${parts.join(" + ")} · scope ${scope}`;
+  return `from honcho · ${parts.join(" + ")} · group ${scope}`;
 }
 
 function Chip({ memory }: { memory: TurnMemory }) {
@@ -166,13 +167,14 @@ function Chip({ memory }: { memory: TurnMemory }) {
         aria-expanded={open}
         title={open ? "hide what memory added" : "show what memory added"}
         onClick={() => setOpen((v) => !v)}
-        className="flex min-h-5 max-w-full items-start gap-1.5 rounded px-1 py-0.5 text-left text-2xs hover:bg-muted hover:text-foreground"
+        className="flex min-h-5 max-w-full items-start gap-1.5 rounded px-1 py-0.5 text-left text-2xs [overflow-wrap:anywhere] hover:bg-muted hover:text-foreground"
       >
         <Icon name="Brain" aria-hidden="true" className="mt-px size-3 shrink-0" />
         <span className="min-w-0 break-words">{label}</span>
       </button>
       {open ? (
         <div className="mt-1 space-y-2 rounded-md border border-border/60 px-2 py-1.5">
+          <p className="text-2xs">group: {GROUP_HINT}</p>
           {card.length > 0 ? (
             <div className="space-y-0.5">
               <p className={sub}>session memory</p>

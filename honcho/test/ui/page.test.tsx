@@ -40,7 +40,7 @@ describe("activity", () => {
     });
     expect(await slot.findByText("uploaded a batch")).toBeTruthy();
     expect(slot.getByText("4 messages · 2 hidden")).toBeTruthy();
-    expect(slot.getByText("thinking included")).toBeTruthy();
+    expect(slot.getByText("with thinking")).toBeTruthy();
     fireEvent.click(await slot.findByLabelText("open chat Fix the login bug"));
     expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({ method: "toThread", threadId: "t9" });
   });
@@ -65,6 +65,57 @@ describe("conclusions", () => {
     expect(calls(slot, "conclusions.delete")).toHaveLength(0);
     fireEvent.click(slot.getByText("delete for good"));
     await waitFor(() => expect(calls(slot, "conclusions.delete")[0]!.input).toEqual({ id: "1" }));
+  });
+});
+
+describe("conclusions search", () => {
+  const c = (id: string, content: string) => ({ id, content, observer_id: "a", observed_id: "b", created_at: "2026-01-01T00:00:00Z", agentWritten: false, confirmed: false });
+  const texts = (slot: Awaited<ReturnType<typeof page>>) => within(slot.getByLabelText("things memory has learned")).getAllByRole("listitem").map((li) => li.querySelector("p")!.textContent);
+
+  it("puts exact matches first and says how many matched, never 50", async () => {
+    const slot = await page("conclusions", { "conclusions.list": (i: { query?: string }) => i.query ? [c("1", "unrelated health fact"), c("2", "Works with a TESTER"), c("3", "other")] : [c("9", "x")] });
+    fireEvent.change(slot.getByLabelText("search what memory has learned"), { target: { value: "tester" } });
+    fireEvent.submit(slot.getByRole("search"));
+    expect(await slot.findByText(/1 thing matches "tester", plus 2 related/)).toBeTruthy();
+    expect(texts(slot)[0]).toBe("Works with a TESTER");
+    expect(slot.queryByText(/50/)).toBeNull();
+  });
+
+  it("says so when nothing matches exactly", async () => {
+    const slot = await page("conclusions", { "conclusions.list": (i: { query?: string }) => i.query ? [c("1", "close idea")] : [] });
+    fireEvent.change(slot.getByLabelText("search what memory has learned"), { target: { value: "rita" } });
+    fireEvent.submit(slot.getByRole("search"));
+    expect(await slot.findByText(/nothing says "rita" exactly. 1 related thing/)).toBeTruthy();
+  });
+
+  it("a new query replaces the old one: focus selects the text, and clear empties it", async () => {
+    const slot = await page("conclusions", { "conclusions.list": () => [c("1", "a")] });
+    const box = (await slot.findByLabelText("search what memory has learned")) as HTMLInputElement;
+    fireEvent.change(box, { target: { value: "FAKE" } });
+    fireEvent.submit(slot.getByRole("search"));
+    fireEvent.focus(box);
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 4]);
+    fireEvent.click(slot.getByLabelText("clear the search"));
+    expect(box.value).toBe("");
+    await waitFor(() => expect(calls(slot, "conclusions.list").at(-1)!.input).toEqual({ limit: 50 }));
+  });
+});
+
+describe("plain words", () => {
+  it("maps legacy activity summaries and drops jargon from privacy and connection", async () => {
+    const slot = await page("activity", { "activity.list": () => [
+      { id: 1, at: Date.now(), kind: "harness", summary: "session rebuilt with the harness capture off at seq 11; capture will cover seq 12 on, once the old honcho plugin is seen quiet" },
+      { id: 2, at: Date.now(), kind: "recall", summary: "per-turn memory: 5 excerpts" },
+      { id: 3, at: Date.now(), kind: "recall", summary: "session memory injected (scope personal)" },
+    ] });
+    expect(await slot.findByText("looked up 5 memories for a message")).toBeTruthy();
+    expect(slot.getByText("gave the assistant memory for group personal")).toBeTruthy();
+    expect(slot.queryByText(/seq|harness|scope/)).toBeNull();
+    expect(slot.getByText("show problems only")).toBeTruthy();
+    slot.lifecycle.unmount();
+    const privacy = await page("privacy", { "privacy.get": () => ({ denyRemotes: [], denyPaths: [], patterns: [] }), "pause.list": () => [] });
+    expect(await privacy.findByText(/patterns \(advanced\)/)).toBeTruthy();
+    expect(privacy.queryByText(/regular expressions|git address/)).toBeNull();
   });
 });
 
@@ -146,7 +197,7 @@ describe("connection", () => {
   it("shows the connection without a key and tests it", async () => {
     const slot = await page("connection", { ...base, "connection.test": () => ({ ok: true, latencyMs: 42 }) });
     expect(await slot.findByText("https://honcho.example.org")).toBeTruthy();
-    expect(slot.getByText(/full access/)).toBeTruthy();
+    expect(slot.getByText(/can use everything/)).toBeTruthy();
     expect(slot.getByText(/overrides the Honcho file setting/)).toBeTruthy();
     fireEvent.click(slot.getByText("test connection"));
     expect(await slot.findByText("connected · 42 ms")).toBeTruthy();
