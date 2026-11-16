@@ -105,6 +105,19 @@ ${C}[data-cf-foot-off] [data-follow-up-composer-footer] { visibility: hidden; po
     --cf-tb-c: ${s(36)};
   }
   ${TOOL} { --cf-seg-w: ${s(40)}; }
+  /* While the composer opens or closes, its button row is pinned to the bottom-right corner, so the buttons ride
+     with the growing (or shrinking) bottom edge into the two-row (or one-line) place, instead of jumping there
+     when bb switches layouts at the end (kayg: "buttons only shift to the bottom row once both expansions are
+     done"). bb's two-row layout puts the row at that same corner, so the hand-over is seamless. */
+  ${C}:is([data-cf-opening], [data-cf-closing]) form[data-promptbox] [data-promptbox-action-row] {
+    position: absolute;
+    right: 0; /* the row carries the side inset as its own padding (pinned 8pt in, it shifted 8pt) */
+    bottom: 0;
+    z-index: 1;
+  }
+  /* The one-line row has no bottom padding (the two-row one does): it needs the inset itself. */
+  ${C}[data-cf-opening] form[data-promptbox] [data-promptbox-action-row] { bottom: var(--cf-cinset); }
+  ${C}[data-cf-closing] form[data-promptbox] [data-promptbox-action-row] { left: 0; }
   /* One radius for both states: at 52pt tall, 26pt IS the capsule, so the corners never jump mid-morph. */
   ${C} form[data-promptbox] { border-radius: ${s(26)} !important; }
   ${C} [contenteditable="true"] { font-size: calc(17px * var(--cf-ui-scale, 1)) !important; }

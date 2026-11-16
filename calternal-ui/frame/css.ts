@@ -899,9 +899,12 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${MAIN} [data-page-scroll-viewport] .max-w-\\[760px\\].mx-auto { padding-inline: calc(0.5rem * var(--cf-ui-scale, 1)) !important; }
   ${MAIN} [data-timeline-row-id] .max-w-none {
     font-size: calc(17px * var(--cf-ui-scale, 1));
-    line-height: 1.55;
+    /* ChatGPT's body (kayg's screenshots, 2026-11-16): 17pt on ~30pt lines, a blank line between paragraphs,
+       and SF's regular reads heavier than Figtree's: 1.72 and weight 430 here. */
+    line-height: 1.72;
+    font-weight: 430;
   }
-  ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 0.85em; }
+  ${MAIN} [data-timeline-row-id] .max-w-none > :is(p, ul, ol, blockquote) { margin-top: 0; margin-bottom: 1.15em; }
   ${MAIN} [data-timeline-row-id] .max-w-none li + li { margin-top: 0.3em; }
   ${MAIN} [data-timeline-row-id] .max-w-none :is(h1, h2, h3, h4) { font-weight: 650; line-height: 1.3; margin: 1.15em 0 0.45em; letter-spacing: -0.01em; }
   ${MAIN} [data-timeline-row-id] .max-w-none h1 { font-size: 1.4em; }

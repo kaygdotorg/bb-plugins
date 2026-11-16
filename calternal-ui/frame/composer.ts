@@ -373,8 +373,10 @@ export function mountComposer(): () => void {
     const from = form.getBoundingClientRect().height;
     const to = collapsedH > 0 && collapsedH < from - 8 ? collapsedH : Math.max(52, from / 2.6);
     host.setAttribute("data-cf-closing", "");
-    const row = form.querySelector<HTMLElement>("[data-promptbox-action-row]");
-    const fade = row?.animate({ opacity: [1, 0] }, { duration: 140, easing: "linear", fill: "forwards" }) ?? null;
+    // Only the left group (+, model) fades: the right one (mic, send) stays and rides up with the shrinking
+    // bottom edge into the one-line row (CSS pins the button row to the bottom while closing).
+    const left = form.querySelector<HTMLElement>("[data-promptbox-action-row] > [data-promptbox-standard-actions][data-promptbox-expanded-only]");
+    const fade = left?.animate({ opacity: [1, 0] }, { duration: 140, easing: "linear", fill: "forwards" }) ?? null;
     // min-height 0 and a clip: as a layout item the form won't go below its content's height otherwise.
     const anim = form.animate({ height: [`${from}px`, `${to}px`], minHeight: ["0px", "0px"], overflow: ["clip", "clip"] }, { duration: MORPH_MS, easing: MORPH_EASE, fill: "forwards" });
     const me = { form, composer: host, anim, fade, at: performance.now(), from, to };
