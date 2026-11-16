@@ -108,6 +108,15 @@ Out of v1: the "remember this" message action, the full conclusions review panel
 - Every injection is shown, with no "importance" filter.
 - The agent's own honcho_* tool calls stay as bb's tool rows, with no extra block.
 
+### Groups, keys and extras (Q49-Q54, agreed 2026-11-16)
+
+- **Groups tab (Q49):** one row per group (each repo or bb project, plus personal) with chat count, last activity and paused state. Opening a group shows its summary (honcho's per-group representation), its chats (titled, linked), search within the group, "ask" (chat limited to the group, low reasoning) and pause. Conclusions can't be filtered by group, so a group's "what it learned" comes from the summary plus group-scoped search.
+- **Forget this group (Q50):** a dry run first (sessions, messages, conclusions it would remove), then typed confirmation of the group name. It deletes every session in the group, then the derived conclusions whose `source_ids` point at them (the H40 purge). It never deletes the peer or the workspace. Irreversible, and it says so.
+- **Keys tab, read-only part (Q51):** the key in use, its source (config file or bb secret), level, workspace and expiry, decoded from the claims; the key itself is never shown. "Replace key" stores a bb secret after a successful test; "use the config file again" drops it.
+- **Minting (Q52):** only with an admin key. Mint a narrower key (workspace, peer, session or group, optional expiry). It's shown once and never stored by bb; a local note keeps label, scope, expiry and date, plus how to retire it, since honcho v3 can't list or revoke keys. Without an admin key the section says why it's unavailable.
+- **Extras (Q53):** in this round: "still learning (N messages)" from `queue/status`, "consolidate now" (`schedule_dream`) with the last run from `dreams/list`, and "this chat so far" (session summaries) in the chat's memory panel. Later: a cross-machine view and webhooks.
+- **Test safety (Q54):** destructive features (group wipe, minting) are tested against a `hermes-test` workspace, never `hermes`. The current key is workspace-scoped to `hermes` (claim `w`), so creating `hermes-test` needs an admin key from kayg through bb secrets. Unit tests use fakes only.
+
 ## Tools (H7)
 
 Native bb tools via `bb.agents.registerTool`, the same for every provider except codex on machines that weren't handed over:
