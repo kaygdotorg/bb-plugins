@@ -23,6 +23,11 @@ const ROW = "[data-timeline-row-id]";
 const USER_BUBBLE = ".rounded-xl.bg-surface-recessed";
 const META = "[data-message-action-metadata]";
 
+/** A message's action bar: bb's absolutely placed row holding the actions and the metadata slot. */
+const BAR = `${R} .group\\/message div:has(> ${META})`;
+/** The same bar while it should show its actions: the message hovered or focused, or its menu open. */
+const OPEN = `:is(${R} .group\\/message:is(:hover, :focus-within) div:has(> ${META}), ${R} .group\\/message div[data-menu-open]:has(> ${META}))`;
+
 export const MSG_TIMES_CSS = `
 /* bb's agent times: always shown, not only on hover. */
 ${R} ${META}:has(time) { display: flex !important; opacity: 1 !important; }
@@ -36,6 +41,28 @@ ${R} [data-cf-msg-time-row]:not([data-cf-msg-time-row="meta"]) {
   line-height: 1rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
+}
+
+/* Mouse devices: bb hides a message's actions until you hover it (opacity 0), but they keep their room, so the
+   time sat indented after three invisible icons (kayg, 2026-11-16: "the time stays indented, which looks really
+   bad"). Here the hidden actions take no room: the bar's gap goes, and the actions' box opens to its width
+   (with its own gap) on hover, focus, or while its menu is open, so the time slides aside as the icons fade in.
+   One small element's width per hover, not per frame of scrolling. Your messages have the time before the
+   actions, so their gap is on the other side. Touch screens show the actions always (unchanged). */
+@media (hover: hover) and (pointer: fine) {
+  ${BAR} { gap: 0 !important; }
+  ${BAR} > div:not(${META}) {
+    max-width: 0 !important; /* bb sets an inline max-width (the row's room) on this box */
+    overflow: hidden;
+    transition: max-width 220ms var(--cf-ease-out, ease-out), margin 220ms var(--cf-ease-out, ease-out);
+  }
+  ${OPEN} > div:not(${META}) { max-width: 12rem !important; }
+  ${OPEN} > div:not(${META}):first-child { margin-right: 0.5rem; }
+  ${OPEN} > div:not(${META}):last-child { margin-left: 0.5rem; }
+  /* bb pulls the bar 4px left (-ml-1) so the first icon's glyph meets the text edge; with the icons closed that put
+     the time 4px left of the text, so it steps back in while they're closed. */
+  ${BAR} > div:not(${META}):first-child + ${META} { margin-left: 0.25rem; transition: margin 220ms var(--cf-ease-out, ease-out); }
+  ${OPEN} > div:not(${META}):first-child + ${META} { margin-left: 0; }
 }
 `;
 

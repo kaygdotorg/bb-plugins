@@ -430,6 +430,13 @@ ${R} [data-app-composer] section.bg-surface-raised-solid {
   backdrop-filter: var(--cf-glass-blur);
   border-color: var(--cf-edge) !important;
 }
+/* GenUI cards' footer ("Copy as markdown", "Source") on desktop: bb's 11px text with 13px icons read smaller
+   than the message actions right under it (13px icons) and the time (12px). One size for the whole footer
+   area: 12px text, 13px icons, 6px between icon and label. Phones have their own (larger) rule. */
+@media (min-width: 768px) {
+  ${R} [data-genui-fence] button.text-\\[11px\\] { font-size: 12px !important; gap: 6px !important; }
+  ${R} [data-genui-fence] button.text-\\[11px\\] svg { width: 13px !important; height: 13px !important; }
+}
 /* Mention pills (thread titles, prompts): a faint tint instead of a solid white chip, the same chip as inline
    code (7% ink, no edge, no shadow: bb's pill shadow and border drew a second outline on glass; audit #27). */
 ${R} .prompt-mention-pill { background: color-mix(in oklab, var(--foreground) 7%, transparent) !important; border-color: transparent !important; box-shadow: none !important; }
