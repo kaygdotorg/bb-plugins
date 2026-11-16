@@ -1,5 +1,6 @@
 // Fonts section: per-surface Google Font overrides, each a checkbox + searchable picker + live sample.
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FrameState, GoogleFont } from "../../shared/contract";
 import { loadGoogleFontPreview as loadGoogleFont } from "../../frame/font-preview";
 import { ErrorLine, inputCls, LABEL_COL, messageOf, Section, Spinner, useSave, type Commit, type Rpc } from "./primitives";
@@ -26,13 +27,38 @@ export function FontPicker({
   const [typed, setTyped] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  /** Where the list floats (viewport coords, under the field). It is portalled to <body>: inside the Settings
+   *  page its glass had nothing to blur, since the page's scroller carries a mask (the top fade) and WebKit and
+   *  Chrome don't run a backdrop-filter through a masked ancestor (kayg's phone: the rows below read straight
+   *  through the list). Every other menu in bb is portalled the same way. */
+  const [at, setAt] = useState<{ left: number; top: number; width: number; maxH: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = root.current?.querySelector("input")?.getBoundingClientRect();
+      if (!r) return;
+      const vv = window.visualViewport;
+      const bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+      setAt({ left: r.left, top: r.bottom + 4, width: r.width, maxH: Math.max(120, Math.min(224, bottom - r.bottom - 12)) });
+    };
+    place();
+    window.addEventListener("scroll", place, { capture: true, passive: true });
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, { capture: true });
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
+  }, [open]);
 
   useEffect(() => setQuery(value), [value]);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (root.current && !root.current.contains(target) && !listRef.current?.contains(target)) {
         setOpen(false);
         setQuery(value);
       }
@@ -98,12 +124,14 @@ export function FontPicker({
         onChange={(e) => { setQuery(e.target.value); setTyped(true); setIndex(0); setOpen(true); }}
         onKeyDown={onKeyDown}
       />
-      {open ? (
+      {open && at ? createPortal(
         <ul
           ref={listRef}
           id={`${id}-list`}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover text-popover-foreground py-1 shadow-md"
+          data-cf-font-list=""
+          style={{ position: "fixed", left: at.left, top: at.top, width: at.width, maxHeight: at.maxH }}
+          className="z-50 overflow-auto rounded-md border border-border bg-popover text-popover-foreground py-1 shadow-md"
         >
           {matches.length === 0 ? (
             <li className="px-2 py-1 text-xs text-muted-foreground">No matching fonts</li>
@@ -121,7 +149,8 @@ export function FontPicker({
               <span className="shrink-0 text-xs text-muted-foreground">{f.category}</span>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       ) : null}
     </div>
   );
