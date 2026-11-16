@@ -913,6 +913,39 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
     background: linear-gradient(var(--cf-card-dim), var(--cf-card-dim)), var(--cf-card-tint);
   }
   ${MAIN} header { background: transparent !important; border-bottom-color: transparent !important; }
+  /* The safe areas are painted (kayg, 2026-11-16: "are we not painting the top and bottom safe areas?"). bb
+     pads its content shell by the status bar and the home indicator, so the chat stopped at a hard line under
+     each, and the title and composer fades (cardInterior: 80% at most, inside the padding) let the text show
+     at a fifth. As in the ChatGPT and Claude apps, each edge is now one layer from the screen's edge: the solid
+     card colour under the status bar (and the home indicator), easing to clear across the header row (and the
+     composer). On the shell itself, between the chat (no z-index) and the header (15) and composer (20), so the
+     pills and the composer stay over it; it replaces the two in-padding fades on phones. */
+  ${MAIN} [data-app-content-shell]:has(header[data-cf-scroll-header])::before,
+  ${MAIN} [data-app-content-shell]:has([data-app-composer])::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 14;
+    pointer-events: none;
+  }
+  ${MAIN} [data-app-content-shell]:has(header[data-cf-scroll-header])::before {
+    --cf-edge-in: env(safe-area-inset-top, 0px);
+    --cf-edge-row: var(--bb-app-chrome-row-height, 3rem);
+    top: 0;
+    height: calc(var(--cf-edge-in) + var(--cf-edge-row) + 0.75rem);
+    background: linear-gradient(to bottom, var(--cf-bg) var(--cf-edge-in), color-mix(in oklab, var(--cf-bg) 88%, transparent) calc(var(--cf-edge-in) + 0.3 * var(--cf-edge-row)), color-mix(in oklab, var(--cf-bg) 55%, transparent) calc(var(--cf-edge-in) + 0.7 * var(--cf-edge-row)), color-mix(in oklab, var(--cf-bg) 18%, transparent) calc(var(--cf-edge-in) + var(--cf-edge-row)), transparent 100%);
+  }
+  ${MAIN} [data-app-content-shell]:has([data-app-composer])::after {
+    /* bb's bottom inset: the home indicator, 0 while the keyboard is up (keyboard-follow.ts holds it). */
+    --cf-edge-in: var(--bb-content-bottom-inset, env(safe-area-inset-bottom, 0px));
+    --cf-edge-row: var(--bb-app-chrome-row-height, 3rem);
+    bottom: 0;
+    height: calc(var(--cf-edge-in) + var(--cf-edge-row) + 0.75rem);
+    background: linear-gradient(to top, var(--cf-bg) var(--cf-edge-in), color-mix(in oklab, var(--cf-bg) 88%, transparent) calc(var(--cf-edge-in) + 0.3 * var(--cf-edge-row)), color-mix(in oklab, var(--cf-bg) 55%, transparent) calc(var(--cf-edge-in) + 0.7 * var(--cf-edge-row)), color-mix(in oklab, var(--cf-bg) 18%, transparent) calc(var(--cf-edge-in) + var(--cf-edge-row)), transparent 100%);
+  }
+  ${MAIN} header[data-cf-scroll-header]::before,
+  ${MAIN} [data-page-scroll-viewport] .sticky.bottom-0:has([data-app-composer])::before { content: none !important; }
   /* The right panel is a shelf overlaying the pane: heavy frost so the chat stays legible behind it. */
   ${R} [data-testid="secondary-panel-shelf"] {
     --sidebar: transparent;
