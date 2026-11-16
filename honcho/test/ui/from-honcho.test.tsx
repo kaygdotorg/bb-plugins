@@ -75,7 +75,7 @@ describe("from honcho chip", () => {
   const SESSION_TURN = [session(T0 + 1000), turn(T0 + 2000)];
   it("renders on the assistant reply, not the user message", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [turn(T0 + 2000)]);
-    expect(await slot.findByText("from honcho · 3 memories · scope bb-plugins")).toBeTruthy();
+    expect(await slot.findByText("from honcho · 3 memories · group bb-plugins")).toBeTruthy();
     expect(slot.container.querySelector('[data-testid="m0"]')!.textContent).toBe("");
     expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/from honcho/);
   });
@@ -94,7 +94,7 @@ describe("from honcho chip", () => {
 
   it("merges session and turn into one line, on the first reply only", async () => {
     const slot = await mount([msg("a", T0), msg("r1", T0 + 3000, "assistant"), msg("r2", T0 + 4000, "assistant")], SESSION_TURN);
-    expect(await slot.findByText("from honcho · session memory + 3 memories · scope bb-plugins")).toBeTruthy();
+    expect(await slot.findByText("from honcho · session memory + 3 memories · group bb-plugins")).toBeTruthy();
     expect(slot.queryAllByText(/from honcho/)).toHaveLength(1);
     expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/from honcho/);
     expect(slot.container.querySelector('[data-testid="m2"]')!.textContent).toBe("");
@@ -102,7 +102,7 @@ describe("from honcho chip", () => {
 
   it("shows the turn's scope when scopes differ", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [session(T0 + 1000), turn(T0 + 2000, { scope: "infraternal" })]);
-    expect(await slot.findByText("from honcho · session memory + 3 memories · scope infraternal")).toBeTruthy();
+    expect(await slot.findByText("from honcho · session memory + 3 memories · group infraternal")).toBeTruthy();
   });
 
   it("expanding shows session card lines first, then the turn excerpts", async () => {
@@ -120,14 +120,14 @@ describe("from honcho chip", () => {
 
   it("session only", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [session(T0 + 1000)]);
-    fireEvent.click(await slot.findByText("from honcho · session memory · scope bb-plugins"));
+    fireEvent.click(await slot.findByText("from honcho · session memory · group bb-plugins"));
     expect(slot.getByText("directive: be brief")).toBeTruthy();
     expect(slot.queryByText("prefers small commits")).toBeNull();
   });
 
   it("turn only, collapsed by default", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [turn(T0 + 2000, { items: [{ content: "one", date: null, sourceThreadId: null, sourceTitle: null }] })]);
-    expect(await slot.findByText("from honcho · 1 memory · scope bb-plugins")).toBeTruthy();
+    expect(await slot.findByText("from honcho · 1 memory · group bb-plugins")).toBeTruthy();
     expect(slot.queryByText("one")).toBeNull();
   });
 

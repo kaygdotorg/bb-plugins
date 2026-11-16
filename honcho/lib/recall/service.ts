@@ -22,6 +22,10 @@ export type RecallRuntime = RecallService & {
   injections(input: { threadId: string; since?: number }): Promise<MemoryInjection[]>;
 };
 
+/** Pages of 100 scanned for exact word matches; semantic matches only fill up to this many results, within this cosine distance. */
+const EXACT_SCAN_PAGES = 5;
+const SEMANTIC_BELOW = 10;
+const SEMANTIC_DISTANCE = 0.5;
 const TITLE_TTL_MS = 5 * 60_000;
 
 export interface RecallInternals {
@@ -132,10 +136,23 @@ export function createRecallService(bb: BbPluginApi, deps: RecallDeps): RecallRu
       const { client, peer } = await shared.client();
       const limit = Math.max(1, Math.min(opts.limit ?? 20, 100));
       const query = [opts.query, opts.scope].filter((s): s is string => !!s?.trim()).join(" ");
-      const items = query
-        ? await client.queryConclusions({ query, top_k: limit, filters: { observer: peer, observed: peer } })
-        : (await client.listConclusions({ observer: peer, observed: peer }, { size: limit, reverse: true })).items;
-      return views(items);
+      if (!query) return views((await client.listConclusions({ observer: peer, observed: peer }, { size: limit, reverse: true })).items);
+      // Display only, never deletes. Exact word matches first, then close semantic matches below a distance cut.
+      const words = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))];
+      const exact: Conclusion[] = [];
+      const seen = new Set<string>();
+      for (let page = 1; page <= EXACT_SCAN_PAGES && exact.length < limit; page++) {
+        const res = await client.listConclusions({ observer: peer, observed: peer }, { size: 100, page, reverse: true });
+        for (const c of res.items) if (!seen.has(c.id) && words.some(w => c.content.toLowerCase().includes(w))) { seen.add(c.id); exact.push(c); }
+        if (res.items.length < 100 || (res.pages !== undefined && page >= res.pages)) break;
+      }
+      const out = exact.slice(0, limit);
+      if (out.length < SEMANTIC_BELOW) {
+        const room = Math.min(limit, SEMANTIC_BELOW) - out.length;
+        const near = await client.queryConclusions({ query, top_k: Math.min(100, room + out.length), distance: SEMANTIC_DISTANCE, filters: { observer: peer, observed: peer } });
+        for (const c of near) if (out.length < SEMANTIC_BELOW && !seen.has(c.id)) { seen.add(c.id); out.push(c); }
+      }
+      return views(out);
     },
     async deleteConclusion(id) {
       const { client } = await shared.client();

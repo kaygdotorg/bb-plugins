@@ -29,11 +29,12 @@ describe("registrations", () => {
 describe("status line", () => {
   const now = 1_000_000;
   it.each([
-    [{ state: "saving", lastUploadAt: now - 4000 }, 0, "memory · saving · 4s ago"],
-    [{ state: "paused" }, 0, "memory · paused"],
-    [{ state: "offline" }, 3, "memory · offline · 3 waiting"],
+    [{ state: "saving", lastUploadAt: now - 4000 }, 0, "memory · saving · saved 4s ago · group bb"],
+    [{ state: "paused" }, 0, "memory · paused · group bb"],
+    [{ state: "offline" }, 3, "memory · offline · 3 waiting · group bb"],
     [{ state: "not-captured" }, 0, "memory · not captured"],
-    [{ state: "idle" }, 0, "memory · on"],
+    [{ state: "idle" }, 0, "memory · on · group bb"],
+    [{ state: "idle", lastUploadAt: now - 120_000, scope: null }, 0, "memory · saved 2m ago"],
   ] as const)("%j", (patch, queued, expected) => {
     expect(statusLine(status(patch as Partial<ThreadMemoryStatus>), queued, now)).toBe(expected);
   });
@@ -44,7 +45,7 @@ describe("thread context card row", () => {
     const a = await app();
     const row = a.threadContextCardRows[0]!;
     for (const [patch, text] of [
-      [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · \d+s ago/],
+      [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · saved \d+s ago/],
       [{ state: "paused" }, /memory · paused/],
       [{ state: "offline", queued: 3 }, /memory · offline · 3 waiting/],
       [{ state: "not-captured", reason: "denied by remote" }, /memory · not captured/],
@@ -78,7 +79,7 @@ describe("thread info row", () => {
   it("renders each state", async () => {
     const a = await app();
     for (const [patch, text] of [
-      [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · \d+s ago/],
+      [{ state: "saving", lastUploadAt: Date.now() - 4000 }, /memory · saving · saved \d+s ago/],
       [{ state: "paused" }, /memory · paused/],
       [{ state: "offline", queued: 3 }, /memory · offline · 3 waiting/],
       [{ state: "not-captured", reason: "denied by remote" }, /memory · not captured/],
@@ -99,21 +100,41 @@ describe("thread info row", () => {
   it("toggles pause both ways and opens memory", async () => {
     const a = await app();
     const saving = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "saving" }), "pause.set": () => ({ ok: true }) } });
-    fireEvent.click(await saving.findByText(/memory · saving/));
+    await saving.findByText(/memory · saving/);
+    fireEvent.click(saving.getByText("pause"));
     await waitFor(() => expect(saving.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: true }));
     fireEvent.click(saving.getByText("open memory"));
     expect(saving.inspection.navigateCalls[0]).toMatchObject({ method: "toPluginPanel", path: "memory" });
     saving.lifecycle.unmount();
     const paused = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "paused" }), "pause.set": () => ({ ok: true }) } });
-    fireEvent.click(await paused.findByText(/memory · paused/));
+    await paused.findByText(/memory · paused/);
+    fireEvent.click(paused.getByText("resume"));
     await waitFor(() => expect(paused.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: false }));
   });
 
-  it("does not toggle a thread that isn't captured", async () => {
+  it("does not offer a toggle for a thread that isn't captured, and keeps open memory", async () => {
     const a = await app();
     const slot = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "not-captured" }) } });
-    fireEvent.click(await slot.findByText(/not captured/));
-    expect(slot.inspection.rpcCalls.some((c) => c.method === "pause.set")).toBe(false);
+    await slot.findByText(/not captured/);
+    expect(slot.queryByText("pause")).toBeNull();
+    expect(slot.queryByText("resume")).toBeNull();
+    expect(slot.getByText("open memory")).toBeTruthy();
+  });
+
+  it("reads like the chip, explains the group in words, and wraps in a 390px container", async () => {
+    const a = await app();
+    const slot = renderSlot(a.threadInfoRows[0]!, props, { rpc: { "thread.status": () => status({ state: "saving", lastUploadAt: Date.now() - 120_000, scope: "personal" }) } });
+    expect(await slot.findByText("memory · saving · saved 2m ago · group personal")).toBeTruthy();
+    expect(slot.getByText(/chats from the same repo or project share memory/)).toBeTruthy();
+    expect(slot.queryByText(/scope/)).toBeNull();
+    const narrow = document.createElement("div");
+    narrow.style.width = "390px";
+    narrow.append(slot.container);
+    document.body.append(narrow);
+    const line = slot.getByText("memory · saving · saved 2m ago · group personal");
+    expect(line.className).toContain("break-words");
+    expect(line.parentElement!.className).toContain("flex-wrap");
+    expect(slot.getByText("pause").className).toContain("shrink-0");
   });
 });
 
@@ -174,12 +195,12 @@ describe("banner mode (threadContextCard experiment off)", () => {
     const reg = a.threadContextSegments[0]!;
     const rpc = { "thread.status": () => status({ state: "saving", lastUploadAt: Date.now() - 4000 }), "pause.set": () => ({ ok: true }) };
     const slot = renderSlot({ component: reg.summary }, segmentProps, { rpc });
-    fireEvent.click(await slot.findByText(/memory · saving · \d+s ago/));
+    fireEvent.click(await slot.findByText(/memory · saving · saved \d+s ago/));
     await waitFor(() => expect(slot.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: true }));
     slot.lifecycle.unmount();
 
     const paused = renderSlot({ component: reg.summary }, segmentProps, { rpc: { "thread.status": () => status({ state: "paused" }), "pause.set": () => ({ ok: true }) } });
-    fireEvent.click(await paused.findByText("memory · paused"));
+    fireEvent.click(await paused.findByText("memory · paused · group bb"));
     await waitFor(() => expect(paused.inspection.rpcCalls.find((c) => c.method === "pause.set")?.input).toEqual({ kind: "thread", id: "t1", paused: false }));
     paused.lifecycle.unmount();
 

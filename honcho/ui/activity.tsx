@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ActivityEntry } from "../lib/contract";
-import { clock, plural } from "./format";
+import { clock, plainSummary, plural } from "./format";
 import { useLabels, useRemote } from "./data";
 import { ThreadLink } from "./links";
 import { Badge, Button, Empty, Loading, Offline, StaleNote, cx, type Tone } from "./primitives";
@@ -19,15 +19,15 @@ function Row({ entry, title }: { entry: ActivityEntry; title: string | null }) {
     entry.redactions ? `${entry.redactions} hidden` : null,
   ].filter(Boolean);
   return (
-    <li className="flex items-center gap-2 border-b border-border px-3 py-1.5 last:border-b-0">
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1.5 last:border-b-0">
       <time className="w-16 shrink-0 text-2xs tabular-nums text-muted-foreground" dateTime={new Date(entry.at).toISOString()}>{clock(entry.at)}</time>
       <span className="w-16 shrink-0"><Badge tone={KIND_TONE[entry.kind]}>{KIND_WORD[entry.kind]}</Badge></span>
-      <span className="min-w-0 flex-1">
-        <span className={cx("block truncate text-xs", entry.kind === "failure" && "text-destructive")} title={entry.error ?? entry.summary}>{entry.summary}</span>
+      <span className="min-w-0 flex-[1_1_12rem]">
+        <span className={cx("block truncate text-xs", entry.kind === "failure" && "text-destructive")} title={entry.error ?? plainSummary(entry.summary)}>{plainSummary(entry.summary)}</span>
         {entry.error ? <span className="block truncate text-2xs text-muted-foreground">{entry.error}</span> : null}
       </span>
       {meta.length ? <span className="shrink-0 text-2xs text-muted-foreground" title={entry.redactions ? "hidden means private details (like keys) were replaced before saving" : undefined}>{meta.join(" · ")}</span> : null}
-      {entry.reasoning ? <Badge title="the agent's thinking was saved too">thinking included</Badge> : null}
+      {entry.reasoning ? <Badge title="the assistant's thinking was saved too">with thinking</Badge> : null}
       {entry.threadId ? <span className="flex max-w-40 shrink-0"><ThreadLink id={entry.threadId} title={title} /></span> : null}
     </li>
   );
@@ -41,7 +41,7 @@ export function ActivityTab() {
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <p className="flex-1 text-2xs text-muted-foreground">what memory saved, looked up and deleted, as it happens.</p>
-        <Button variant={failuresOnly ? "outline" : "ghost"} aria-pressed={failuresOnly} onClick={() => setFailuresOnly(!failuresOnly)}>problems only</Button>
+        <Button variant={failuresOnly ? "outline" : "ghost"} aria-pressed={failuresOnly} onClick={() => setFailuresOnly(!failuresOnly)}>show problems only</Button>
       </div>
       <StaleNote error={feed.data ? feed.error : null} />
       {feed.data === null ? (

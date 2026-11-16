@@ -52,6 +52,27 @@ describe("RecallService", () => {
     expect(query.body.filters).toEqual({ observer_id: "hermy", observed_id: "hermy" });
   });
 
+  it("search puts exact word matches first, case-insensitively, and asks for a distance cut", async () => {
+    const s = await make();
+    seedConclusion(s.mock, { id: "con_1", content: "unrelated health fact" });
+    seedConclusion(s.mock, { id: "con_2", content: "Works with a TESTER named Rita" });
+    seedConclusion(s.mock, { id: "con_3", content: "rita likes tea" });
+    const got = await s.recall.conclusions({ query: "tester rita", limit: 50 });
+    expect(got.map(c => c.id).sort()).toEqual(["con_2", "con_3"]);
+    expect(got.every(c => /rita|tester/i.test(c.content))).toBe(true);
+    const query = s.mock.requests.find(r => r.path.endsWith("/conclusions/query"))!;
+    expect(query.body.distance).toBeGreaterThan(0);
+    expect(query.body.distance).toBeLessThanOrEqual(0.6);
+  });
+
+  it("search skips the semantic lookup when there are ten exact matches", async () => {
+    const s = await make();
+    for (let n = 0; n < 12; n++) seedConclusion(s.mock, { id: `con_${n}`, content: `Rita fact ${n}` });
+    const got = await s.recall.conclusions({ query: "rita", limit: 50 });
+    expect(got).toHaveLength(12);
+    expect(s.mock.requests.some(r => r.path.endsWith("/conclusions/query"))).toBe(false);
+  });
+
   it("start() refreshes now, then every 5 minutes, and stops cleanly", async () => {
     const s = await make({ ports: { peerCard: async () => ["Name: Sam"] } });
     const stop = s.recall.start();
