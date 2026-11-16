@@ -66,7 +66,7 @@ export const PHONE_MENU_CSS = `
     /* The menus' glass and corners (css.ts "Every floating menu"): radius 14 = item 8 + padding 6. */
     border-radius: var(--cf-radius) !important;
     padding: 6px !important;
-    border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+    border: 1px solid var(--cf-edge) !important;
     background: var(--cf-glass-fill) !important; /* the one glass (css.ts --cf-glass) */
     -webkit-backdrop-filter: var(--cf-glass) !important;
     backdrop-filter: var(--cf-glass) !important;
@@ -203,7 +203,7 @@ export function mountPhoneMenu(): () => void {
     // The screen inset is the header's (--cf-ph-side: 16 or 20 by screen width), so the menu's edge stays on the pill's.
     const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--cf-ph-side")) || INSET;
     const right = Math.max(inset, innerWidth - Math.max(p.right, tb && tb.width > 0 ? tb.right : p.right));
-    const top = Math.max(INSET / 2, p.top);
+    const top = Math.max(0, p.top); // on the pill's top (a 10pt floor put it 6pt below the pill without a safe area)
     drawer.style.setProperty("--cf-am-top", `${top}px`);
     drawer.style.setProperty("--cf-am-right", `${right}px`);
     const visible = window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : innerHeight;

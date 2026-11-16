@@ -105,6 +105,29 @@ ${GLASS_LAYER}}
     color: var(--foreground);
   }
 
+  /* ── Plain pages (Settings, Skills): bb's title is bare 15pt text in its row (in bb's 0.81 ink). It becomes the
+     same leading glass capsule as a thread's title (audit #18). marks.ts stamps main[data-cf-plain]. */
+  ${R} main[data-cf-plain] header [data-testid="app-page-header-content-row"] > div:first-child > div > div.min-w-0:has(> p) {
+    position: relative;
+    isolation: isolate;
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: var(--cf-text-h);
+    max-width: 100%;
+    padding: 0 ${s(16)};
+    border-radius: 999px;
+  }
+  ${R} main[data-cf-plain] header [data-testid="app-page-header-content-row"] > div:first-child > div > div.min-w-0:has(> p)::before {
+${GLASS_LAYER}}
+  ${R} main[data-cf-plain] header [data-testid="app-page-header-content-row"] > div:first-child > div > div.min-w-0 > p {
+    font-size: ${s(15)};
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    color: var(--foreground);
+  }
+
   /* ── The right end: ⋯ alone, a 44px glass circle like the back pill. bb's right toolbar (the right-panel
      button, workflow buttons) is hidden: its buttons are the ⋯ menu's first items (phone-menu.ts). */
   ${ROW} > ${TOOLBAR} { display: none !important; }

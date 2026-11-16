@@ -1033,6 +1033,84 @@ ${R} [role="dialog"][data-bb-portaled-overlay] :is(.bg-background, .bg-popover, 
   ${MAIN} [data-timeline-row-id] [data-honcho-memory] > button { padding-inline: 0 !important; }
   ${MAIN} [data-timeline-row-id] .group\\/timeline-row > button[aria-expanded] > svg:last-child { width: calc(14px * var(--cf-ui-scale, 1)); height: calc(14px * var(--cf-ui-scale, 1)); }
   /* Menus as iOS draws them (audit #8): the phone ⋯ menu (an anchored drawer, phone-menu.ts) and every bottom sheet
+     ([data-persistent-drawer-content]: action sheets, the + sheet, pickers, the search palette) get 44pt rows, 17pt
+     text and 20pt glyphs (bb: 36pt, 14pt, 16pt), 12pt between glyph and label. */
+  ${R} [data-persistent-drawer-content] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"]) {
+    min-height: calc(44px * var(--cf-ui-scale, 1));
+    padding-block: calc(6px * var(--cf-ui-scale, 1)) !important;
+    padding-inline: calc(12px * var(--cf-ui-scale, 1)) !important;
+    gap: calc(12px * var(--cf-ui-scale, 1)) !important;
+    font-size: calc(17px * var(--cf-ui-scale, 1)) !important;
+    line-height: calc(22px * var(--cf-ui-scale, 1)) !important;
+  }
+  ${R} [data-persistent-drawer-content] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"]) > :is(svg, [data-icon-root]) {
+    width: calc(20px * var(--cf-ui-scale, 1)) !important;
+    height: calc(20px * var(--cf-ui-scale, 1)) !important;
+  }
+  /* Drawer section headers ("Threads ⌄  ⊕ ⋯"): bb's collapse chevron is 24pt and the trailing buttons 32-36pt.
+     Each gets a 44pt hit area (a centred ::after), so the row keeps its height (audit #15). */
+  ${SIDEBAR} [data-sidebar="group-label"] button { position: relative; }
+  ${SIDEBAR} [data-sidebar="group-label"] button::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: calc(44px * var(--cf-ui-scale, 1));
+    height: calc(44px * var(--cf-ui-scale, 1));
+    translate: -50% -50%;
+  }
+  /* The new-chat page (audit #19): bb's right-panel button floats bare at the top right (36pt, 16pt glyph, 16pt
+     from the edge, 10pt down). Here it is the header's ⋯ pill: a 44pt glass circle with a 20pt glyph at the side
+     inset, on the drawer button's line. */
+  ${MAIN} div.fixed.z-40:has(> button[aria-label^="Show right panel"]) {
+    top: calc(env(safe-area-inset-top) + var(--cf-ph-top)) !important;
+    right: calc(env(safe-area-inset-right) + var(--cf-ph-side)) !important;
+    margin: 0 !important;
+  }
+  ${MAIN} div.fixed.z-40 > button[aria-label^="Show right panel"] {
+    position: relative;
+    isolation: isolate;
+    width: var(--cf-pill) !important;
+    height: var(--cf-pill) !important;
+    padding: 0 !important;
+    border-radius: 999px;
+    color: var(--foreground);
+  }
+  ${MAIN} div.fixed.z-40 > button[aria-label^="Show right panel"]::before {
+${GLASS_LAYER}  }
+  ${MAIN} div.fixed.z-40 > button[aria-label^="Show right panel"] :is(svg, span.size-4) { width: var(--cf-pill-icon) !important; height: var(--cf-pill-icon) !important; }
+  /* Its "Recent" list: a parent row's disclosure chevron hangs in bb's 24pt left gutter, which on a phone is only
+     the 16pt margin: the glyph touched the screen edge (x = 0). Moved 4pt in. */
+  ${MAIN} [data-root-compose-mobile-recents] button[aria-label^="Hide threads under"] > svg:first-child,
+  ${MAIN} [data-root-compose-mobile-recents] button[aria-label^="Show threads under"] > svg:first-child { translate: calc(4px * var(--cf-ui-scale, 1)) 0; }
+  /* ── Settings on phones, as iOS Settings (audit #16-18): labels and controls 17pt (Body), descriptions and
+     secondary notes 15pt (Subheadline), section titles 17pt semibold (Headline), and every control at least 44pt to
+     hit (bb and the plugin's own panel were desktop-sized: 14-16pt labels, 11-14pt notes, 32pt fields and buttons,
+     13pt checkboxes, 24pt swatches, 16pt switches). Fields also stop iOS zooming in on focus (it zooms under 16pt).
+     Visual sizes stay where a bigger box would crowd the row (swatches, switches, Reset links): a centred 44pt ::after
+     takes the touch instead. */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(label, h3, h4, input, select, textarea, button, [role="combobox"]):not(.text-xs) { font-size: calc(17px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(h3, h4) { font-weight: 600; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(p, span, h2):is(.text-sm, .text-base):not(.text-muted-foreground, .text-subtle-foreground) { font-size: calc(17px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(p, span, button, a, h4 span):is(.text-xs, .text-muted-foreground, .text-subtle-foreground, .text-subtle-foreground\\/75) { font-size: calc(15px * var(--cf-ui-scale, 1)) !important; line-height: 1.35; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea, [role="combobox"]) { min-height: calc(44px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is(button, label):is(.h-8, .h-9, .h-7) { height: auto !important; min-height: calc(44px * var(--cf-ui-scale, 1)); padding-inline: calc(16px * var(--cf-ui-scale, 1)) !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] input:is([type="checkbox"], [type="radio"]) { width: calc(20px * var(--cf-ui-scale, 1)); height: calc(20px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] label:has(> input:is([type="checkbox"], [type="radio"])) { min-height: calc(44px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] div.grid.h-8 { height: auto !important; min-height: calc(44px * var(--cf-ui-scale, 1)); } /* rows of fixed 32pt (Glass) that the 44pt fields overflowed */
+  ${PLAIN_MAIN} [data-page-scroll-viewport] input[type="range"] { min-height: calc(44px * var(--cf-ui-scale, 1)); }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] input[type="color"] { width: calc(44px * var(--cf-ui-scale, 1)) !important; height: calc(44px * var(--cf-ui-scale, 1)) !important; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is([role="switch"], button[aria-label][class*="size-6"], button[aria-label^="Remove"], button.underline, button[aria-pressed]) { position: relative; }
+  ${PLAIN_MAIN} [data-page-scroll-viewport] :is([role="switch"], button[aria-label][class*="size-6"], button[aria-label^="Remove"], button.underline, button[aria-pressed])::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    min-width: 100%;
+    width: calc(44px * var(--cf-ui-scale, 1));
+    height: calc(44px * var(--cf-ui-scale, 1));
+    translate: -50% -50%;
+  }
   /* GenUI cards' footer ("Copy as markdown", "Source"): bb-sized 11px text with 12px icons, 19pt tall, was the
      smallest thing on screen (kayg). Here they match the message actions: 15pt text, 18pt icons, 32pt rows,
      a 20pt gap, in the secondary grey. */
