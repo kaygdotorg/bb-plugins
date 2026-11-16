@@ -143,14 +143,18 @@ function useInjections(threadId: string, message: Known) {
 
 export interface TurnMemory { session: MemoryInjection[]; turn: MemoryInjection[] }
 
-export function chipLabel({ session, turn }: TurnMemory): string {
+/** Collapsed line, worded like bb's tool rows ("Ran 3 commands"): no internal terms. */
+export function chipLabel({ turn }: TurnMemory): string {
   const count = turn.reduce((n, i) => n + i.items.length, 0);
-  const scope = (turn.length > 0 ? turn[0]!.scope : session[0]?.scope) ?? "none";
-  const parts = [
-    ...(session.length > 0 ? ["session memory"] : []),
-    ...(turn.length > 0 ? [count === 1 ? "1 memory" : `${count} memories`] : []),
-  ];
-  return `from honcho · ${parts.join(" + ")} · group ${scope}`;
+  if (count === 0) return "Used memory";
+  return count === 1 ? "Recalled 1 memory" : `Recalled ${count} memories`;
+}
+
+/** The quiet footnote under the expanded body: where the memory came from. */
+export function chipSource({ session, turn }: TurnMemory): string {
+  const scope = (turn.length > 0 ? turn[0]!.scope : session[0]?.scope) ?? null;
+  const kinds = [...(session.length > 0 ? ["background memory"] : []), ...(turn.length > 0 ? ["this message"] : [])];
+  return ["Honcho", ...(scope ? [`group ${scope}`] : []), kinds.join(" + ")].filter(Boolean).join(" · ");
 }
 
 function Chip({ memory }: { memory: TurnMemory }) {
@@ -168,14 +172,14 @@ function Chip({ memory }: { memory: TurnMemory }) {
         aria-expanded={open}
         title={open ? "hide what memory added" : "show what memory added"}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full max-w-full items-center justify-start gap-1 px-2 py-0 text-left text-sm leading-5 text-subtle-foreground [overflow-wrap:anywhere] hover:text-muted-foreground"
+        className="flex w-full max-w-full items-center justify-start gap-1 px-0 py-0 text-left text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere] hover:text-foreground"
       >
         <Icon name="Brain" aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="min-w-0 break-words">{label}</span>
+        <Icon name="ChevronRight" aria-hidden="true" className={`size-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open ? (
         <div data-honcho-memory-body="" className="ml-2 mt-1 space-y-3 border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground">
-          <p className={sub}>group: {GROUP_HINT}</p>
           {card.length > 0 ? (
             <div className="space-y-1">
               <p className={sub}>session memory</p>
@@ -200,7 +204,11 @@ function Chip({ memory }: { memory: TurnMemory }) {
               </ul>
             </div>
           ) : null}
-          <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="text-xs underline-offset-2 hover:text-foreground hover:underline">open memory</button>
+          <p className="flex flex-wrap items-center gap-x-1.5 text-[13px] leading-5 text-subtle-foreground" title={GROUP_HINT}>
+            <span>{chipSource(memory)}</span>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={() => nav.toPluginPanel(MEMORY_PATH)} className="underline-offset-2 hover:text-foreground hover:underline">open memory</button>
+          </p>
         </div>
       ) : null}
     </div>

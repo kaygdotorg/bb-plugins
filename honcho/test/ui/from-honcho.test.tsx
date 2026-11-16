@@ -75,9 +75,9 @@ describe("from honcho chip", () => {
   const SESSION_TURN = [session(T0 + 1000), turn(T0 + 2000)];
   it("renders on the assistant reply, not the user message", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [turn(T0 + 2000)]);
-    expect(await slot.findByText("from honcho · 3 memories · group bb-plugins")).toBeTruthy();
+    expect(await slot.findByText("Recalled 3 memories")).toBeTruthy();
     expect(slot.container.querySelector('[data-testid="m0"]')!.textContent).toBe("");
-    expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/from honcho/);
+    expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/Recalled|Used memory/);
   });
 
   it("renders nothing before the reply exists", async () => {
@@ -94,20 +94,20 @@ describe("from honcho chip", () => {
 
   it("merges session and turn into one line, on the first reply only", async () => {
     const slot = await mount([msg("a", T0), msg("r1", T0 + 3000, "assistant"), msg("r2", T0 + 4000, "assistant")], SESSION_TURN);
-    expect(await slot.findByText("from honcho · session memory + 3 memories · group bb-plugins")).toBeTruthy();
-    expect(slot.queryAllByText(/from honcho/)).toHaveLength(1);
-    expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/from honcho/);
+    expect(await slot.findByText("Recalled 3 memories")).toBeTruthy();
+    expect(slot.queryAllByText(/Recalled|Used memory/)).toHaveLength(1);
+    expect(slot.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/Recalled|Used memory/);
     expect(slot.container.querySelector('[data-testid="m2"]')!.textContent).toBe("");
   });
 
   it("shows the turn's scope when scopes differ", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [session(T0 + 1000), turn(T0 + 2000, { scope: "infraternal" })]);
-    expect(await slot.findByText("from honcho · session memory + 3 memories · group infraternal")).toBeTruthy();
+    expect(await slot.findByText("Recalled 3 memories")).toBeTruthy();
   });
 
   it("expanding shows session card lines first, then the turn excerpts", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], SESSION_TURN);
-    fireEvent.click(await slot.findByText(/session memory \+ 3 memories/));
+    fireEvent.click(await slot.findByText(/Recalled 3 memories/));
     expect(slot.getByText("peer card: kayg")).toBeTruthy();
     expect(slot.getByText("2026-11-01")).toBeTruthy();
     const text = slot.container.textContent!;
@@ -120,33 +120,33 @@ describe("from honcho chip", () => {
 
   it("session only", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [session(T0 + 1000)]);
-    fireEvent.click(await slot.findByText("from honcho · session memory · group bb-plugins"));
+    fireEvent.click(await slot.findByText("Used memory"));
     expect(slot.getByText("directive: be brief")).toBeTruthy();
     expect(slot.queryByText("prefers small commits")).toBeNull();
   });
 
   it("turn only, collapsed by default", async () => {
     const slot = await mount([msg("a", T0), msg("r", T0 + 3000, "assistant")], [turn(T0 + 2000, { items: [{ content: "one", date: null, sourceThreadId: null, sourceTitle: null }] })]);
-    expect(await slot.findByText("from honcho · 1 memory · group bb-plugins")).toBeTruthy();
+    expect(await slot.findByText("Recalled 1 memory")).toBeTruthy();
     expect(slot.queryByText("one")).toBeNull();
   });
 
   it("matches by turnId, and by time when there is none", async () => {
     const byTurn = await mount([msg("a", T0, "user", "A"), msg("b", T0 + 300_000, "user", "B"), msg("rb", T0 + 301_000, "assistant", "B"), msg("ra", T0 + 302_000, "assistant", "A")], [turn(T0 + 2000)]);
-    await byTurn.findByText(/from honcho/);
-    expect(byTurn.container.querySelector('[data-testid="m3"]')!.textContent).toMatch(/from honcho/);
+    await byTurn.findByText(/Recalled|Used memory/);
+    expect(byTurn.container.querySelector('[data-testid="m3"]')!.textContent).toMatch(/Recalled|Used memory/);
     expect(byTurn.container.querySelector('[data-testid="m2"]')!.textContent).toBe("");
     cleanup();
     const byTime = await mount([msg("a", T0, "user", null), msg("r1", T0 + 3000, "assistant", null), msg("r2", T0 + 4000, "assistant", null)], [turn(T0 + 2000)]);
-    await byTime.findByText(/from honcho/);
-    expect(byTime.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/from honcho/);
+    await byTime.findByText(/Recalled|Used memory/);
+    expect(byTime.container.querySelector('[data-testid="m1"]')!.textContent).toMatch(/Recalled|Used memory/);
     expect(byTime.container.querySelector('[data-testid="m2"]')!.textContent).toBe("");
   });
 
   it("makes one fetch for many messages", async () => {
     const many = Array.from({ length: 25 }, (_, n) => [msg(`u${n}`, T0 + n * 2000, "user", `t${n}`), msg(`r${n}`, T0 + n * 2000 + 500, "assistant", `t${n}`)]).flat();
     const slot = await mount(many, [turn(T0 + 24 * 2000 + 200)]);
-    await slot.findByText(/from honcho/);
+    await slot.findByText(/Recalled|Used memory/);
     expect(slot.inspection.rpcCalls.filter((c) => c.method === "recall.injections")).toHaveLength(1);
     await slot.behavior.emitRealtime("activity", {});
     await waitFor(() => expect(slot.inspection.rpcCalls.filter((c) => c.method === "recall.injections")).toHaveLength(2));
